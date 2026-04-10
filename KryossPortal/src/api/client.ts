@@ -14,10 +14,22 @@ async function getAccessToken(): Promise<string> {
     });
     return response.accessToken;
   } catch {
-    // Silent token acquisition failed, trigger interactive login
     const response = await msalInstance.acquireTokenPopup(loginRequest);
     return response.accessToken;
   }
+}
+
+// Convert PascalCase keys to camelCase recursively
+// The .NET backend serializes with PascalCase, frontend expects camelCase
+function toCamelCase(obj: unknown): unknown {
+  if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(toCamelCase);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    const camelKey = key.charAt(0).toLowerCase() + key.slice(1);
+    result[camelKey] = toCamelCase(value);
+  }
+  return result;
 }
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -33,7 +45,6 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   });
 
   if (res.status === 401) {
-    // Token expired or invalid, clear cache and retry login
     msalInstance.clearCache();
     throw new Error('Authentication required');
   }
@@ -45,5 +56,6 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     throw err;
   }
 
-  return res.json();
+  const data = await res.json();
+  return toCamelCase(data) as T;
 }
