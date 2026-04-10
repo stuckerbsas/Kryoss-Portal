@@ -28,7 +28,11 @@ Projecto Kryoss\
 │   └── CLAUDE.md                   <- See this for full API map
 ├── KryossAgent\                    <- Windows agent (.NET 8 AOT)
 │   └── CLAUDE.md                   <- See this for full agent map
-├── KryossPortal\                   <- Frontend (Vue? status unclear — not mapped yet)
+├── KryossPortal\                   <- Frontend (React 18 + Vite + TS + shadcn/ui)
+│                                      Repo: github.com/stuckerbsas/Kryoss-Portal
+│                                      Auth: SWA Auth (Entra ID), permission-driven UI
+│                                      Spec: docs/superpowers/specs/2026-04-10-kryoss-portal-mvp-design.md
+│                                      Plan: docs/superpowers/plans/2026-04-10-kryoss-portal-mvp.md
 ├── Scripts\                        <- Legacy PowerShell scripts & audit tools
 │   └── CLAUDE.md                   <- MSP/TeamLogic IT PowerShell standards
 │                                      (NinjaRMM/Intune deploy, brand, etc.)
