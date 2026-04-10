@@ -1,27 +1,55 @@
 @import "tailwindcss";
 
 @theme {
+  /* Brand */
   --color-primary: #008852;
   --color-primary-foreground: #ffffff;
   --color-primary-light: #A2C564;
   --color-dark-bg: #3D4043;
+
+  /* Status colors */
   --color-pass: #008852;
   --color-warn: #D97706;
   --color-fail: #C0392B;
+
+  /* Sidebar */
   --color-sidebar-bg: #1a1f2e;
   --color-sidebar-text: #94a3b8;
   --color-sidebar-active: #008852;
   --color-sidebar-hover: #232938;
 
+  /* shadcn design tokens */
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #737373;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0a0a0a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0a0a0a;
+  --color-border: #e5e5e5;
+  --color-input: #e5e5e5;
+  --color-ring: #008852;
+  --color-secondary: #f5f5f5;
+  --color-secondary-foreground: #171717;
+  --color-accent: #f5f5f5;
+  --color-accent-foreground: #171717;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+
+  /* Radius */
+  --radius: 0.5rem;
+
+  /* Font */
   --font-sans: 'Montserrat', system-ui, sans-serif;
 }
 
 @layer base {
   body {
-    @apply font-sans antialiased bg-gray-50 text-gray-900;
+    @apply font-sans antialiased bg-gray-50 text-foreground;
   }
 
   * {
-    @apply border-gray-200;
+    @apply border-border;
   }
 }

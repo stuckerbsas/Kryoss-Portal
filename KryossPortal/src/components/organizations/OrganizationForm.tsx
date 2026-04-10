@@ -4,10 +4,12 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
+  SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -92,13 +94,21 @@ export function OrganizationForm({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent>
+      <SheetContent className="overflow-y-auto">
         <SheetHeader>
           <SheetTitle>
             {isEdit ? 'Edit Organization' : 'New Organization'}
           </SheetTitle>
+          <SheetDescription>
+            {isEdit
+              ? 'Update the organization details below.'
+              : 'Fill in the details to create a new client organization.'}
+          </SheetDescription>
         </SheetHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-6">
+
+        <Separator className="my-4" />
+
+        <form onSubmit={handleSubmit} className="space-y-5 px-4 pb-4">
           <div className="space-y-2">
             <Label htmlFor="name">Name *</Label>
             <Input
@@ -107,8 +117,10 @@ export function OrganizationForm({
               onChange={(e) => setName(e.target.value)}
               placeholder="Client company name"
               required
+              autoFocus
             />
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="legalName">Legal Name</Label>
             <Input
@@ -118,6 +130,7 @@ export function OrganizationForm({
               placeholder="Full legal entity name"
             />
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="taxId">Tax ID</Label>
             <Input
@@ -127,8 +140,14 @@ export function OrganizationForm({
               placeholder="30-12345678-9"
             />
           </div>
+
           {isSuperAdmin && (
             <>
+              <Separator className="my-2" />
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Admin settings
+              </p>
+
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select value={status} onValueChange={setStatus}>
@@ -142,6 +161,7 @@ export function OrganizationForm({
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label>Brand</Label>
                 <Select
@@ -160,9 +180,12 @@ export function OrganizationForm({
               </div>
             </>
           )}
-          <div className="flex gap-2 pt-4">
+
+          <Separator className="my-2" />
+
+          <div className="flex gap-3 pt-2">
             <Button type="submit" disabled={isPending} className="flex-1">
-              {isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+              {isPending ? 'Saving...' : isEdit ? 'Update' : 'Create Organization'}
             </Button>
             <Button
               type="button"
