@@ -20,16 +20,16 @@
       "statusCode": 404
     },
     {
-      "route": "/api/*",
+      "route": "/v1/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/v2/*",
       "allowedRoles": ["authenticated"]
     }
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/*.svg", "/*.ico"]
-  },
-  "forwardingGateway": {
-    "requiredHeaders": {},
-    "allowedForwardedHosts": []
+    "exclude": ["/assets/*", "/*.svg", "/*.ico", "/v1/*", "/v2/*"]
   }
 }
