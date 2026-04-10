@@ -1,7 +1,162 @@
+import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Search, Monitor } from 'lucide-react';
+import { useMachines } from '@/api/machines';
+import { GradeBadge } from '@/components/shared/GradeBadge';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+
+function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return 'Never';
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+const PAGE_SIZE = 25;
+
 export function FleetTab() {
+  const { orgId } = useParams<{ orgId: string }>();
+  const navigate = useNavigate();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+
+  const { data, isLoading } = useMachines({
+    organizationId: orgId,
+    search: search || undefined,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+
   return (
-    <div className="text-muted-foreground text-center py-16">
-      Fleet view coming in next update
+    <div className="space-y-4">
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Search machines..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          className="pl-9"
+        />
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : !data || data.items.length === 0 ? (
+        <EmptyState
+          icon={<Monitor className="size-10" />}
+          title="No machines enrolled yet"
+          description="Generate an enrollment code to get started."
+        />
+      ) : (
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Hostname</TableHead>
+                <TableHead>OS</TableHead>
+                <TableHead>CPU / RAM</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last Seen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((m) => (
+                <TableRow
+                  key={m.id}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    navigate(`/organizations/${orgId}/machines/${m.id}`)
+                  }
+                >
+                  <TableCell className="font-medium">{m.hostname}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {m.osName ?? 'Unknown'}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {m.cpuName ?? 'N/A'}
+                    {m.ramGb != null ? ` / ${m.ramGb} GB` : ''}
+                  </TableCell>
+                  <TableCell>
+                    <GradeBadge
+                      grade={m.latestScore?.grade}
+                      score={m.latestScore?.globalScore}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="secondary"
+                      className={
+                        m.isActive
+                          ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-100'
+                      }
+                    >
+                      {m.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatRelativeTime(m.lastSeenAt)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          <div className="flex items-center justify-between pt-2">
+            <p className="text-sm text-muted-foreground">
+              Page {page} of {totalPages} ({data.total} machines)
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

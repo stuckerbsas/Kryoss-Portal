@@ -8,6 +8,8 @@ import { OverviewTab } from './components/org-detail/OverviewTab';
 import { FleetTab } from './components/org-detail/FleetTab';
 import { EnrollmentTab } from './components/org-detail/EnrollmentTab';
 import { ReportsTab } from './components/org-detail/ReportsTab';
+import { MachineDetailPage } from './pages/MachineDetailPage';
+import { RunDetailPage } from './pages/RunDetailPage';
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -47,8 +49,12 @@ export const router = createBrowserRouter([
                 path: 'machines/:machineId',
                 handle: { crumb: (_: unknown, p: Record<string, string>) => p.machineId?.slice(0, 8) + '...' },
                 children: [
-                  { index: true, element: <PlaceholderPage title="Machine Detail" /> },
-                  { path: 'runs/:runId', element: <PlaceholderPage title="Run Detail" /> },
+                  { index: true, element: <MachineDetailPage /> },
+                  {
+                    path: 'runs/:runId',
+                    handle: { crumb: (_: unknown, p: Record<string, string>) => 'Run ' + (p.runId?.slice(0, 8) ?? '') },
+                    element: <RunDetailPage />,
+                  },
                 ],
               },
             ],
