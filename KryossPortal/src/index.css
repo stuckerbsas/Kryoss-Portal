@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #008852;
+  --color-primary-light: #A2C564;
+  --color-dark-bg: #3D4043;
+  --color-pass: #008852;
+  --color-warn: #D97706;
+  --color-fail: #C0392B;
+
+  --font-sans: 'Montserrat', sans-serif;
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased bg-gray-50 text-gray-900;
+  }
+}

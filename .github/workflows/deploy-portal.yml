@@ -1,0 +1,43 @@
+name: Deploy Kryoss Portal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'KryossPortal/**'
+      - '.github/workflows/deploy-portal.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'KryossPortal/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    name: Build and Deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: KryossPortal/package-lock.json
+
+      - name: Install and Build
+        working-directory: KryossPortal
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to SWA
+        if: github.event_name == 'push'
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOY_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: KryossPortal
+          output_location: dist
+          skip_api_build: true
