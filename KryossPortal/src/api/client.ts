@@ -56,6 +56,9 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     throw err;
   }
 
+  // 204 No Content has no body
+  if (res.status === 204) return undefined as T;
+
   const data = await res.json();
   return toCamelCase(data) as T;
 }
