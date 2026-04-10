@@ -10,14 +10,7 @@ import { EnrollmentTab } from './components/org-detail/EnrollmentTab';
 import { ReportsTab } from './components/org-detail/ReportsTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
 import { RunDetailPage } from './pages/RunDetailPage';
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="flex items-center justify-center h-64 text-muted-foreground">
-      Coming soon: {title}
-    </div>
-  );
-}
+import { RecycleBinPage } from './pages/RecycleBinPage';
 
 export const router = createBrowserRouter([
   {
@@ -66,7 +59,7 @@ export const router = createBrowserRouter([
         handle: { crumb: () => 'Recycle Bin' },
         element: (
           <RequirePermission slug="recycle_bin:read">
-            <PlaceholderPage title="Recycle Bin" />
+            <RecycleBinPage />
           </RequirePermission>
         ),
       },

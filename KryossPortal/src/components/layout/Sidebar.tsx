@@ -18,7 +18,7 @@ export function Sidebar() {
   const location = useLocation();
 
   return (
-    <aside className="w-56 border-r bg-white flex flex-col h-full">
+    <aside className="hidden lg:flex w-56 border-r bg-white flex-col h-full">
       <nav className="flex-1 p-3 space-y-1">
         {NAV_ITEMS.map((item, i) => {
           if ('type' in item) return <hr key={i} className="my-2 border-gray-200" />;
