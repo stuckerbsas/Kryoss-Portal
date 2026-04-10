@@ -1,4 +1,6 @@
-const API_BASE = '/api';
+const API_BASE = import.meta.env.DEV
+  ? '/api'  // Vite proxy in dev
+  : 'https://func-kryoss.azurewebsites.net';  // Direct to Function App in production
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
