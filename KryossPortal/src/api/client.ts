@@ -1,19 +1,41 @@
-const FUNC_BASE = 'https://func-kryoss.azurewebsites.net';
-const API_BASE = import.meta.env.DEV ? '/api' : FUNC_BASE;
-const LOGIN_URL = import.meta.env.DEV
-  ? '/.auth/login/aad'
-  : `${FUNC_BASE}/.auth/login/aad?post_login_redirect_uri=${encodeURIComponent(window.location.origin + '/')}`;
+import { msalInstance } from '@/auth/msalInstance';
+import { loginRequest, API_BASE } from '@/auth/msalConfig';
+
+async function getAccessToken(): Promise<string> {
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length === 0) {
+    throw new Error('No authenticated account');
+  }
+
+  try {
+    const response = await msalInstance.acquireTokenSilent({
+      ...loginRequest,
+      account: accounts[0],
+    });
+    return response.accessToken;
+  } catch {
+    // Silent token acquisition failed, trigger interactive login
+    const response = await msalInstance.acquireTokenPopup(loginRequest);
+    return response.accessToken;
+  }
+}
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getAccessToken();
+
   const res = await fetch(`${API_BASE}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      ...options?.headers,
+    },
     ...options,
   });
 
   if (res.status === 401) {
-    window.location.href = LOGIN_URL;
-    throw new Error('Unauthorized');
+    // Token expired or invalid, clear cache and retry login
+    msalInstance.clearCache();
+    throw new Error('Authentication required');
   }
 
   if (!res.ok) {
