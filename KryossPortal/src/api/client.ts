@@ -1,6 +1,8 @@
-const API_BASE = import.meta.env.DEV
-  ? '/api'  // Vite proxy in dev
-  : 'https://func-kryoss.azurewebsites.net';  // Direct to Function App in production
+const FUNC_BASE = 'https://func-kryoss.azurewebsites.net';
+const API_BASE = import.meta.env.DEV ? '/api' : FUNC_BASE;
+const LOGIN_URL = import.meta.env.DEV
+  ? '/.auth/login/aad'
+  : `${FUNC_BASE}/.auth/login/aad?post_login_redirect_uri=${encodeURIComponent(window.location.origin + '/')}`;
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -10,9 +12,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   });
 
   if (res.status === 401) {
-    if (!window.location.pathname.startsWith('/.auth')) {
-      window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
-    }
+    window.location.href = LOGIN_URL;
     throw new Error('Unauthorized');
   }
 
