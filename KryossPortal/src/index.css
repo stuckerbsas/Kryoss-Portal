@@ -2,17 +2,26 @@
 
 @theme {
   --color-primary: #008852;
+  --color-primary-foreground: #ffffff;
   --color-primary-light: #A2C564;
   --color-dark-bg: #3D4043;
   --color-pass: #008852;
   --color-warn: #D97706;
   --color-fail: #C0392B;
+  --color-sidebar-bg: #1a1f2e;
+  --color-sidebar-text: #94a3b8;
+  --color-sidebar-active: #008852;
+  --color-sidebar-hover: #232938;
 
-  --font-sans: 'Montserrat', sans-serif;
+  --font-sans: 'Montserrat', system-ui, sans-serif;
 }
 
 @layer base {
   body {
     @apply font-sans antialiased bg-gray-50 text-gray-900;
+  }
+
+  * {
+    @apply border-gray-200;
   }
 }
