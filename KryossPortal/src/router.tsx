@@ -3,6 +3,11 @@ import { AppShell } from './components/layout/AppShell';
 import { RequirePermission } from './components/auth/RequirePermission';
 import { ForbiddenPage } from './pages/ForbiddenPage';
 import { OrganizationsPage } from './pages/OrganizationsPage';
+import { OrgDetailPage } from './pages/OrgDetailPage';
+import { OverviewTab } from './components/org-detail/OverviewTab';
+import { FleetTab } from './components/org-detail/FleetTab';
+import { EnrollmentTab } from './components/org-detail/EnrollmentTab';
+import { ReportsTab } from './components/org-detail/ReportsTab';
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -31,12 +36,13 @@ export const router = createBrowserRouter([
           },
           {
             path: ':orgId',
+            element: <OrgDetailPage />,
             handle: { crumb: (_: unknown, p: Record<string, string>) => p.orgId?.slice(0, 8) + '...' },
             children: [
-              { index: true, element: <PlaceholderPage title="Org Detail" /> },
-              { path: 'fleet', element: <PlaceholderPage title="Fleet" /> },
-              { path: 'enrollment', element: <PlaceholderPage title="Enrollment" /> },
-              { path: 'reports', element: <PlaceholderPage title="Reports" /> },
+              { index: true, element: <OverviewTab /> },
+              { path: 'fleet', element: <FleetTab /> },
+              { path: 'enrollment', element: <EnrollmentTab /> },
+              { path: 'reports', element: <ReportsTab /> },
               {
                 path: 'machines/:machineId',
                 handle: { crumb: (_: unknown, p: Record<string, string>) => p.machineId?.slice(0, 8) + '...' },
