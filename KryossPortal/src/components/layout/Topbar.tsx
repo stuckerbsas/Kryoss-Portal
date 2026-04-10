@@ -11,17 +11,11 @@ export function Topbar() {
   return (
     <header className="h-14 border-b bg-white flex items-center justify-between px-6 shadow-sm">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-0.5">
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <Shield className="h-4 w-4 text-white" />
-          </div>
-          <span className="font-bold text-xl tracking-tight text-gray-900 ml-2">
-            Kryoss
-          </span>
-          <span className="font-light text-xl tracking-tight text-gray-400 ml-0.5">
-            Portal
-          </span>
-        </div>
+        <img src="/tlit-logo.svg" alt="TeamLogic IT" className="h-8" />
+        <div className="h-6 w-px bg-gray-200" />
+        <span className="text-sm font-medium text-muted-foreground">
+          Security Portal
+        </span>
       </div>
 
       <DropdownMenu>
