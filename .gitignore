@@ -1,0 +1,49 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.vs/
+publish/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+appsettings.Development.json
+local.settings.json
+
+# Azure Functions
+local.settings.json
+
+# Build artifacts
+*.nupkg
+*.snupkg
+
+# Logs
+*.log
+nohup.out
+
+# Test results
+TestResults/
+coverage/
+
+# Temp
+*.tmp
+*.bak
