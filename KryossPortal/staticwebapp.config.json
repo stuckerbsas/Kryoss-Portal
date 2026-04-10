@@ -18,18 +18,10 @@
     {
       "route": "/.auth/login/twitter",
       "statusCode": 404
-    },
-    {
-      "route": "/v1/*",
-      "allowedRoles": ["authenticated"]
-    },
-    {
-      "route": "/v2/*",
-      "allowedRoles": ["authenticated"]
     }
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/*.svg", "/*.ico", "/v1/*", "/v2/*"]
+    "exclude": ["/assets/*", "/*.svg", "/*.ico", "/api/*"]
   }
 }

@@ -1,13 +1,13 @@
+const API_BASE = '/api';
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   });
 
   if (res.status === 401) {
-    // Don't redirect in a loop — SWA handles auth redirects.
-    // Only redirect if we're sure the user isn't already in an auth flow.
     if (!window.location.pathname.startsWith('/.auth')) {
       window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
     }
