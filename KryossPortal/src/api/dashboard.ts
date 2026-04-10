@@ -1,0 +1,31 @@
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from './client';
+import type { FleetDashboard } from '../types';
+
+export function useFleetDashboard(organizationId?: string) {
+  const qs = organizationId ? `?organizationId=${organizationId}` : '';
+  return useQuery({
+    queryKey: ['dashboard', 'fleet', organizationId],
+    queryFn: () => apiFetch<FleetDashboard>(`/v2/dashboard/fleet${qs}`),
+    enabled: !!organizationId,
+  });
+}
+
+export function useTrend(params: {
+  machineId?: string;
+  organizationId?: string;
+  months?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (params.machineId) qs.set('machineId', params.machineId);
+  if (params.organizationId) qs.set('organizationId', params.organizationId);
+  if (params.months) qs.set('months', String(params.months));
+  return useQuery({
+    queryKey: ['dashboard', 'trend', params],
+    queryFn: () =>
+      apiFetch<{ months: number; dataPoints: unknown[] }>(
+        `/v2/dashboard/trend?${qs}`,
+      ),
+    enabled: !!(params.machineId || params.organizationId),
+  });
+}

@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { RequirePermission } from './components/auth/RequirePermission';
 import { ForbiddenPage } from './pages/ForbiddenPage';
+import { OrganizationsPage } from './pages/OrganizationsPage';
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -24,7 +25,7 @@ export const router = createBrowserRouter([
             index: true,
             element: (
               <RequirePermission slug="organizations:read">
-                <PlaceholderPage title="Organizations" />
+                <OrganizationsPage />
               </RequirePermission>
             ),
           },
