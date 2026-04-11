@@ -1,0 +1,8 @@
+{
+  "agentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "apiKey": "sk-kryoss-agent-7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+  "apiSecret": "hmac-4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a",
+  "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzV5t1PfPx0NYCO1mKCGi\noWbKGmNR3G6HfEjT8+RHd/RkExkBN5cL/1E5G7pDcR1uYz9dIkmwzPHQpCGik4El\njO/v/FEDkOJ8kf5xA94L+by6WMDNzaUTfGf4BgJhmVP7viRB/sMEPky+KZsW/RED\nA38D9Df0ql7F9HnS2bxGJIr5fXkOrEPc3RHqvMOObAPfwxlYT1YsFN2RPvOajnJr\nW4e3SQkF1TfK3mAbqsVmBZz0jfHgCLPHbaUwjGAMR7zG4fYagfq8m/Q0y2F8BQZJ\nOKz8XN5+JwXcY+IaGpsn6RSD0hZvwFMbtq3/PvPvNhMZmaJGbcoMIjbOdSXJJBXg\nJwIDAQAB\n-----END PUBLIC KEY-----",
+  "assessmentId": 1,
+  "assessmentName": "CIS Level 1 - Windows 11"
+}

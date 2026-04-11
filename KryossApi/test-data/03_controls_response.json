@@ -1,0 +1,634 @@
+{
+  "version": "2026.04.06",
+  "checks": [
+    {
+      "id": "BL-001",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\Personalization",
+      "valueName": "NoLockScreenCamera",
+      "display": "Reading lock screen camera policy"
+    },
+    {
+      "id": "BL-002",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\Personalization",
+      "valueName": "NoLockScreenSlideshow",
+      "display": "Reading lock screen slideshow policy"
+    },
+    {
+      "id": "BL-003",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\InputPersonalization",
+      "valueName": "AllowInputPersonalization",
+      "display": "Reading speech/inking/typing personalization"
+    },
+    {
+      "id": "BL-004",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\OneDrive",
+      "valueName": "DisableFileSyncNGSC",
+      "display": "Reading OneDrive file sync policy"
+    },
+    {
+      "id": "BL-010",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Services\\LanmanServer\\Parameters",
+      "valueName": "SMB1",
+      "display": "Reading SMBv1 server status"
+    },
+    {
+      "id": "BL-011",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Services\\mrxsmb10",
+      "valueName": "Start",
+      "display": "Reading SMBv1 client driver status"
+    },
+    {
+      "id": "BL-020",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Control\\Lsa",
+      "valueName": "LmCompatibilityLevel",
+      "display": "Reading NTLMv2 authentication level"
+    },
+    {
+      "id": "BL-021",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Control\\Lsa",
+      "valueName": "NoLMHash",
+      "display": "Reading LM hash storage policy"
+    },
+    {
+      "id": "BL-030",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU",
+      "valueName": "NoAutoUpdate",
+      "display": "Reading Windows Update auto-update policy"
+    },
+    {
+      "id": "BL-031",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU",
+      "valueName": "AUOptions",
+      "display": "Reading Windows Update options"
+    },
+    {
+      "id": "BL-040",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Services\\Netbt\\Parameters",
+      "valueName": "NodeType",
+      "display": "Reading NetBIOS node type"
+    },
+    {
+      "id": "BL-041",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows NT\\DNSClient",
+      "valueName": "EnableMulticast",
+      "display": "Reading LLMNR status"
+    },
+    {
+      "id": "BL-050",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+      "valueName": "EnableLUA",
+      "display": "Reading UAC status"
+    },
+    {
+      "id": "BL-051",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+      "valueName": "ConsentPromptBehaviorAdmin",
+      "display": "Reading UAC admin consent prompt behavior"
+    },
+    {
+      "id": "BL-052",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+      "valueName": "PromptOnSecureDesktop",
+      "display": "Reading UAC secure desktop prompt"
+    },
+    {
+      "id": "BL-060",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Control\\Terminal Server",
+      "valueName": "fDenyTSConnections",
+      "display": "Reading Remote Desktop status"
+    },
+    {
+      "id": "BL-061",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp",
+      "valueName": "UserAuthentication",
+      "display": "Reading RDP NLA requirement"
+    },
+    {
+      "id": "BL-070",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows Defender",
+      "valueName": "DisableAntiSpyware",
+      "display": "Reading Windows Defender status"
+    },
+    {
+      "id": "BL-071",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection",
+      "valueName": "DisableRealtimeMonitoring",
+      "display": "Reading Defender real-time protection"
+    },
+    {
+      "id": "BL-080",
+      "type": "registry",
+      "hive": "HKCU",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "valueName": "Hidden",
+      "display": "Reading show hidden files setting"
+    },
+    {
+      "id": "BL-081",
+      "type": "registry",
+      "hive": "HKCU",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "valueName": "HideFileExt",
+      "display": "Reading hide file extensions setting"
+    },
+    {
+      "id": "BL-090",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+      "valueName": "InactivityTimeoutSecs",
+      "display": "Reading machine inactivity timeout"
+    },
+    {
+      "id": "BL-091",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+      "valueName": "LegalNoticeCaption",
+      "display": "Reading logon legal notice caption"
+    },
+    {
+      "id": "BL-092",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+      "valueName": "LegalNoticeText",
+      "display": "Reading logon legal notice text"
+    },
+    {
+      "id": "BL-100",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\Installer",
+      "valueName": "AlwaysInstallElevated",
+      "display": "Reading AlwaysInstallElevated (machine)"
+    },
+    {
+      "id": "BL-101",
+      "type": "registry",
+      "hive": "HKCU",
+      "path": "Software\\Policies\\Microsoft\\Windows\\Installer",
+      "valueName": "AlwaysInstallElevated",
+      "display": "Reading AlwaysInstallElevated (user)"
+    },
+    {
+      "id": "BL-110",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\WinRM\\Service",
+      "valueName": "AllowBasic",
+      "display": "Reading WinRM basic auth (service)"
+    },
+    {
+      "id": "BL-111",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\WinRM\\Client",
+      "valueName": "AllowBasic",
+      "display": "Reading WinRM basic auth (client)"
+    },
+    {
+      "id": "BL-120",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "System\\CurrentControlSet\\Control\\SecurityProviders\\WDigest",
+      "valueName": "UseLogonCredential",
+      "display": "Reading WDigest plaintext credential caching"
+    },
+    {
+      "id": "BL-130",
+      "type": "registry",
+      "hive": "HKLM",
+      "path": "Software\\Policies\\Microsoft\\Windows\\CredentialsDelegation",
+      "valueName": "AllowProtectedCreds",
+      "display": "Reading Credential Guard remote delegation"
+    },
+    {
+      "id": "BL-200",
+      "type": "secedit",
+      "settingName": "MinimumPasswordLength",
+      "display": "Reading minimum password length policy"
+    },
+    {
+      "id": "BL-201",
+      "type": "secedit",
+      "settingName": "PasswordComplexity",
+      "display": "Reading password complexity requirement"
+    },
+    {
+      "id": "BL-202",
+      "type": "secedit",
+      "settingName": "MaximumPasswordAge",
+      "display": "Reading maximum password age"
+    },
+    {
+      "id": "BL-203",
+      "type": "secedit",
+      "settingName": "MinimumPasswordAge",
+      "display": "Reading minimum password age"
+    },
+    {
+      "id": "BL-204",
+      "type": "secedit",
+      "settingName": "PasswordHistorySize",
+      "display": "Reading password history size"
+    },
+    {
+      "id": "BL-205",
+      "type": "secedit",
+      "settingName": "ClearTextPassword",
+      "display": "Reading reversible encryption status"
+    },
+    {
+      "id": "BL-210",
+      "type": "secedit",
+      "settingName": "LockoutBadCount",
+      "display": "Reading account lockout threshold"
+    },
+    {
+      "id": "BL-211",
+      "type": "secedit",
+      "settingName": "ResetLockoutCount",
+      "display": "Reading lockout counter reset time"
+    },
+    {
+      "id": "BL-212",
+      "type": "secedit",
+      "settingName": "LockoutDuration",
+      "display": "Reading lockout duration"
+    },
+    {
+      "id": "BL-220",
+      "type": "secedit",
+      "settingName": "EnableGuestAccount",
+      "display": "Reading guest account status"
+    },
+    {
+      "id": "BL-221",
+      "type": "secedit",
+      "settingName": "EnableAdminAccount",
+      "display": "Reading built-in administrator account status"
+    },
+    {
+      "id": "BL-222",
+      "type": "secedit",
+      "settingName": "NewAdministratorName",
+      "display": "Reading renamed administrator account name"
+    },
+    {
+      "id": "BL-223",
+      "type": "secedit",
+      "settingName": "NewGuestName",
+      "display": "Reading renamed guest account name"
+    },
+    {
+      "id": "BL-300",
+      "type": "auditpol",
+      "subcategory": "Credential Validation",
+      "display": "Checking credential validation audit policy"
+    },
+    {
+      "id": "BL-301",
+      "type": "auditpol",
+      "subcategory": "Application Group Management",
+      "display": "Checking application group management audit"
+    },
+    {
+      "id": "BL-302",
+      "type": "auditpol",
+      "subcategory": "Security Group Management",
+      "display": "Checking security group management audit"
+    },
+    {
+      "id": "BL-303",
+      "type": "auditpol",
+      "subcategory": "User Account Management",
+      "display": "Checking user account management audit"
+    },
+    {
+      "id": "BL-304",
+      "type": "auditpol",
+      "subcategory": "Process Creation",
+      "display": "Checking process creation audit"
+    },
+    {
+      "id": "BL-305",
+      "type": "auditpol",
+      "subcategory": "Account Lockout",
+      "display": "Checking account lockout audit"
+    },
+    {
+      "id": "BL-306",
+      "type": "auditpol",
+      "subcategory": "Logoff",
+      "display": "Checking logoff audit"
+    },
+    {
+      "id": "BL-307",
+      "type": "auditpol",
+      "subcategory": "Logon",
+      "display": "Checking logon audit"
+    },
+    {
+      "id": "BL-308",
+      "type": "auditpol",
+      "subcategory": "Special Logon",
+      "display": "Checking special logon audit"
+    },
+    {
+      "id": "BL-309",
+      "type": "auditpol",
+      "subcategory": "Audit Policy Change",
+      "display": "Checking audit policy change audit"
+    },
+    {
+      "id": "BL-310",
+      "type": "auditpol",
+      "subcategory": "Authentication Policy Change",
+      "display": "Checking authentication policy change audit"
+    },
+    {
+      "id": "BL-311",
+      "type": "auditpol",
+      "subcategory": "Sensitive Privilege Use",
+      "display": "Checking sensitive privilege use audit"
+    },
+    {
+      "id": "BL-312",
+      "type": "auditpol",
+      "subcategory": "Security State Change",
+      "display": "Checking security state change audit"
+    },
+    {
+      "id": "BL-313",
+      "type": "auditpol",
+      "subcategory": "Security System Extension",
+      "display": "Checking security system extension audit"
+    },
+    {
+      "id": "BL-314",
+      "type": "auditpol",
+      "subcategory": "System Integrity",
+      "display": "Checking system integrity audit"
+    },
+    {
+      "id": "BL-400",
+      "type": "firewall",
+      "profile": "Domain",
+      "property": "Enabled",
+      "display": "Checking domain firewall status"
+    },
+    {
+      "id": "BL-401",
+      "type": "firewall",
+      "profile": "Domain",
+      "property": "DefaultInboundAction",
+      "display": "Checking domain firewall inbound default"
+    },
+    {
+      "id": "BL-402",
+      "type": "firewall",
+      "profile": "Domain",
+      "property": "DefaultOutboundAction",
+      "display": "Checking domain firewall outbound default"
+    },
+    {
+      "id": "BL-403",
+      "type": "firewall",
+      "profile": "Domain",
+      "property": "LogFilePath",
+      "display": "Reading domain firewall log path"
+    },
+    {
+      "id": "BL-404",
+      "type": "firewall",
+      "profile": "Domain",
+      "property": "LogFileSize",
+      "display": "Reading domain firewall log size"
+    },
+    {
+      "id": "BL-405",
+      "type": "firewall",
+      "profile": "Domain",
+      "property": "LogDroppedPackets",
+      "display": "Checking domain firewall dropped packet logging"
+    },
+    {
+      "id": "BL-406",
+      "type": "firewall",
+      "profile": "Domain",
+      "property": "LogSuccessfulConnections",
+      "display": "Checking domain firewall success logging"
+    },
+    {
+      "id": "BL-410",
+      "type": "firewall",
+      "profile": "Private",
+      "property": "Enabled",
+      "display": "Checking private firewall status"
+    },
+    {
+      "id": "BL-411",
+      "type": "firewall",
+      "profile": "Private",
+      "property": "DefaultInboundAction",
+      "display": "Checking private firewall inbound default"
+    },
+    {
+      "id": "BL-412",
+      "type": "firewall",
+      "profile": "Private",
+      "property": "DefaultOutboundAction",
+      "display": "Checking private firewall outbound default"
+    },
+    {
+      "id": "BL-413",
+      "type": "firewall",
+      "profile": "Private",
+      "property": "LogFilePath",
+      "display": "Reading private firewall log path"
+    },
+    {
+      "id": "BL-414",
+      "type": "firewall",
+      "profile": "Private",
+      "property": "LogFileSize",
+      "display": "Reading private firewall log size"
+    },
+    {
+      "id": "BL-415",
+      "type": "firewall",
+      "profile": "Private",
+      "property": "LogDroppedPackets",
+      "display": "Checking private firewall dropped packet logging"
+    },
+    {
+      "id": "BL-416",
+      "type": "firewall",
+      "profile": "Private",
+      "property": "LogSuccessfulConnections",
+      "display": "Checking private firewall success logging"
+    },
+    {
+      "id": "BL-420",
+      "type": "firewall",
+      "profile": "Public",
+      "property": "Enabled",
+      "display": "Checking public firewall status"
+    },
+    {
+      "id": "BL-421",
+      "type": "firewall",
+      "profile": "Public",
+      "property": "DefaultInboundAction",
+      "display": "Checking public firewall inbound default"
+    },
+    {
+      "id": "BL-422",
+      "type": "firewall",
+      "profile": "Public",
+      "property": "DefaultOutboundAction",
+      "display": "Checking public firewall outbound default"
+    },
+    {
+      "id": "BL-423",
+      "type": "firewall",
+      "profile": "Public",
+      "property": "LogFilePath",
+      "display": "Reading public firewall log path"
+    },
+    {
+      "id": "BL-424",
+      "type": "firewall",
+      "profile": "Public",
+      "property": "LogFileSize",
+      "display": "Reading public firewall log size"
+    },
+    {
+      "id": "BL-425",
+      "type": "firewall",
+      "profile": "Public",
+      "property": "LogDroppedPackets",
+      "display": "Checking public firewall dropped packet logging"
+    },
+    {
+      "id": "BL-426",
+      "type": "firewall",
+      "profile": "Public",
+      "property": "LogSuccessfulConnections",
+      "display": "Checking public firewall success logging"
+    },
+    {
+      "id": "BL-500",
+      "type": "service",
+      "serviceName": "XblGameSave",
+      "display": "Checking Xbox Game Save service"
+    },
+    {
+      "id": "BL-501",
+      "type": "service",
+      "serviceName": "XboxGipSvc",
+      "display": "Checking Xbox Accessory Management service"
+    },
+    {
+      "id": "BL-502",
+      "type": "service",
+      "serviceName": "XboxNetApiSvc",
+      "display": "Checking Xbox Live Networking service"
+    },
+    {
+      "id": "BL-503",
+      "type": "service",
+      "serviceName": "RemoteRegistry",
+      "display": "Checking Remote Registry service"
+    },
+    {
+      "id": "BL-504",
+      "type": "service",
+      "serviceName": "lltdsvc",
+      "display": "Checking Link-Layer Topology Discovery service"
+    },
+    {
+      "id": "BL-550",
+      "type": "netaccount",
+      "field": "MinimumPasswordLength",
+      "display": "Reading net accounts password length"
+    },
+    {
+      "id": "BL-551",
+      "type": "netaccount",
+      "field": "MaximumPasswordAge",
+      "display": "Reading net accounts max password age"
+    },
+    {
+      "id": "BL-552",
+      "type": "netaccount",
+      "field": "MinimumPasswordAge",
+      "display": "Reading net accounts min password age"
+    },
+    {
+      "id": "BL-553",
+      "type": "netaccount",
+      "field": "LockoutThreshold",
+      "display": "Reading net accounts lockout threshold"
+    },
+    {
+      "id": "BL-554",
+      "type": "netaccount",
+      "field": "LockoutDuration",
+      "display": "Reading net accounts lockout duration"
+    },
+    {
+      "id": "BL-580",
+      "type": "command",
+      "executable": "bcdedit.exe",
+      "arguments": "/enum {default}",
+      "display": "Reading boot configuration data"
+    },
+    {
+      "id": "BL-581",
+      "type": "command",
+      "executable": "cipher.exe",
+      "arguments": "/u /n",
+      "display": "Checking EFS encrypted files"
+    }
+  ]
+}

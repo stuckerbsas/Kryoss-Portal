@@ -1,6 +1,6 @@
-import { useParams } from 'react-router-dom';
-import { Monitor, ScanSearch, BarChart3, Award, AlertTriangle } from 'lucide-react';
+import { Monitor, ScanSearch, BarChart3, Award, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { useFleetDashboard } from '@/api/dashboard';
+import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { GradeBadge } from '@/components/shared/GradeBadge';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +16,7 @@ const severityColors: Record<string, string> = {
 };
 
 export function OverviewTab() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const { orgId } = useOrgParam();
   const { data: dashboard, isLoading } = useFleetDashboard(orgId);
 
   if (isLoading) {
@@ -85,6 +85,66 @@ export function OverviewTab() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Framework Compliance KPIs */}
+      {dashboard.frameworkScores && dashboard.frameworkScores.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              Framework Compliance
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {dashboard.frameworkScores.map((fs) => {
+                const scoreColor =
+                  fs.avgScore >= 90
+                    ? '#008852'
+                    : fs.avgScore >= 70
+                      ? '#A2C564'
+                      : fs.avgScore >= 50
+                        ? '#D97706'
+                        : '#C0392B';
+                return (
+                  <div
+                    key={fs.code}
+                    className="rounded-lg border p-4 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold">{fs.code}</span>
+                      <span
+                        className="text-xl font-bold tabular-nums"
+                        style={{ color: scoreColor }}
+                      >
+                        {fs.avgScore}%
+                      </span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${fs.avgScore}%`,
+                          backgroundColor: scoreColor,
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <div className="flex gap-2">
+                        <span className="text-green-700">{fs.totalPass}P</span>
+                        <span className="text-amber-600">{fs.totalWarn}W</span>
+                        <span className="text-red-600">{fs.totalFail}F</span>
+                      </div>
+                      <span>{fs.machineCount} machines</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Top failing controls */}
       {dashboard.topFailingControls.length > 0 && (

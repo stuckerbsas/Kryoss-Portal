@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './client';
 import type { Organization } from '../types';
+import { isGuid, slugify } from '@/lib/slugify';
 
 interface OrgListResponse {
   total: number;
@@ -21,12 +22,32 @@ export function useOrganizations(params?: { status?: string; search?: string }) 
   });
 }
 
-export function useOrganization(id: string | undefined) {
+/**
+ * Accepts either a GUID or a slug. If slug, resolves via the org list cache.
+ */
+export function useOrganization(idOrSlug: string | undefined) {
+  const isId = idOrSlug ? isGuid(idOrSlug) : false;
+
+  // If it's a slug, we need the org list to resolve it
+  const { data: orgList } = useOrganizations();
+  const resolvedId = isId
+    ? idOrSlug
+    : orgList?.items.find((o) => slugify(o.name) === idOrSlug)?.id;
+
   return useQuery({
-    queryKey: ['organization', id],
-    queryFn: () => apiFetch<Organization>(`/v2/organizations/${id}`),
-    enabled: !!id,
+    queryKey: ['organization', resolvedId],
+    queryFn: () => apiFetch<Organization>(`/v2/organizations/${resolvedId}`),
+    enabled: !!resolvedId,
   });
+}
+
+/** Get the resolved GUID for an org slug/id. */
+export function useResolvedOrgId(idOrSlug: string | undefined): string | undefined {
+  const isId = idOrSlug ? isGuid(idOrSlug) : false;
+  const { data: orgList } = useOrganizations();
+
+  if (isId) return idOrSlug;
+  return orgList?.items.find((o) => slugify(o.name) === idOrSlug)?.id;
 }
 
 export function useCreateOrganization() {

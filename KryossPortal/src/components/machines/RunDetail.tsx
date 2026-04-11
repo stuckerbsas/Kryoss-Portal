@@ -1,12 +1,14 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search } from 'lucide-react';
+import { useMachineParam } from '@/hooks/useMachineParam';
+import { ArrowLeft, Search, ShieldCheck } from 'lucide-react';
 import { useRunDetail } from '@/api/machines';
 import { useCatalogControls } from '@/api/catalog';
 import { GradeBadge } from '@/components/shared/GradeBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
@@ -81,11 +83,8 @@ function formatDuration(ms: number | null): string {
 }
 
 export function RunDetail() {
-  const { orgId, machineId, runId } = useParams<{
-    orgId: string;
-    machineId: string;
-    runId: string;
-  }>();
+  const { orgSlug, machineId, machineSlug } = useMachineParam();
+  const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
 
   const { data: run, isLoading } = useRunDetail(machineId, runId);
@@ -182,7 +181,7 @@ export function RunDetail() {
           variant="ghost"
           size="sm"
           onClick={() =>
-            navigate(`/organizations/${orgId}/machines/${machineId}`)
+            navigate(`/organizations/${orgSlug}/machines/${machineSlug}`)
           }
         >
           <ArrowLeft className="size-4 mr-1" />
@@ -230,6 +229,54 @@ export function RunDetail() {
           </span>
         )}
       </div>
+
+      {/* Framework Scores */}
+      {run.frameworkScores && run.frameworkScores.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <ShieldCheck className="size-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">Framework Compliance</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {run.frameworkScores.map((fs) => {
+              const total = fs.passCount + fs.warnCount + fs.failCount;
+              return (
+                <Card key={fs.code} className="p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold">{fs.code}</span>
+                    <span className="text-lg font-bold tabular-nums">
+                      {fs.score}%
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${fs.score}%`,
+                        backgroundColor:
+                          fs.score >= 90
+                            ? '#008852'
+                            : fs.score >= 70
+                              ? '#A2C564'
+                              : fs.score >= 50
+                                ? '#D97706'
+                                : '#C0392B',
+                      }}
+                    />
+                  </div>
+                  <div className="flex gap-2 text-xs text-muted-foreground">
+                    <span className="text-green-700">{fs.passCount}P</span>
+                    <span className="text-amber-600">{fs.warnCount}W</span>
+                    <span className="text-red-600">{fs.failCount}F</span>
+                    <span className="ml-auto">{total} controls</span>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Report Generator */}
       {runId && <ReportGenerator targetType="run" targetId={runId} />}

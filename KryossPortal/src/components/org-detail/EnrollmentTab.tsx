@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useOrgParam } from '@/hooks/useOrgParam';
 import { Copy, Key, Plus, Trash2, Check } from 'lucide-react';
 import {
   useEnrollmentCodes,
@@ -118,6 +118,7 @@ function GenerateCodeDialog({ orgId }: { orgId: string }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
   const [expiryDays, setExpiryDays] = useState('7');
+  const [maxUses, setMaxUses] = useState('');
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const createCode = useCreateEnrollmentCode();
 
@@ -126,16 +127,17 @@ function GenerateCodeDialog({ orgId }: { orgId: string }) {
       organizationId: orgId,
       label: label || undefined,
       expiryDays: Number(expiryDays),
+      maxUses: maxUses && maxUses !== '1' ? Number(maxUses) : undefined,
     });
     setGeneratedCode(result.code);
   };
 
   const handleClose = () => {
     setOpen(false);
-    // Reset state after dialog close animation
     setTimeout(() => {
       setLabel('');
       setExpiryDays('7');
+      setMaxUses('');
       setGeneratedCode(null);
     }, 200);
   };
@@ -187,7 +189,7 @@ function GenerateCodeDialog({ orgId }: { orgId: string }) {
             <DialogHeader>
               <DialogTitle>Generate Enrollment Code</DialogTitle>
               <DialogDescription>
-                Create a one-time enrollment code for a new machine.
+                Create an enrollment code to register machines.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
@@ -195,23 +197,41 @@ function GenerateCodeDialog({ orgId }: { orgId: string }) {
                 <Label htmlFor="code-label">Label (optional)</Label>
                 <Input
                   id="code-label"
-                  placeholder="e.g. Front desk PC"
+                  placeholder="e.g. Cox Science Museum - fleet scan"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="code-expiry">Expires in</Label>
-                <Select value={expiryDays} onValueChange={setExpiryDays}>
-                  <SelectTrigger id="code-expiry">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="7">7 days</SelectItem>
-                    <SelectItem value="14">14 days</SelectItem>
-                    <SelectItem value="30">30 days</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="code-expiry">Expires in</Label>
+                  <Select value={expiryDays} onValueChange={setExpiryDays}>
+                    <SelectTrigger id="code-expiry">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="7">7 days</SelectItem>
+                      <SelectItem value="14">14 days</SelectItem>
+                      <SelectItem value="30">30 days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="code-max-uses">Max uses</Label>
+                  <Select value={maxUses || "1"} onValueChange={setMaxUses}>
+                    <SelectTrigger id="code-max-uses">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Single use</SelectItem>
+                      <SelectItem value="10">10 machines</SelectItem>
+                      <SelectItem value="25">25 machines</SelectItem>
+                      <SelectItem value="50">50 machines</SelectItem>
+                      <SelectItem value="100">100 machines</SelectItem>
+                      <SelectItem value="999">Unlimited</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
             <DialogFooter>
@@ -230,7 +250,7 @@ function GenerateCodeDialog({ orgId }: { orgId: string }) {
 }
 
 export function EnrollmentTab() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const { orgId } = useOrgParam();
   const { data: codes, isLoading } = useEnrollmentCodes(orgId);
   const deleteCode = useDeleteEnrollmentCode();
 

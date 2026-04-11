@@ -1,0 +1,263 @@
+﻿{
+    "DiscoveryTimestamp":  "2026-04-03 20:19:22",
+    "Devices":  [
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362115)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.1",
+                        "Hostname":  "192.168.4.1",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "b4-20-46-4d-9c-ad"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362118)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.20",
+                        "Hostname":  "192.168.4.20",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "0c-ef-15-a8-ae-cd"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362119)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.22",
+                        "Hostname":  "192.168.4.22",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "42-a2-1b-c0-7c-69"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362120)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.23",
+                        "Hostname":  "192.168.4.23",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "c0-f5-35-4e-eb-f8"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362121)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.24",
+                        "Hostname":  "192.168.4.24",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "d6-1a-70-f4-13-92"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362121)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.25",
+                        "Hostname":  "192.168.4.25",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "10-f6-0a-22-e5-4d"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362122)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.26",
+                        "Hostname":  "192.168.4.26",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "28-39-5e-26-7f-e3"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362123)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.27",
+                        "Hostname":  "192.168.4.27",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "40-d9-5a-e2-f5-76"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362125)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.30",
+                        "Hostname":  "192.168.4.30",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "a6-71-5f-89-e3-c6"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362125)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.37",
+                        "Hostname":  "192.168.4.37",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "46-44-30-52-65-7a"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362126)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.47",
+                        "Hostname":  "192.168.4.47",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "58-b0-3e-2c-12-d8"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362128)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.133",
+                        "Hostname":  "192.168.4.133",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "c4-35-d9-b3-75-07"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362129)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.139",
+                        "Hostname":  "192.168.4.139",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "72-b1-b6-5e-67-5a"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362130)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.140",
+                        "Hostname":  "192.168.4.140",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "42-e9-f2-12-ac-f5"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362132)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.227",
+                        "Hostname":  "192.168.4.227",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "86-e6-25-a5-77-cf"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362133)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.4.239",
+                        "Hostname":  "192.168.4.239",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "26-69-fd-43-3f-3f"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362134)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.5.65",
+                        "Hostname":  "192.168.5.65",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "ac-ec-85-ca-94-7b"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362134)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.5.66",
+                        "Hostname":  "192.168.5.66",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "ac-ec-85-84-9b-0b"
+                    },
+                    {
+                        "DiscoveryMethod":  "ARP",
+                        "Timestamp":  {
+                                          "value":  "\/Date(1775258362135)\/",
+                                          "DisplayHint":  2,
+                                          "DateTime":  "Friday, April 3, 2026 8:19:22 PM"
+                                      },
+                        "IPAddress":  "192.168.5.94",
+                        "Hostname":  "192.168.5.94",
+                        "ARPType":  "dynamic",
+                        "Status":  "Active",
+                        "MACAddress":  "7a-cd-e8-c3-5f-ed"
+                    }
+                ],
+    "NetworkConfiguration":  {
+                                 "TotalPossibleHosts":  1022,
+                                 "NetworkAddress":  "192.168.4.0",
+                                 "SubnetMask":  "255.255.252.0",
+                                 "BroadcastAddress":  "192.168.7.255",
+                                 "PrefixLength":  22,
+                                 "IPAddress":  "192.168.5.132",
+                                 "Gateway":  "192.168.4.1",
+                                 "InterfaceName":  "Wi-Fi"
+                             },
+    "TotalDevicesFound":  19
+}

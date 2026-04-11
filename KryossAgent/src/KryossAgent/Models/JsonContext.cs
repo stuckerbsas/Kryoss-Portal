@@ -1,0 +1,38 @@
+using System.Text.Json.Serialization;
+
+namespace KryossAgent.Models;
+
+/// <summary>
+/// Source-generated JSON serializer context for AOT compatibility.
+/// All types that need serialization/deserialization must be listed here.
+/// </summary>
+[JsonSerializable(typeof(AssessmentPayload))]
+[JsonSerializable(typeof(AgentEnvelope))]
+[JsonSerializable(typeof(EnrollRequest))]
+[JsonSerializable(typeof(ControlsResponse))]
+[JsonSerializable(typeof(EnrollmentResponse))]
+[JsonSerializable(typeof(ResultsResponse))]
+[JsonSerializable(typeof(CheckResult))]
+[JsonSerializable(typeof(List<CheckResult>))]
+[JsonSerializable(typeof(ControlDef))]
+[JsonSerializable(typeof(List<ControlDef>))]
+[JsonSerializable(typeof(PlatformInfo))]
+[JsonSerializable(typeof(HardwareInfo))]
+[JsonSerializable(typeof(SoftwareItem))]
+[JsonSerializable(typeof(List<SoftwareItem>))]
+// Primitive types that can appear polymorphically inside CheckResult.Value (object?).
+// Without these, source-gen throws NotSupportedException when an engine writes a
+// boxed long/int/bool/string/double to Value (e.g. EventLogConfiguration.MaximumSizeInBytes
+// returns long, TpmEngine.Present returns bool, etc.).
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(double))]
+[JsonSourceGenerationOptions(
+    PropertyNameCaseInsensitive = true,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+public partial class KryossJsonContext : JsonSerializerContext
+{
+}

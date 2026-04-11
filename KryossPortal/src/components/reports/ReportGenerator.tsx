@@ -11,6 +11,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Can } from '@/components/auth/Can';
+import { API_BASE } from '@/auth/msalConfig';
+import { msalInstance } from '@/auth/msalInstance';
+import { loginRequest } from '@/auth/msalConfig';
 
 interface ReportGeneratorProps {
   targetType: 'run' | 'org';
@@ -32,39 +35,78 @@ const REPORT_TYPES = [
   { value: 'presales', label: 'Presales' },
 ] as const;
 
-function buildUrl(
+function buildApiPath(
   targetType: 'run' | 'org',
   targetId: string,
   reportType: string,
   framework: string,
 ): string {
-  const baseUrl =
+  const base =
     targetType === 'run'
-      ? `/api/v2/reports/${targetId}`
-      : `/api/v2/reports/org/${targetId}`;
+      ? `/v2/reports/${targetId}`
+      : `/v2/reports/org/${targetId}`;
   const params = new URLSearchParams();
   params.set('type', reportType);
   if (framework !== 'all') params.set('framework', framework);
-  return `${baseUrl}?${params}`;
+  return `${base}?${params}`;
+}
+
+async function fetchReport(apiPath: string): Promise<string> {
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length === 0) throw new Error('Not authenticated');
+
+  let token: string;
+  try {
+    const res = await msalInstance.acquireTokenSilent({
+      ...loginRequest,
+      account: accounts[0],
+    });
+    token = res.accessToken;
+  } catch {
+    const res = await msalInstance.acquireTokenPopup(loginRequest);
+    token = res.accessToken;
+  }
+
+  const res = await fetch(`${API_BASE}${apiPath}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`HTTP ${res.status}: ${body}`);
+  }
+
+  return res.text();
 }
 
 export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) {
   const [framework, setFramework] = useState('all');
   const [reportType, setReportType] = useState('technical');
-  const [downloading, setDownloading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const url = buildUrl(targetType, targetId, reportType, framework);
+  const apiPath = buildApiPath(targetType, targetId, reportType, framework);
 
-  const handleOpenTab = () => {
-    window.open(url, '_blank');
+  const handleOpenTab = async () => {
+    setLoading(true);
+    try {
+      const html = await fetchReport(apiPath);
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // Clean up after a delay (browser needs time to load)
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success('Report opened');
+    } catch (err: any) {
+      toast.error(`Failed to generate report: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDownload = async () => {
-    setDownloading(true);
+    setLoading(true);
     try {
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const html = await res.text();
+      const html = await fetchReport(apiPath);
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -72,10 +114,10 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
       a.click();
       URL.revokeObjectURL(a.href);
       toast.success('Report downloaded');
-    } catch {
-      toast.error('Failed to download report');
+    } catch (err: any) {
+      toast.error(`Failed to download report: ${err.message}`);
     } finally {
-      setDownloading(false);
+      setLoading(false);
     }
   };
 
@@ -110,17 +152,26 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
 
         <Can permission="reports:export">
           <div className="flex items-center gap-2 ml-auto">
-            <Button variant="outline" size="sm" onClick={handleOpenTab}>
-              <ExternalLink className="size-4 mr-1" />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={handleOpenTab}
+            >
+              {loading ? (
+                <Loader2 className="size-4 mr-1 animate-spin" />
+              ) : (
+                <ExternalLink className="size-4 mr-1" />
+              )}
               Open in new tab
             </Button>
             <Button
               variant="outline"
               size="sm"
-              disabled={downloading}
+              disabled={loading}
               onClick={handleDownload}
             >
-              {downloading ? (
+              {loading ? (
                 <Loader2 className="size-4 mr-1 animate-spin" />
               ) : (
                 <Download className="size-4 mr-1" />

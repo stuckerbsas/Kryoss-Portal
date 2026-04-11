@@ -40,6 +40,8 @@ export interface Machine {
   cpuName: string | null;
   ramGb: number | null;
   diskType: string | null;
+  ipAddress: string | null;
+  domainStatus: string | null;
   isActive: boolean;
   lastSeenAt: string | null;
   firstSeenAt: string;
@@ -74,6 +76,15 @@ export interface ControlResultItem {
   actualValue: string | null;
 }
 
+export interface FrameworkScore {
+  code: string;
+  name: string;
+  score: number;
+  passCount: number;
+  warnCount: number;
+  failCount: number;
+}
+
 export interface RunDetail {
   id: string;
   globalScore: number | null;
@@ -87,6 +98,7 @@ export interface RunDetail {
   durationMs: number | null;
   startedAt: string;
   completedAt: string | null;
+  frameworkScores: FrameworkScore[];
   results: ControlResultItem[];
 }
 
@@ -104,6 +116,16 @@ export interface EnrollmentCode {
   isUsed: boolean;
 }
 
+export interface FleetFrameworkScore {
+  code: string;
+  name: string;
+  avgScore: number;
+  totalPass: number;
+  totalWarn: number;
+  totalFail: number;
+  machineCount: number;
+}
+
 export interface FleetDashboard {
   totalMachines: number;
   assessedMachines: number;
@@ -118,6 +140,7 @@ export interface FleetDashboard {
     severity: string;
     failCount: number;
   }[];
+  frameworkScores: FleetFrameworkScore[];
 }
 
 export interface RecycleBinItem {

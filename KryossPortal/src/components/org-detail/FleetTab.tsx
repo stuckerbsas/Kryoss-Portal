@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Search, Monitor } from 'lucide-react';
 import { useMachines } from '@/api/machines';
+import { useOrgParam } from '@/hooks/useOrgParam';
 import { GradeBadge } from '@/components/shared/GradeBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Input } from '@/components/ui/input';
@@ -35,7 +36,7 @@ function formatRelativeTime(dateStr: string | null): string {
 const PAGE_SIZE = 25;
 
 export function FleetTab() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const { orgId, orgSlug } = useOrgParam();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -83,6 +84,7 @@ export function FleetTab() {
               <TableRow>
                 <TableHead>Hostname</TableHead>
                 <TableHead>OS</TableHead>
+                <TableHead>IP</TableHead>
                 <TableHead>CPU / RAM</TableHead>
                 <TableHead>Score</TableHead>
                 <TableHead>Status</TableHead>
@@ -95,12 +97,15 @@ export function FleetTab() {
                   key={m.id}
                   className="cursor-pointer"
                   onClick={() =>
-                    navigate(`/organizations/${orgId}/machines/${m.id}`)
+                    navigate(`/organizations/${orgSlug}/machines/${m.hostname}`)
                   }
                 >
                   <TableCell className="font-medium">{m.hostname}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {m.osName ?? 'Unknown'}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs font-mono">
+                    {m.ipAddress ?? '—'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {m.cpuName ?? 'N/A'}

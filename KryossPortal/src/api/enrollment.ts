@@ -20,6 +20,7 @@ export function useCreateEnrollmentCode() {
       organizationId: string;
       label?: string;
       expiryDays?: number;
+      maxUses?: number;
     }) =>
       apiFetch<{ code: string }>('/v2/enrollment-codes', {
         method: 'POST',

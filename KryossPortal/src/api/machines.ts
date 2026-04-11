@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from './client';
 import type { Machine, RunDetail } from '../types';
 import type { AssessmentRunSummary } from '../types';
+import { isGuid } from '@/lib/slugify';
 
 interface MachineListResponse {
   total: number;
@@ -11,16 +12,28 @@ interface MachineListResponse {
 }
 
 export interface MachineDetail extends Machine {
+  agentId: string;
   osBuild: string | null;
+  // Hardware
+  manufacturer: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  cpuCores: number | null;
+  diskSizeGb: number | null;
+  diskFreeGb: number | null;
+  // Security
   tpmPresent: boolean | null;
   tpmVersion: string | null;
   secureBoot: boolean | null;
   bitlocker: boolean | null;
-  ipAddress: string | null;
+  // Network
   macAddress: string | null;
-  manufacturer: string | null;
-  model: string | null;
-  serialNumber: string | null;
+  // Identity
+  domainName: string | null;
+  // Lifecycle
+  systemAgeDays: number | null;
+  lastBootAt: string | null;
+  // History
   assessmentHistory: AssessmentRunSummary[];
 }
 
@@ -42,12 +55,45 @@ export function useMachines(params: {
   });
 }
 
-export function useMachine(id: string | undefined) {
-  return useQuery({
-    queryKey: ['machine', id],
-    queryFn: () => apiFetch<MachineDetail>(`/v2/machines/${id}`),
-    enabled: !!id,
+/**
+ * Accepts either a GUID or a hostname. If hostname, resolves via the machine list.
+ */
+export function useMachine(idOrHostname: string | undefined, organizationId?: string) {
+  const isMachineId = idOrHostname ? isGuid(idOrHostname) : false;
+
+  // If hostname, resolve from machine list
+  const { data: machineList } = useMachines({
+    organizationId,
+    pageSize: 100,
   });
+  const resolvedId = isMachineId
+    ? idOrHostname
+    : machineList?.items.find(
+        (m) => m.hostname.toLowerCase() === idOrHostname?.toLowerCase(),
+      )?.id;
+
+  return useQuery({
+    queryKey: ['machine', resolvedId],
+    queryFn: () => apiFetch<MachineDetail>(`/v2/machines/${resolvedId}`),
+    enabled: !!resolvedId,
+  });
+}
+
+/** Get the resolved GUID for a machine hostname/id. */
+export function useResolvedMachineId(
+  idOrHostname: string | undefined,
+  organizationId?: string,
+): string | undefined {
+  const isMachineId = idOrHostname ? isGuid(idOrHostname) : false;
+  const { data: machineList } = useMachines({
+    organizationId,
+    pageSize: 100,
+  });
+
+  if (isMachineId) return idOrHostname;
+  return machineList?.items.find(
+    (m) => m.hostname.toLowerCase() === idOrHostname?.toLowerCase(),
+  )?.id;
 }
 
 export function useRunDetail(
@@ -59,5 +105,25 @@ export function useRunDetail(
     queryFn: () =>
       apiFetch<RunDetail>(`/v2/machines/${machineId}/runs/${runId}`),
     enabled: !!machineId && !!runId,
+  });
+}
+
+export interface SoftwareItem {
+  name: string;
+  version: string | null;
+  publisher: string | null;
+}
+
+interface SoftwareListResponse {
+  total: number;
+  items: SoftwareItem[];
+}
+
+export function useMachineSoftware(machineId: string | undefined) {
+  return useQuery({
+    queryKey: ['machine-software', machineId],
+    queryFn: () =>
+      apiFetch<SoftwareListResponse>(`/v2/machines/${machineId}/software`),
+    enabled: !!machineId,
   });
 }

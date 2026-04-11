@@ -28,9 +28,11 @@ Projecto Kryoss\
 │   └── CLAUDE.md                   <- See this for full API map
 ├── KryossAgent\                    <- Windows agent (.NET 8 AOT)
 │   └── CLAUDE.md                   <- See this for full agent map
-├── KryossPortal\                   <- Frontend (React 18 + Vite + TS + shadcn/ui)
+├── KryossPortal\                   <- Frontend (React 18 + Vite + TS + shadcn/ui + MSAL)
 │                                      Repo: github.com/stuckerbsas/Kryoss-Portal
-│                                      Auth: SWA Auth (Entra ID), permission-driven UI
+│                                      Deployed: zealous-dune-0ac672d10.6.azurestaticapps.net
+│                                      Auth: MSAL (@azure/msal-browser) + Entra ID Bearer token
+│                                      Friendly URLs: /organizations/{slug}/machines/{hostname}
 │                                      Spec: docs/superpowers/specs/2026-04-10-kryoss-portal-mvp-design.md
 │                                      Plan: docs/superpowers/plans/2026-04-10-kryoss-portal-mvp.md
 ├── Scripts\                        <- Legacy PowerShell scripts & audit tools
@@ -56,14 +58,14 @@ Projecto Kryoss\
 | Backend API | .NET 8 Azure Functions + EF Core 8 + Azure SQL | ✅ Deployed (`func-kryoss`) |
 | Database | Azure SQL `sql-kryoss.database.windows.net` / DB `KryossDb` | ✅ Seeded with ~647 active controls |
 | Agent | .NET 8 Native AOT (win-x64, single-file, ~68 MB self-contained) | ✅ Compiles, has 11 engines (registry, secedit, auditpol, firewall, service, netaccount, command, eventlog, certstore, bitlocker, tpm); still needs `raw_*` payload enrichment (deferred) |
-| Portal | Unknown — **not yet mapped** | ❓ |
-| Auth | Agent: API Key + HMAC-SHA256. Portal: Entra ID Bearer token | ✅ Implemented in middleware |
+| Portal | React 18 + Vite + TS + shadcn/ui + MSAL, deployed on Azure SWA | ✅ Deployed (`zealous-dune-0ac672d10.6.azurestaticapps.net`) |
+| Auth | Agent: API Key + HMAC-SHA256 (`ApiKeyAuthMiddleware`). Portal: MSAL JWT via `BearerAuthMiddleware`. Easy Auth DISABLED on func-kryoss (platform.enabled=true, requireAuthentication=false, AllowAnonymous). All auth handled by custom middleware. | ✅ Implemented in middleware |
 | Crypto | RSA-2048 + AES-256-GCM for payload encryption (agent → API) | ⚠️ Agent has `CryptoService.cs` but current `ApiClient.cs` only uses HMAC — payload encryption may not be wired up end-to-end yet |
 | RLS | SQL Session Context, applied per request via `RlsMiddleware` | ✅ Implemented |
 
 ---
 
-## Control catalog state (as of 2026-04-08)
+## Control catalog state (as of 2026-04-10)
 
 This is the heart of the product. Memorize it:
 
@@ -87,9 +89,10 @@ Framework coverage (active):
   ISO27001   ~179 (~27.7%)
   PCI-DSS     ~18 (~2.8%)
 
-Platform scope (Phase 1):
+Platform scope (as of 2026-04-10):
   W10, W11 → 647 controls linked each
-  MS19/22/25, DC19/22/25 → 0 (Phase 2 roadmap)
+  MS19, MS22, MS25 → 647 controls linked each (seed_007c)
+  DC19/22/25 → 0 (Phase 2 roadmap)
 ```
 
 **Authoritative DB check script:** `KryossApi/sql/check_catalog_health.sql`
@@ -154,19 +157,21 @@ camelCase. Resolved via `seed_005b_fix_casing.sql`, an idempotent
 
 ### 🟠 Important — blocks rich reports
 
-**Agent payload is v1.0, schema is v1.1.** The agent only populates
-`HardwareInfo` (4 fields: cpu, ramGb, diskType, tpm) and a flat software
-list. The schema v1.1 (in `agent-payload-schema.md`) expects 5 rich raw
-blocks: `raw_hardware`, `raw_security_posture` (with new `mfa`/`event_logs`/`backup_posture`
-sub-blocks), `raw_software`, `raw_network`, `raw_users`.
+**Agent payload is partially enriched.** `HardwareInfo` was expanded from
+4 fields to ~20 (cpu, ramGb, diskType, tpm, manufacturer, model, serial,
+cpuCores, diskSize/Free, TPM present/version, SecureBoot, BitLocker, IP,
+MAC, domainStatus, domainName, systemAgeDays, lastBootAt) and the backend
+persists all of them. However the schema v1.1 (in `agent-payload-schema.md`)
+still expects 5 rich raw blocks: `raw_hardware`, `raw_security_posture`
+(with `mfa`/`event_logs`/`backup_posture` sub-blocks), `raw_software`,
+`raw_network`, `raw_users`.
 
-**Impact:** The portal can evaluate the 630 controls (because the agent
-does send `control_results[]`), but can't build rich hardware/network/user
-reports until the agent is enriched.
+**Impact:** Hardware enrichment is done. Still can't build rich
+network/user/security-posture reports until remaining collectors are added.
 
-**Fix:** Add 4 new collectors to the agent:
-`NetworkCollector`, `UserCollector`, `SecurityPostureCollector`,
-`MfaCollector` (the last one covers the HIPAA refinement blocks).
+**Fix:** Add 3 new collectors to the agent:
+`NetworkCollector`, `UserCollector`, `SecurityPostureCollector`
+(the last one covers the HIPAA refinement blocks including MFA).
 All registry + shell based to stay AOT-compatible.
 
 ### ✅ Fixed — platform scope enforcement
@@ -214,6 +219,13 @@ full list. Key ones:
 | 2026-04-08 | Tag all active controls with NIST (100%) | Max flexibility for the NIST framework report |
 | 2026-04-08 | Don't over-tag HIPAA — only controls that map to §164.312 | Reports stay honest; administrative/physical safeguards need attestation module (Phase 6) |
 | 2026-04-08 | Agent is dumb, server evaluates | Catalog can change without rescanning; raw state in `machine_snapshots.raw_*` |
+| 2026-04-10 | Easy Auth disabled on func-kryoss | All auth handled by custom middleware (ApiKeyAuth + BearerAuth); Easy Auth caused double-auth issues |
+| 2026-04-10 | Enrollment codes support multi-use (`maxUses`) | MSPs need to enroll multiple machines with one code |
+| 2026-04-10 | Agent re-enrollment via `--reenroll` flag | Clears registry, re-enrolls; server reuses machine row by hostname |
+| 2026-04-10 | Auto-create default assessment on enrollment | If org has no assessment, one is created automatically |
+| 2026-04-10 | Server platforms (MS19/MS22/MS25) share W10/W11 controls | Same 647 controls linked via seed_007c; DC split deferred to Phase 2 |
+| 2026-04-10 | Portal uses friendly slug URLs | Frontend-only slug resolution, no API changes needed |
+| 2026-04-10 | Agent default API URL = `https://func-kryoss.azurewebsites.net` | Compiled into binary, no interactive prompt |
 
 ---
 
@@ -244,6 +256,7 @@ full list. Key ones:
 | `KryossApi/sql/check_catalog_health.sql` | To verify DB state after any control-catalog change |
 | `KryossApi/CLAUDE.md` | Before touching the backend |
 | `KryossAgent/CLAUDE.md` | Before touching the agent |
+| `docs/superpowers/specs/2026-04-10-agent-binary-patching-and-remote-scan.md` | Before implementing binary patching or multi-computer scan |
 | `Scripts/CLAUDE.md` | When writing any PowerShell script for RMM/Intune deploy |
 
 ---

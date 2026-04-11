@@ -1,8 +1,8 @@
-import { useParams } from 'react-router-dom';
 import { ReportGenerator } from '@/components/reports/ReportGenerator';
+import { useOrgParam } from '@/hooks/useOrgParam';
 
 export function ReportsTab() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const { orgId } = useOrgParam();
   if (!orgId) return null;
 
   return (

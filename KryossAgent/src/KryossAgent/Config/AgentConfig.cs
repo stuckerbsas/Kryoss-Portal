@@ -1,0 +1,90 @@
+using Microsoft.Win32;
+
+namespace KryossAgent.Config;
+
+/// <summary>
+/// Agent configuration stored in Windows Registry (HKLM\SOFTWARE\Kryoss\Agent).
+/// SYSTEM-only ACL in production — only the agent (running as SYSTEM) can read/write.
+/// </summary>
+public class AgentConfig
+{
+    private const string RegistryPath = @"SOFTWARE\Kryoss\Agent";
+
+    public string ApiUrl { get; set; } = "https://func-kryoss.azurewebsites.net";
+    public Guid AgentId { get; set; }
+    public string ApiKey { get; set; } = "";
+    public string ApiSecret { get; set; } = "";
+    public string PublicKeyPem { get; set; } = "";
+    public int? AssessmentId { get; set; }
+    public string? AssessmentName { get; set; }
+
+    /// <summary>
+    /// Comma-separated list of base64-encoded SHA-256 hashes of the expected
+    /// server SubjectPublicKeyInfo (SPKI). When set, the agent REJECTS any
+    /// TLS connection whose leaf cert's SPKI hash doesn't match one of these.
+    /// When null/empty, the agent runs in "log-only" mode: it prints the
+    /// observed SPKI hash on every connect so operators can capture the
+    /// production value before enforcing. See security-baseline.md §SPKI pinning.
+    /// Two slots minimum in production (primary + backup for rotation).
+    /// </summary>
+    public string[]? SpkiPins { get; set; }
+
+    public bool IsEnrolled => AgentId != Guid.Empty && !string.IsNullOrEmpty(ApiKey);
+
+    /// <summary>
+    /// Load config from registry. Returns default (unenrolled) config if not found.
+    /// </summary>
+    public static AgentConfig Load()
+    {
+        var config = new AgentConfig();
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(RegistryPath);
+            if (key is null) return config;
+
+            config.ApiUrl = key.GetValue("ApiUrl") as string ?? config.ApiUrl;
+            var agentIdStr = key.GetValue("AgentId") as string;
+            if (Guid.TryParse(agentIdStr, out var agentId))
+                config.AgentId = agentId;
+            config.ApiKey = key.GetValue("ApiKey") as string ?? "";
+            config.ApiSecret = key.GetValue("ApiSecret") as string ?? "";
+            config.PublicKeyPem = key.GetValue("PublicKeyPem") as string ?? "";
+            var assessmentIdStr = key.GetValue("AssessmentId") as string;
+            if (int.TryParse(assessmentIdStr, out var assessmentId))
+                config.AssessmentId = assessmentId;
+            config.AssessmentName = key.GetValue("AssessmentName") as string;
+
+            // SpkiPins is a comma-separated list in the registry (REG_SZ).
+            // Split on comma, trim, drop empties. Nothing fancy — the base64
+            // alphabet doesn't include comma so this is unambiguous.
+            var pinsRaw = key.GetValue("SpkiPins") as string;
+            if (!string.IsNullOrWhiteSpace(pinsRaw))
+            {
+                config.SpkiPins = pinsRaw
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[WARN] Failed to read registry config: {ex.Message}");
+        }
+        return config;
+    }
+
+    /// <summary>
+    /// Save config to registry after enrollment.
+    /// </summary>
+    public void Save()
+    {
+        using var key = Registry.LocalMachine.CreateSubKey(RegistryPath);
+        key.SetValue("ApiUrl", ApiUrl);
+        key.SetValue("AgentId", AgentId.ToString());
+        key.SetValue("ApiKey", ApiKey);
+        key.SetValue("ApiSecret", ApiSecret);
+        key.SetValue("PublicKeyPem", PublicKeyPem);
+        if (AssessmentId.HasValue)
+            key.SetValue("AssessmentId", AssessmentId.Value.ToString());
+        if (AssessmentName is not null)
+            key.SetValue("AssessmentName", AssessmentName);
+    }
+}

@@ -26,6 +26,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { OrganizationForm } from './OrganizationForm';
 import { DeleteOrgDialog } from './DeleteOrgDialog';
 import { useOrganizations } from '@/api/organizations';
+import { slugify } from '@/lib/slugify';
 import type { Organization } from '@/types';
 
 function timeAgo(date: string | null): string {
@@ -153,7 +154,7 @@ export function OrganizationsList() {
                 <TableRow
                   key={org.id}
                   className="cursor-pointer"
-                  onClick={() => navigate(`/organizations/${org.id}`)}
+                  onClick={() => navigate(`/organizations/${slugify(org.name)}`)}
                 >
                   <TableCell className="font-medium">{org.name}</TableCell>
                   <TableCell>

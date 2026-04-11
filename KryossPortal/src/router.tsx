@@ -8,6 +8,7 @@ import { OverviewTab } from './components/org-detail/OverviewTab';
 import { FleetTab } from './components/org-detail/FleetTab';
 import { EnrollmentTab } from './components/org-detail/EnrollmentTab';
 import { ReportsTab } from './components/org-detail/ReportsTab';
+import { HygieneTab } from './components/org-detail/HygieneTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { RecycleBinPage } from './pages/RecycleBinPage';
@@ -32,15 +33,16 @@ export const router = createBrowserRouter([
           {
             path: ':orgId',
             element: <OrgDetailPage />,
-            handle: { crumb: (_: unknown, p: Record<string, string>) => p.orgId?.slice(0, 8) + '...' },
+            handle: { crumb: (_: unknown, p: Record<string, string>) => p.orgId },
             children: [
               { index: true, element: <OverviewTab /> },
               { path: 'fleet', element: <FleetTab /> },
               { path: 'enrollment', element: <EnrollmentTab /> },
               { path: 'reports', element: <ReportsTab /> },
+              { path: 'hygiene', element: <HygieneTab /> },
               {
                 path: 'machines/:machineId',
-                handle: { crumb: (_: unknown, p: Record<string, string>) => p.machineId?.slice(0, 8) + '...' },
+                handle: { crumb: (_: unknown, p: Record<string, string>) => p.machineId },
                 children: [
                   { index: true, element: <MachineDetailPage /> },
                   {
