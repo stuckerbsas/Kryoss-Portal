@@ -25,6 +25,7 @@ const tabs = [
   { label: 'Software', to: 'software-inventory', end: false, permission: 'machines:read' },
   { label: 'Reports', to: 'reports', end: false, permission: 'reports:read' },
   { label: 'AD Hygiene', to: 'hygiene', end: false, permission: 'assessment:read' },
+  { label: 'Ports', to: 'ports', end: false, permission: 'machines:read' },
 ] as const;
 
 export function OrgDetail() {

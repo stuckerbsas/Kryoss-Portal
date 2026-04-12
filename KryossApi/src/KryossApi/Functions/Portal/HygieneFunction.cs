@@ -66,8 +66,8 @@ public class HygieneFunction
             OrganizationId = orgId.Value,
             ScannedBy = body.ScannedBy ?? "Unknown",
             ScannedAt = DateTime.UtcNow,
-            TotalMachines = body.Findings.Count(f => f.ObjectType == "Computer"),
-            TotalUsers = body.Findings.Count(f => f.ObjectType == "User"),
+            TotalMachines = body.TotalMachines ?? body.Findings.Count(f => f.ObjectType == "Computer"),
+            TotalUsers = body.TotalUsers ?? body.Findings.Count(f => f.ObjectType == "User"),
             StaleMachines = body.Findings.Count(f => f.ObjectType == "Computer" && f.Status == "Stale"),
             DormantMachines = body.Findings.Count(f => f.ObjectType == "Computer" && f.Status == "Dormant"),
             StaleUsers = body.Findings.Count(f => f.ObjectType == "User" && f.Status is "Stale" or "OldPassword"),
@@ -163,6 +163,8 @@ public class HygieneFunction
 public class HygieneSubmitRequest
 {
     public string? ScannedBy { get; set; }
+    public int? TotalMachines { get; set; }
+    public int? TotalUsers { get; set; }
     public List<HygieneFindingItem> Findings { get; set; } = [];
 }
 

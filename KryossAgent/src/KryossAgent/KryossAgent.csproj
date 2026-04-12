@@ -20,7 +20,7 @@
     <!-- Assembly info -->
     <AssemblyName>KryossAgent</AssemblyName>
     <RootNamespace>KryossAgent</RootNamespace>
-    <Version>1.2.0</Version>
+    <Version>1.2.2</Version>
     <Company>TeamLogic IT</Company>
     <Product>Kryoss Security Agent</Product>
     <Description>Security assessment agent for Kryoss platform</Description>

@@ -87,17 +87,136 @@ public static class PlatformDetector
     {
         try
         {
-            info.DiskType = DetectDiskType();
-
-            var sysDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\";
-            var driveInfo = new DriveInfo(sysDrive);
-            if (driveInfo.IsReady)
+            // Build a mapping: drive letter -> disk type from PowerShell
+            var driveTypeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
             {
-                info.DiskSizeGb = (int)(driveInfo.TotalSize / (1024L * 1024 * 1024));
-                info.DiskFreeGb = Math.Round((decimal)driveInfo.AvailableFreeSpace / (1024L * 1024 * 1024), 2);
+                driveTypeMap = GetPhysicalDiskTypeMap();
+            }
+            catch { /* fallback: all drives get "Unknown" type */ }
+
+            // Detect the system drive type for the aggregate field
+            var systemDrive = Environment.GetFolderPath(Environment.SpecialFolder.System);
+            var systemDriveLetter = systemDrive.Length > 0 ? systemDrive[..1].ToUpperInvariant() : "C";
+            info.DiskType = driveTypeMap.TryGetValue(systemDriveLetter, out var sysType) ? sysType : DetectDiskType();
+
+            // Enumerate all fixed drives and build per-disk inventory
+            var diskInfos = new List<Models.DiskInfo>();
+            long totalSize = 0, totalFree = 0;
+
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
+
+                var letter = drive.Name[..1].ToUpperInvariant();
+                totalSize += drive.TotalSize;
+                totalFree += drive.AvailableFreeSpace;
+
+                driveTypeMap.TryGetValue(letter, out var diskType);
+
+                diskInfos.Add(new Models.DiskInfo
+                {
+                    DriveLetter = letter,
+                    Label = string.IsNullOrWhiteSpace(drive.VolumeLabel) ? null : drive.VolumeLabel,
+                    DiskType = diskType,
+                    TotalGb = (int)(drive.TotalSize / (1024L * 1024 * 1024)),
+                    FreeGb = Math.Round((decimal)drive.AvailableFreeSpace / (1024L * 1024 * 1024), 2),
+                    FileSystem = drive.DriveFormat,
+                });
+            }
+
+            info.Disks = diskInfos;
+
+            if (totalSize > 0)
+            {
+                info.DiskSizeGb = (int)(totalSize / (1024L * 1024 * 1024));
+                info.DiskFreeGb = Math.Round((decimal)totalFree / (1024L * 1024 * 1024), 2);
             }
         }
         catch { /* non-critical */ }
+    }
+
+    /// <summary>
+    /// Uses PowerShell to map each drive letter to its physical disk MediaType.
+    /// Get-PhysicalDisk for type, Get-Partition to link disk number to drive letter.
+    /// </summary>
+    private static Dictionary<string, string> GetPhysicalDiskTypeMap()
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Step 1: Get physical disk info (DeviceId -> MediaType)
+        var diskTypes = new Dictionary<string, string>();
+        var psi1 = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "powershell",
+            Arguments = "-NoProfile -Command \"Get-PhysicalDisk | Select-Object DeviceId, MediaType, BusType | ConvertTo-Csv -NoTypeInformation\"",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            CreateNoWindow = true
+        };
+        using var proc1 = System.Diagnostics.Process.Start(psi1);
+        if (proc1 is null) return result;
+        var csv1 = proc1.StandardOutput.ReadToEnd();
+        proc1.WaitForExit(10000);
+
+        foreach (var line in csv1.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (line.StartsWith('"') && !line.StartsWith("\"DeviceId\"", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = line.Split(',');
+                if (parts.Length >= 3)
+                {
+                    var deviceId = parts[0].Trim('"');
+                    var mediaType = parts[1].Trim('"');
+                    var busType = parts[2].Trim('"');
+
+                    var type = "Unknown";
+                    if (busType.Contains("NVMe", StringComparison.OrdinalIgnoreCase))
+                        type = "NVMe";
+                    else if (mediaType.Contains("SSD", StringComparison.OrdinalIgnoreCase))
+                        type = "SSD";
+                    else if (mediaType.Contains("HDD", StringComparison.OrdinalIgnoreCase))
+                        type = "HDD";
+                    else if (mediaType.Contains("Unspecified", StringComparison.OrdinalIgnoreCase))
+                        type = "SSD"; // Unspecified with 0 RPM is typically SSD/VM
+
+                    diskTypes[deviceId] = type;
+                }
+            }
+        }
+
+        // Step 2: Map disk number to drive letters via Get-Partition
+        var psi2 = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "powershell",
+            Arguments = "-NoProfile -Command \"Get-Partition | Where-Object { $_.DriveLetter } | Select-Object DiskNumber, DriveLetter | ConvertTo-Csv -NoTypeInformation\"",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            CreateNoWindow = true
+        };
+        using var proc2 = System.Diagnostics.Process.Start(psi2);
+        if (proc2 is null) return result;
+        var csv2 = proc2.StandardOutput.ReadToEnd();
+        proc2.WaitForExit(10000);
+
+        foreach (var line in csv2.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (line.StartsWith('"') && !line.StartsWith("\"DiskNumber\"", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = line.Split(',');
+                if (parts.Length >= 2)
+                {
+                    var diskNumber = parts[0].Trim('"');
+                    var driveLetter = parts[1].Trim('"');
+                    if (!string.IsNullOrEmpty(driveLetter) && diskTypes.TryGetValue(diskNumber, out var type))
+                    {
+                        result[driveLetter] = type;
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     private static void DetectSystemInfo(HardwareInfo info)
@@ -242,6 +361,49 @@ public static class PlatformDetector
 
     private static string DetectDiskType()
     {
+        // Try PowerShell Get-PhysicalDisk first (most reliable)
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "powershell",
+                Arguments = "-NoProfile -Command \"(Get-PhysicalDisk | Select -First 1).MediaType\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is not null)
+            {
+                var output = proc.StandardOutput.ReadToEnd().Trim();
+                proc.WaitForExit(5000);
+                if (output.Contains("SSD", StringComparison.OrdinalIgnoreCase)) return "SSD";
+                if (output.Contains("NVMe", StringComparison.OrdinalIgnoreCase)) return "NVMe";
+                if (output.Contains("HDD", StringComparison.OrdinalIgnoreCase)) return "HDD";
+                if (output.Contains("Unspecified", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Unspecified often means SSD in VMs or newer drives — check rotation
+                    var psi2 = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "powershell",
+                        Arguments = "-NoProfile -Command \"(Get-PhysicalDisk | Select -First 1).SpindleSpeed\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    };
+                    using var proc2 = System.Diagnostics.Process.Start(psi2);
+                    if (proc2 is not null)
+                    {
+                        var rpm = proc2.StandardOutput.ReadToEnd().Trim();
+                        proc2.WaitForExit(5000);
+                        if (rpm == "0" || string.IsNullOrEmpty(rpm)) return "SSD";
+                    }
+                }
+            }
+        }
+        catch { /* fallback to registry */ }
+
+        // Fallback: registry heuristic
         try
         {
             using var scsiKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\stornvme\Enum");

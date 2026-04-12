@@ -108,10 +108,38 @@ public class HardwareInfo
     [JsonPropertyName("lastBootAt")]
     public DateTime? LastBootAt { get; set; }
 
+    // Multi-disk inventory
+    [JsonPropertyName("disks")]
+    public List<DiskInfo> Disks { get; set; } = [];
+
     // Legacy compat
     [JsonPropertyName("tpm")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Tpm { get; set; }
+}
+
+public class DiskInfo
+{
+    [JsonPropertyName("driveLetter")]
+    public string DriveLetter { get; set; } = null!;
+
+    [JsonPropertyName("label")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Label { get; set; }
+
+    [JsonPropertyName("diskType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DiskType { get; set; }
+
+    [JsonPropertyName("totalGb")]
+    public int? TotalGb { get; set; }
+
+    [JsonPropertyName("freeGb")]
+    public decimal? FreeGb { get; set; }
+
+    [JsonPropertyName("fileSystem")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FileSystem { get; set; }
 }
 
 public class SoftwareItem

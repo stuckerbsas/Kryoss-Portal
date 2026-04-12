@@ -57,7 +57,7 @@ Projecto Kryoss\
 |---|---|---|
 | Backend API | .NET 8 Azure Functions + EF Core 8 + Azure SQL | ✅ Deployed (`func-kryoss`) |
 | Database | Azure SQL `sql-kryoss.database.windows.net` / DB `KryossDb` | ✅ Seeded with ~647 active controls |
-| Agent | .NET 8 Native AOT (win-x64, single-file, ~68 MB self-contained) | ✅ Compiles, has 11 engines (registry, secedit, auditpol, firewall, service, netaccount, command, eventlog, certstore, bitlocker, tpm); still needs `raw_*` payload enrichment (deferred) |
+| Agent | .NET 8 v1.2.2 (win-x64, single-file, ~68 MB self-contained) | ✅ 11 engines + network scanner (AD/ARP/subnet discovery, PsExec remote deploy) + port scanner (TCP top 100 + UDP top 20) + AD hygiene audit + binary patching sentinels |
 | Portal | React 18 + Vite + TS + shadcn/ui + MSAL, deployed on Azure SWA | ✅ Deployed (`zealous-dune-0ac672d10.6.azurestaticapps.net`) |
 | Auth | Agent: API Key + HMAC-SHA256 (`ApiKeyAuthMiddleware`). Portal: MSAL JWT via `BearerAuthMiddleware`. Easy Auth DISABLED on func-kryoss (platform.enabled=true, requireAuthentication=false, AllowAnonymous). All auth handled by custom middleware. | ✅ Implemented in middleware |
 | Crypto | RSA-2048 + AES-256-GCM for payload encryption (agent → API) | ⚠️ Agent has `CryptoService.cs` but current `ApiClient.cs` only uses HMAC — payload encryption may not be wired up end-to-end yet |
@@ -155,24 +155,17 @@ snake_case field names but the agent's `ControlDef.cs` deserializes
 camelCase. Resolved via `seed_005b_fix_casing.sql`, an idempotent
 `UPDATE ... REPLACE(...)` migration on those 25 rows.
 
-### 🟠 Important — blocks rich reports
+### 🟠 Important — blocks rich reports (partially resolved)
 
-**Agent payload is partially enriched.** `HardwareInfo` was expanded from
-4 fields to ~20 (cpu, ramGb, diskType, tpm, manufacturer, model, serial,
-cpuCores, diskSize/Free, TPM present/version, SecureBoot, BitLocker, IP,
-MAC, domainStatus, domainName, systemAgeDays, lastBootAt) and the backend
-persists all of them. However the schema v1.1 (in `agent-payload-schema.md`)
-still expects 5 rich raw blocks: `raw_hardware`, `raw_security_posture`
-(with `mfa`/`event_logs`/`backup_posture` sub-blocks), `raw_software`,
-`raw_network`, `raw_users`.
+**Agent payload is partially enriched.** `HardwareInfo` expanded to ~20 fields,
+multi-disk inventory added (`machine_disks` table), software inventory with
+600+ commercial app detection, port scanning (`machine_ports` table), and
+AD hygiene audit all implemented. The `raw_*` schema v1.1 blocks
+(`raw_security_posture` with `mfa`/`event_logs`/`backup_posture`) are still
+not populated as raw blocks but data is captured through dedicated endpoints.
 
-**Impact:** Hardware enrichment is done. Still can't build rich
-network/user/security-posture reports until remaining collectors are added.
-
-**Fix:** Add 3 new collectors to the agent:
-`NetworkCollector`, `UserCollector`, `SecurityPostureCollector`
-(the last one covers the HIPAA refinement blocks including MFA).
-All registry + shell based to stay AOT-compatible.
+**Still missing:** `raw_users` and `raw_network` as structured raw blocks
+in the payload. Data is available through inventory/hygiene endpoints instead.
 
 ### ✅ Fixed — platform scope enforcement
 
@@ -226,6 +219,39 @@ full list. Key ones:
 | 2026-04-10 | Server platforms (MS19/MS22/MS25) share W10/W11 controls | Same 647 controls linked via seed_007c; DC split deferred to Phase 2 |
 | 2026-04-10 | Portal uses friendly slug URLs | Frontend-only slug resolution, no API changes needed |
 | 2026-04-10 | Agent default API URL = `https://func-kryoss.azurewebsites.net` | Compiled into binary, no interactive prompt |
+| 2026-04-11 | Agent v1.2.2: self-contained network scan replaces PowerShell deployment | Single .exe does local scan + network discovery + remote PsExec deploy |
+| 2026-04-11 | Binary patching via UTF-16LE sentinel replacement | Server-side `BinaryPatcher` replaces sentinels in compiled .exe (enrollment code, API URL, org/MSP name, colors) |
+| 2026-04-11 | Multi-disk inventory in `machine_disks` table | One row per drive letter, replaces single diskSize/diskFree fields |
+| 2026-04-11 | Port scanning persisted in `machine_ports` table | TCP top 100 + UDP top 20 per discovered host |
+| 2026-04-11 | AD Hygiene full security audit | Privileged accounts, kerberoastable, unconstrained delegation, LAPS, adminCount residual, domain functional level |
+| 2026-04-11 | 600+ commercial software detection list | Server-side normalization in `InventoryFunction` |
+| 2026-04-12 | Portal: Hardware + Software inventory tabs | Org-level inventory views with search, sort, export |
+| 2026-04-12 | Reports redesigned with Brand 2025 | New layout with framework score gauges, AD hygiene section, Montserrat font |
+
+---
+
+## Recent features (v1.2.x, 2026-04-11/12)
+
+### Agent (v1.2.2)
+- **Network scanner** — discovers targets via AD (LDAP), ARP table, or subnet probe; deploys agent binary to remote machines via SMB + PsExec (embedded resource); collects results
+- **Port scanner** — TCP top 100 ports (parallel `TcpClient`) + UDP top 20 ports per target
+- **AD Hygiene audit** — stale/dormant machines and users, disabled users, never-expire passwords, privileged accounts, kerberoastable accounts, unconstrained delegation, adminCount residual, LAPS coverage, domain functional level
+- **Binary patching** — `EmbeddedConfig.cs` has fixed-length UTF-16LE sentinels (`@@KRYOSS_ENROLL:`, `@@KRYOSS_APIURL:`, `@@KRYOSS_ORGNAM:`, `@@KRYOSS_MSPNAM:`, `@@CLRPRI:`, `@@CLRACC:`) that the server's `BinaryPatcher` replaces to produce org-specific .exe files
+- **Multi-disk detection** — `PlatformDetector.DetectHardware()` enumerates all fixed drives (drive letter, size, free, type)
+- **CLI flags** — `--help`, `--alone` (skip network scan), `--scan` (network scan only), `--verbose`, `--silent`, `--credential`, `--threads N`, `--discover-ad`, `--discover-arp`, `--discover-subnet CIDR`, `--targets`, `--targets-file`
+
+### API
+- **Inventory endpoints** — `GET /v2/inventory/hardware`, `GET /v2/inventory/software` (org-level aggregation with 600+ commercial software normalization)
+- **Hygiene endpoints** — `POST /v1/hygiene` (agent submits AD findings), `GET /v2/hygiene?orgId=` (portal reads)
+- **Agent download** — `GET /v2/agent/download?orgId=&enrollmentCodeId=` via `AgentDownloadFunction` + `BinaryPatcher`
+- **New tables** — `machine_disks` (per-drive inventory), `machine_ports` (open ports per host), `ad_hygiene` (AD security findings)
+- **Report redesign** — Brand 2025 layout, framework score gauges, AD hygiene section, hardware/software summary
+
+### Portal
+- **Hardware Inventory tab** — org-level view of all machines with disk, TPM, BitLocker, SecureBoot, domain status
+- **Software Inventory tab** — org-level view with 600+ commercial app detection, version tracking
+- **Download Agent button** — generates patched binary from portal
+- **Report redesign** — new report viewer with Brand 2025 styling
 
 ---
 

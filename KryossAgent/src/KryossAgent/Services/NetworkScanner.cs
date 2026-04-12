@@ -14,7 +14,8 @@ public record ScanResult(
     string Status,
     string? Error,
     string? ResultLine,
-    int DurationMs);
+    int DurationMs,
+    List<PortScanner.PortResult>? OpenPorts = null);
 
 /// <summary>
 /// Orchestrates remote network scans: discovers targets, deploys the agent
@@ -171,6 +172,9 @@ public static class NetworkScanner
 
         // ── Upload hygiene to API ──
         await UploadHygieneReport(enrollCode!);
+
+        // ── Upload port scan results to API ──
+        await UploadPortResults(results);
 
         // Return non-zero if any targets failed or were unreachable
         bool anyFailed = results.Any(r =>
@@ -336,10 +340,21 @@ public static class NetworkScanner
                     error = $"PsExec exit {psResult.ExitCode}";
             }
 
+            // Port scan (only for successful scans)
+            List<PortScanner.PortResult>? openPorts = null;
+            if (status == "OK" || status == "Partial")
+            {
+                try
+                {
+                    openPorts = await PortScanner.ScanTcpAsync(target.Address, concurrency: 100, timeoutMs: 500);
+                }
+                catch { /* non-critical */ }
+            }
+
             sw.Stop();
             return new ScanResult(target.Hostname, target.Address,
                 status, error, resultLine is not null ? $"RESULT: {resultLine}" : null,
-                (int)sw.ElapsedMilliseconds);
+                (int)sw.ElapsedMilliseconds, openPorts);
         }
         catch (Exception ex)
         {
@@ -515,6 +530,29 @@ public static class NetworkScanner
             Console.WriteLine($"    Scan Time:     fastest {fastestMs / 1000}s / avg {avgMs / 1000}s / slowest {slowestMs / 1000}s");
         }
 
+        // Port scan summary — show risky open ports across all targets
+        var allRiskyPorts = results
+            .Where(r => r.OpenPorts is not null)
+            .SelectMany(r => r.OpenPorts!
+                .Where(p => p.Risk is not null)
+                .Select(p => new { Host = r.Name, p.Port, p.Service, p.Risk }))
+            .ToList();
+
+        if (allRiskyPorts.Count > 0)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"\n    Risky Open Ports ({allRiskyPorts.Count}):");
+            Console.ResetColor();
+            foreach (var rp in allRiskyPorts.OrderByDescending(p => p.Risk == "critical" ? 3 : p.Risk == "high" ? 2 : 1))
+            {
+                var riskColor = rp.Risk == "critical" ? ConsoleColor.Red : ConsoleColor.Yellow;
+                Console.ForegroundColor = riskColor;
+                Console.Write($"      [{rp.Risk?.ToUpperInvariant()}]");
+                Console.ResetColor();
+                Console.WriteLine($" {rp.Host,-20} :{rp.Port,-6} {rp.Service}");
+            }
+        }
+
         var totalMin = elapsed.TotalMinutes;
         Console.WriteLine($"    Total Time:    {(totalMin >= 1 ? $"{totalMin:F1} min" : $"{elapsed.TotalSeconds:F0}s")}");
         Console.ForegroundColor = ConsoleColor.Cyan;
@@ -562,10 +600,19 @@ public static class NetworkScanner
             var config = Config.AgentConfig.Load();
             if (!config.IsEnrolled) return;
 
+            // Calculate real totals (active + stale + dormant = all AD objects)
+            var totalMachines = report.StaleMachines.Count + report.DormantMachines.Count
+                + (TargetDiscovery.LastDiscoveredActiveCount);
+            var totalUsers = report.StaleUsers.Count + report.DormantUsers.Count
+                + report.DisabledUsers.Count + report.NeverExpirePasswords.Count
+                + (TargetDiscovery.LastDiscoveredActiveUserCount);
+
             using var client = new ApiClient(config);
             await client.SubmitHygieneAsync(new
             {
                 scannedBy = Environment.MachineName,
+                totalMachines,
+                totalUsers,
                 findings = allFindings
             });
             Console.WriteLine($"  AD Hygiene: {allFindings.Count} findings uploaded to portal");
@@ -573,6 +620,45 @@ public static class NetworkScanner
         catch (Exception ex)
         {
             Console.Error.WriteLine($"  [WARN] Hygiene upload failed: {ex.Message}");
+        }
+    }
+
+    private static async Task UploadPortResults(ScanResult[] results)
+    {
+        var portFindings = results
+            .Where(r => r.OpenPorts is { Count: > 0 })
+            .SelectMany(r => r.OpenPorts!.Select(p => new
+            {
+                host = r.Name,
+                address = r.Address,
+                port = p.Port,
+                protocol = p.Protocol,
+                status = p.Status,
+                service = p.Service,
+                risk = p.Risk
+            }))
+            .ToList();
+
+        if (portFindings.Count == 0) return;
+
+        try
+        {
+            var config = Config.AgentConfig.Load();
+            if (!config.IsEnrolled) return;
+
+            using var client = new ApiClient(config);
+            await client.SubmitPortResultsAsync(new
+            {
+                scannedBy = Environment.MachineName,
+                scannedAt = DateTime.UtcNow,
+                totalPorts = portFindings.Count,
+                findings = portFindings
+            });
+            Console.WriteLine($"  Port Scan: {portFindings.Count} open ports uploaded to portal");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  [WARN] Port scan upload failed: {ex.Message}");
         }
     }
 

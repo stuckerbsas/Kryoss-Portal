@@ -33,6 +33,8 @@ export interface MachineDetail extends Machine {
   // Lifecycle
   systemAgeDays: number | null;
   lastBootAt: string | null;
+  // Disks
+  disks: { driveLetter: string; label: string | null; diskType: string | null; totalGb: number | null; freeGb: number | null; fileSystem: string | null; }[];
   // History
   assessmentHistory: AssessmentRunSummary[];
 }

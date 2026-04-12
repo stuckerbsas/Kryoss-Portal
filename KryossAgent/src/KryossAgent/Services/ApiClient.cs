@@ -197,6 +197,28 @@ public class ApiClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Upload port scan results from a network scan to the API.
+    /// </summary>
+    public async Task SubmitPortResultsAsync(object portPayload)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(portPayload);
+        var path = "/v1/ports";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            string error;
+            try { error = await response.Content.ReadAsStringAsync(); }
+            catch { error = response.StatusCode.ToString(); }
+            Console.Error.WriteLine($"[WARN] Port scan upload failed ({response.StatusCode}): {error}");
+        }
+    }
+
     private HttpRequestMessage CreateSignedRequest(HttpMethod method, string path, byte[]? body = null)
     {
         var request = new HttpRequestMessage(method, path);

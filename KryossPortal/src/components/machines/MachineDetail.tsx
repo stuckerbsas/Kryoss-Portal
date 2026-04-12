@@ -27,8 +27,10 @@ import {
   ListChecks,
   KeyRound,
   History,
+  Plug,
 } from 'lucide-react';
 import { useMachine, useMachineSoftware, useRunDetail } from '@/api/machines';
+import { useMachinePorts } from '@/api/ports';
 import { useTrend } from '@/api/dashboard';
 import { GradeBadge } from '@/components/shared/GradeBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -202,16 +204,54 @@ function OverviewTabContent({ machine, chartData }: { machine: any; chartData: a
         </SectionCard>
 
         <SectionCard icon={<HardDrive className="size-4" />} title="Storage">
-          <InfoRow label="Type" value={machine.diskType} />
-          <InfoRow label="Capacity" value={machine.diskSizeGb != null ? `${machine.diskSizeGb} GB` : null} />
-          <InfoRow label="Free" value={
-            machine.diskFreeGb != null ? (
-              <span className={machine.diskFreeGb < 20 ? 'text-red-600 font-semibold' : ''}>
-                {machine.diskFreeGb} GB
-                {machine.diskSizeGb ? ` (${Math.round((machine.diskFreeGb / machine.diskSizeGb) * 100)}%)` : ''}
-              </span>
-            ) : null
-          } />
+          {machine.disks && machine.disks.length > 0 ? (
+            <div className="overflow-x-auto -mx-1">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 text-muted-foreground">
+                    <th className="text-left py-1 px-1 font-medium">Drive</th>
+                    <th className="text-left py-1 px-1 font-medium">Label</th>
+                    <th className="text-left py-1 px-1 font-medium">Type</th>
+                    <th className="text-right py-1 px-1 font-medium">Total</th>
+                    <th className="text-right py-1 px-1 font-medium">Free</th>
+                    <th className="text-left py-1 px-1 font-medium">FS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {machine.disks.map((d: any) => {
+                    const pctFree = d.totalGb && d.freeGb != null ? (d.freeGb / d.totalGb) * 100 : null;
+                    const freeColor = pctFree != null && pctFree < 20 ? 'text-red-600 font-semibold' : pctFree != null && pctFree < 40 ? 'text-amber-600' : '';
+                    return (
+                      <tr key={d.driveLetter} className="border-b border-border/30 last:border-0">
+                        <td className="py-1 px-1 font-mono font-medium">{d.driveLetter}:</td>
+                        <td className="py-1 px-1 text-muted-foreground">{d.label ?? '--'}</td>
+                        <td className="py-1 px-1 text-muted-foreground">{d.diskType ?? '--'}</td>
+                        <td className="py-1 px-1 text-right">{d.totalGb != null ? `${d.totalGb} GB` : '--'}</td>
+                        <td className={`py-1 px-1 text-right ${freeColor}`}>
+                          {d.freeGb != null ? `${d.freeGb} GB` : '--'}
+                          {pctFree != null ? ` (${Math.round(pctFree)}%)` : ''}
+                        </td>
+                        <td className="py-1 px-1 text-muted-foreground">{d.fileSystem ?? '--'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <>
+              <InfoRow label="Type" value={machine.diskType} />
+              <InfoRow label="Capacity" value={machine.diskSizeGb != null ? `${machine.diskSizeGb} GB` : null} />
+              <InfoRow label="Free" value={
+                machine.diskFreeGb != null ? (
+                  <span className={machine.diskFreeGb < 20 ? 'text-red-600 font-semibold' : ''}>
+                    {machine.diskFreeGb} GB
+                    {machine.diskSizeGb ? ` (${Math.round((machine.diskFreeGb / machine.diskSizeGb) * 100)}%)` : ''}
+                  </span>
+                ) : null
+              } />
+            </>
+          )}
         </SectionCard>
 
         <SectionCard icon={<ShieldCheck className="size-4" />} title="Security">
@@ -454,6 +494,87 @@ function HistoryTabContent({ machine, orgSlug, machineSlug }: { machine: any; or
   );
 }
 
+// ── Tab: Ports ──
+
+function PortsTabContent({ machineId }: { machineId: string | undefined }) {
+  const { data, isLoading } = useMachinePorts(machineId);
+
+  if (isLoading) return <TabSkeleton rows={8} cards={4} />;
+
+  if (!data || data.ports.length === 0)
+    return <EmptyState icon={<Plug className="size-10" />} title="No port scan data" description="Run a port scan to see open ports on this machine." />;
+
+  function riskColor(risk: string | null): string {
+    switch (risk) {
+      case 'critical': return 'bg-red-200 text-red-900 hover:bg-red-200';
+      case 'high': return 'bg-red-100 text-red-800 hover:bg-red-100';
+      case 'medium': return 'bg-amber-100 text-amber-800 hover:bg-amber-100';
+      case 'low': return 'bg-blue-100 text-blue-800 hover:bg-blue-100';
+      default: return 'bg-gray-100 text-gray-500 hover:bg-gray-100';
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">Total Open</div>
+          <div className="text-2xl font-bold tabular-nums">{data.totalOpen}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">Critical</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: data.critical > 0 ? '#C0392B' : '#006536' }}>{data.critical}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">High</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: data.high > 0 ? '#D97706' : '#006536' }}>{data.high}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">Medium</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: data.medium > 0 ? '#D97706' : '#006536' }}>{data.medium}</div>
+        </Card>
+      </div>
+
+      {/* Ports table */}
+      <div className="max-h-[600px] overflow-y-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Port</TableHead>
+              <TableHead>Protocol</TableHead>
+              <TableHead>Service</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Risk</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.ports.map((p, i) => (
+              <TableRow key={i}>
+                <TableCell className="font-mono font-medium">{p.port}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{p.protocol}</TableCell>
+                <TableCell className="text-sm">{p.service ?? '--'}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary" className={p.status === 'open' ? 'bg-green-100 text-green-800 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-100'}>
+                    {p.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {p.risk ? (
+                    <Badge variant="secondary" className={riskColor(p.risk)}>{p.risk}</Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">--</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 // ── Shared Controls View (reused by Controls and could be reused elsewhere) ──
 
 function ControlResultsView({ run, severity, setSeverity, status, setStatus, search, setSearch }: any) {
@@ -572,7 +693,7 @@ export function MachineDetail() {
         </div>
         {/* Tabs skeleton */}
         <div className="flex gap-1 bg-muted p-1 rounded-lg w-fit">
-          {Array.from({ length: 5 }).map((_, i) => (
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-8 w-24 rounded-md" />
           ))}
         </div>
@@ -639,6 +760,9 @@ export function MachineDetail() {
           <TabsTrigger value="security" className="gap-1.5">
             <KeyRound className="size-3.5" /> Security
           </TabsTrigger>
+          <TabsTrigger value="ports" className="gap-1.5">
+            <Plug className="size-3.5" /> Ports
+          </TabsTrigger>
           <TabsTrigger value="history" className="gap-1.5">
             <History className="size-3.5" /> History
           </TabsTrigger>
@@ -658,6 +782,10 @@ export function MachineDetail() {
 
         <TabsContent value="security">
           <SecurityTabContent machineId={machineId} latestRunId={latestRun?.id} />
+        </TabsContent>
+
+        <TabsContent value="ports">
+          <PortsTabContent machineId={machineId} />
         </TabsContent>
 
         <TabsContent value="history">

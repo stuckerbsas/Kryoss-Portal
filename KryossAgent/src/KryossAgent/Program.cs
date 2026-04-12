@@ -19,6 +19,39 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
 try
 {
 
+// ── Help ──
+if (args.Any(a => a is "/?" or "-?" or "--help" or "-h" or "/h"))
+{
+    PrintHelp();
+    Environment.Exit(0);
+    return;
+}
+
+// ── Validate arguments ──
+var knownFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+{
+    "--silent", "--verbose", "--alone", "--scan", "--reenroll", "--credential",
+    "--code", "--api-url", "--threads", "--targets", "--targets-file",
+    "--discover-ad", "--discover-arp", "--discover-subnet",
+};
+foreach (var arg in args)
+{
+    if (arg.StartsWith("--") || arg.StartsWith("/") || arg.StartsWith("-"))
+    {
+        // Skip values that look like flags (e.g. --code XXXX)
+        if (arg.StartsWith("--") && !knownFlags.Contains(arg))
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Error.WriteLine($"Unknown argument: {arg}");
+            Console.ResetColor();
+            Console.WriteLine();
+            PrintHelp();
+            Environment.Exit(1);
+            return;
+        }
+    }
+}
+
 var sw = Stopwatch.StartNew();
 var silent = args.Contains("--silent", StringComparer.OrdinalIgnoreCase);
 var verbose = args.Contains("--verbose", StringComparer.OrdinalIgnoreCase);
@@ -44,7 +77,7 @@ if (!silent)
     else
     {
         Console.WriteLine("╔══════════════════════════════════════════╗");
-        Console.WriteLine("║       Kryoss Security Agent v1.2.0      ║");
+        Console.WriteLine("║       Kryoss Security Agent v1.2.2      ║");
         Console.WriteLine("║         TeamLogic IT Assessment          ║");
         Console.WriteLine("╚══════════════════════════════════════════╝");
     }
@@ -197,7 +230,7 @@ using var apiClient = new ApiClient(config);
 
 try
 {
-    if (verbose) Console.WriteLine("  Downloading control definitions...");
+    if (!silent) Console.WriteLine("  Downloading control definitions...");
     var controlsResponse = await apiClient.GetControlsAsync(config.AssessmentId.Value);
     checks = controlsResponse?.Checks ?? [];
     if (verbose) Console.WriteLine($"  {checks.Count} controls loaded (v{controlsResponse?.Version})");
@@ -221,25 +254,20 @@ if (checks.Count == 0)
 }
 
 // ── Detect platform & inventory ──
-if (verbose) Console.WriteLine();
-if (verbose) Console.WriteLine("  Collecting system information...");
+if (!silent) Console.Write("  Scanning: collecting system info...");
 var platformInfo = PlatformDetector.DetectPlatform();
 var hardwareInfo = PlatformDetector.DetectHardware();
 List<SoftwareItem> softwareList;
 try
 {
     softwareList = SoftwareInventory.Enumerate();
-    if (verbose) Console.WriteLine($"  {softwareList.Count} software packages detected");
 }
 catch (Exception ex)
 {
     if (verbose) Console.Error.WriteLine($"  [WARN] Software enumeration failed: {ex.Message}");
     softwareList = [];
 }
-
-// ── Execute checks by engine ──
-if (verbose) Console.WriteLine();
-if (verbose) Console.WriteLine("  Running security assessment...");
+if (!silent) Console.Write("\r  Scanning: running 647 security checks...");
 
 ShellEngine.Verbose = verbose;
 ICheckEngine[] engines =
@@ -277,8 +305,11 @@ void LogLine(string msg)
     }
 }
 
-var engineTasks = engines
-    .Where(e => controlsByType.ContainsKey(e.Type))
+var activeEngines = engines.Where(e => controlsByType.ContainsKey(e.Type)).ToArray();
+var totalEngines = activeEngines.Length;
+var completedEngines = 0;
+
+var engineTasks = activeEngines
     .Select(engine => Task.Run(() =>
     {
         var controls = controlsByType[engine.Type];
@@ -290,12 +321,25 @@ var engineTasks = engines
             var engineResults = engine.Execute(controls);
             engineSw.Stop();
             LogLine($"  [{engine.Type}] done in {engineSw.ElapsedMilliseconds} ms");
+
+            // Progress update (non-verbose)
+            var done = Interlocked.Increment(ref completedEngines);
+            if (!silent && !verbose)
+            {
+                lock (logLock)
+                {
+                    Console.Write($"\r  Scanning: {done}/{totalEngines} engines done ({controls.Count} {engine.Type} checks)   ");
+                    Console.Out.Flush();
+                }
+            }
+
             return (engine.Type, Results: engineResults, Count: controls.Count);
         }
         catch (Exception ex)
         {
             engineSw.Stop();
             LogLine($"  [{engine.Type}] FAILED after {engineSw.ElapsedMilliseconds} ms: {ex.Message}");
+            Interlocked.Increment(ref completedEngines);
             return (engine.Type, Results: new List<CheckResult>(), Count: controls.Count);
         }
     }))
@@ -311,17 +355,17 @@ foreach (var (_, results, _) in engineResults)
 sw.Stop();
 var durationMs = (int)sw.ElapsedMilliseconds;
 
-if (verbose)
+if (!silent)
 {
+    Console.Write($"\r  Scanning: complete — {allResults.Count} checks in {durationMs / 1000.0:F1}s          ");
     Console.WriteLine();
-    Console.WriteLine($"  Assessment completed in {durationMs / 1000.0:F1}s ({allResults.Count} checks)");
 }
 
 // ── Build and upload payload ──
 var payload = new AssessmentPayload
 {
     AgentId = config.AgentId,
-    AgentVersion = "1.1.2",
+    AgentVersion = "1.2.2",
     Timestamp = DateTime.UtcNow,
     DurationMs = durationMs,
     Platform = platformInfo,
@@ -332,9 +376,10 @@ var payload = new AssessmentPayload
 
 try
 {
-    if (verbose) Console.WriteLine("  Uploading results...");
+    if (!silent) Console.Write("  Uploading results...");
 
     var response = await apiClient.SubmitResultsAsync(payload);
+    if (!silent) Console.Write("\r                          \r");
     if (response is not null)
     {
         if (!silent)
@@ -436,4 +481,61 @@ static async Task UploadPendingResults(AgentConfig config, bool silent)
             if (!silent) Console.WriteLine($"  Still offline, will retry: {Path.GetFileName(path)}");
         }
     }
+}
+
+// ── Help ──
+static void PrintHelp()
+{
+    Console.WriteLine(@"
+Kryoss Security Agent v1.2.2
+TeamLogic IT — Security Assessment Tool
+
+USAGE:
+  KryossAgent.exe [options]
+
+DEFAULT BEHAVIOR (no flags):
+  Enrolls this machine, runs 647 security controls, uploads results,
+  then scans the entire network (AD discovery + remote deployment).
+
+OPTIONS:
+
+  Enrollment:
+    --code CODE          Enrollment code (if not embedded in binary)
+    --api-url URL        API endpoint (default: https://func-kryoss.azurewebsites.net)
+    --reenroll           Clear existing enrollment and re-enroll
+
+  Scan mode:
+    --alone              Scan only this machine (skip network scan)
+    --scan               Network scan only (skip local assessment)
+
+  Network discovery (used with default or --scan):
+    --discover-ad [OU]   Discover machines via Active Directory
+    --discover-arp       Discover machines via ARP table
+    --discover-subnet CIDR  Probe subnet (e.g. 192.168.1.0/24)
+    --targets H1,H2,H3  Explicit target list (comma-separated)
+    --targets-file FILE  Read targets from file (one per line)
+    --credential         Prompt for remote admin credentials
+    --threads N          Parallel scan threads (default: 10)
+
+  Output:
+    --silent             No console output (for remote PsExec execution)
+    --verbose            Show detailed engine output and command progress
+
+  Help:
+    --help, -?, /?       Show this help message
+
+EXAMPLES:
+  KryossAgent.exe                              Scan local + entire network (default)
+  KryossAgent.exe --alone                      Scan only this machine
+  KryossAgent.exe --scan --threads 20          Network scan with 20 threads
+  KryossAgent.exe --reenroll --code XXXX       Re-enroll and scan
+  KryossAgent.exe --scan --discover-subnet 10.0.0.0/24
+  KryossAgent.exe --verbose                    Full detail output
+
+EXIT CODES:
+  0   Success
+  1   Fatal error (enrollment failed, no controls, etc.)
+  2   Partial (upload deferred, some targets failed)
+  99  Unhandled exception
+");
 }

@@ -151,8 +151,56 @@ public class MachinesFunction
             return notFound;
         }
 
+        // Load per-disk inventory
+        var disks = await _db.MachineDisks
+            .Where(d => d.MachineId == id)
+            .OrderBy(d => d.DriveLetter)
+            .Select(d => new
+            {
+                d.DriveLetter,
+                d.Label,
+                d.DiskType,
+                d.TotalGb,
+                d.FreeGb,
+                d.FileSystem
+            })
+            .ToListAsync();
+
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(machine);
+        await response.WriteAsJsonAsync(new
+        {
+            machine.Id,
+            machine.OrganizationId,
+            machine.AgentId,
+            machine.Hostname,
+            machine.OsName,
+            machine.OsVersion,
+            machine.OsBuild,
+            machine.Manufacturer,
+            machine.Model,
+            machine.SerialNumber,
+            machine.CpuName,
+            machine.CpuCores,
+            machine.RamGb,
+            machine.DiskType,
+            machine.DiskSizeGb,
+            machine.DiskFreeGb,
+            machine.TpmPresent,
+            machine.TpmVersion,
+            machine.SecureBoot,
+            machine.Bitlocker,
+            machine.IpAddress,
+            machine.MacAddress,
+            machine.DomainStatus,
+            machine.DomainName,
+            machine.SystemAgeDays,
+            machine.LastBootAt,
+            machine.IsActive,
+            machine.LastSeenAt,
+            machine.FirstSeenAt,
+            machine.assessmentHistory,
+            disks
+        });
         return response;
     }
 

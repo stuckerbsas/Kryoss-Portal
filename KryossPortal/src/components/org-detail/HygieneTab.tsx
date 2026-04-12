@@ -160,7 +160,7 @@ export function HygieneTab() {
       {/* KPI cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Dormant Machines</CardTitle>
             <Monitor className="h-4 w-4 text-red-500" />
           </CardHeader>
@@ -173,7 +173,7 @@ export function HygieneTab() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Dormant Users</CardTitle>
             <UserX className="h-4 w-4 text-red-500" />
           </CardHeader>
@@ -186,7 +186,7 @@ export function HygieneTab() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Disabled Users</CardTitle>
             <Clock className="h-4 w-4 text-amber-500" />
           </CardHeader>
@@ -194,12 +194,12 @@ export function HygieneTab() {
             <div className="text-2xl font-bold" style={{ color: scan.disabledUsers > 0 ? '#D97706' : '#006536' }}>
               {scan.disabledUsers}
             </div>
-            <p className="text-xs text-muted-foreground">Still in AD, consider removing</p>
+            <p className="text-xs text-muted-foreground">Remove from AD</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Pwd Never Expires</CardTitle>
             <KeyRound className="h-4 w-4 text-red-500" />
           </CardHeader>
@@ -211,7 +211,7 @@ export function HygieneTab() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Privileged</CardTitle>
             <Shield className="h-4 w-4 text-purple-500" />
           </CardHeader>
@@ -222,7 +222,7 @@ export function HygieneTab() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Kerberoastable</CardTitle>
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
@@ -235,7 +235,7 @@ export function HygieneTab() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">No LAPS</CardTitle>
             <Server className="h-4 w-4 text-amber-500" />
           </CardHeader>
@@ -248,7 +248,7 @@ export function HygieneTab() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Delegation</CardTitle>
             <ShieldAlert className="h-4 w-4 text-red-500" />
           </CardHeader>
@@ -309,7 +309,7 @@ export function HygieneTab() {
       />
       <FindingsTable
         findings={disabledUsers}
-        title="Disabled Users (still in AD)"
+        title="Disabled Users"
         icon={<UserX className="h-4 w-4 text-gray-500" />}
       />
       <FindingsTable

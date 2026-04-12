@@ -36,12 +36,23 @@
 | GET | `/v2/machines/{id}/history` | `MachinesFunction.History` | Assessment history, includes frameworkScores[] per run |
 | GET | `/v2/machines/{id}/software` | `MachinesFunction.Software` | Software inventory (parsed from RawPayload) |
 | GET/POST/PATCH/DEL | `/v2/controls[/id]` | `ControlDefsFunction` | Catalog CRUD (paginated, includes `check_json`) |
-| GET | `/v2/catalog/controls?platform=W11&framework=HIPAA` | `CatalogControlsFunction.List` | Read-only catalog view for portal (flat, no `check_json`, with platform + framework tags) |
+| GET | `/v2/catalog/controls?platform=W11&framework=HIPAA` | `CatalogControlsFunction.List` | Read-only catalog view for portal |
 | GET | `/v2/dashboard/fleet` | `DashboardFunction.Fleet` | KPIs, grade distribution, aggregated frameworkScores per fleet |
 | GET | `/v2/dashboard/machine/{id}` | `DashboardFunction.Machine` | Per-machine dashboard |
 | GET/POST | `/v2/assessment-profiles` | `AssessmentProfilesFunction` | Assessment templates |
-| GET | `/v2/reports/{runId}?type=technical\|executive\|presales` | `ReportsFunction.Generate` | Per-run HTML report |
-| GET | `/v2/reports/org/{orgId}?type=...` | `ReportsFunction.GenerateOrg` | Org-wide report |
+| GET | `/v2/reports/{runId}?type=technical\|executive\|presales` | `ReportsFunction.Generate` | Per-run HTML report (Brand 2025) |
+| GET | `/v2/reports/org/{orgId}?type=...` | `ReportsFunction.GenerateOrg` | Org-wide report (Brand 2025) |
+| GET | `/v2/inventory/hardware?organizationId=X` | `InventoryFunction.Hardware` | Org-level hardware inventory (all machines) |
+| GET | `/v2/inventory/software?organizationId=X` | `InventoryFunction.Software` | Org-level software inventory (600+ commercial app detection) |
+| GET | `/v2/hygiene?organizationId=X` | `HygieneFunction.Get` | AD hygiene findings for portal |
+| GET | `/v2/agent/download?orgId=X&enrollmentCodeId=Y` | `AgentDownloadFunction` | Download org-patched agent binary |
+
+### Agent API (v1) — additional endpoints
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| POST | `/v1/hygiene` | `HygieneFunction.Submit` | Agent submits AD hygiene findings |
+| POST | `/v1/ports` | (in MachinesFunction or InventoryFunction) | Agent submits port scan results |
 
 ---
 
@@ -62,7 +73,13 @@ src/KryossApi/
 │       ├── CatalogControlsFunction.cs  <- read-only /v2/catalog/controls for portal
 │       ├── DashboardFunction.cs
 │       ├── AssessmentProfilesFunction.cs
-│       └── ReportsFunction.cs
+│       ├── ReportsFunction.cs          <- Brand 2025 redesign with AD hygiene section
+│       ├── InventoryFunction.cs        <- /v2/inventory/hardware + /v2/inventory/software (600+ apps)
+│       ├── HygieneFunction.cs          <- POST /v1/hygiene (agent) + GET /v2/hygiene (portal)
+│       ├── AgentDownloadFunction.cs    <- /v2/agent/download (patched binary)
+│       ├── OrganizationsFunction.cs
+│       ├── MeFunction.cs
+│       └── RecycleBinFunction.cs
 ├── Middleware/
 │   ├── ApiKeyAuthMiddleware.cs      <- Agent HMAC validation (timestamp+method+path+bodyHash)
 │   ├── BearerAuthMiddleware.cs      <- Portal JWT validation
@@ -73,7 +90,8 @@ src/KryossApi/
 │   ├── CryptoService.cs             <- RSA keygen, AES-GCM decrypt
 │   ├── EnrollmentService.cs         <- Code redemption, machine registration
 │   ├── EvaluationService.cs         <- SERVER-SIDE PASS/FAIL eval vs check_json
-│   ├── ReportService.cs             <- HTML report rendering
+│   ├── ReportService.cs             <- HTML report rendering (Brand 2025, framework gauges, AD hygiene)
+│   ├── BinaryPatcher.cs             <- UTF-16LE sentinel replacement in agent .exe binary
 │   ├── ActlogService.cs             <- Audit logging
 │   ├── CurrentUserService.cs        <- Request-scoped user context
 │   └── AuditInterceptor.cs          <- EF Core CreatedBy/UpdatedBy interceptor
@@ -85,6 +103,10 @@ src/KryossApi/
 │       ├── Enrollment.cs
 │       ├── Franchise.cs
 │       ├── Machine.cs
+│       ├── MachineDisk.cs           <- per-drive inventory (drive letter, size, free, type)
+│       ├── MachinePort.cs           <- open ports per host (port, protocol, state, service)
+│       ├── AdHygiene.cs             <- AD hygiene findings (stale objects, security issues)
+│       ├── Brand.cs                 <- Brand/MSP customization
 │       ├── Organization.cs
 │       └── Auth.cs
 └── Models/                          <- (empty — DTOs inline in functions)
@@ -107,7 +129,9 @@ src/KryossApi/
 - **`CryptoService`** — Generates RSA-2048 keypairs per org (private → Key Vault, public → `org_crypto_keys`). Decrypts agent payload envelopes (AES-GCM with RSA-wrapped key).
 - **`EnrollmentService`** — Validates enrollment code, creates `machines` row, assigns API key, returns public key to agent. Supports `maxUses` on enrollment codes (multi-use). Auto-creates a default assessment if the org doesn't have one. Handles re-enrollment: reuses existing machine row by hostname match.
 - **`EvaluationService`** — **This is the scoring engine.** Takes `control_results[]` + raw snapshot, loads `control_defs.check_json` for each, evaluates PASS/WARN/FAIL, writes `control_results` rows, computes and persists per-framework scores in `run_framework_scores`. Now also persists all ~25 hardware fields from agent payload.
-- **`ReportService`** — Renders the 3 report types (technical/executive/presales) using `Scripts/Audit/Kryoss-Report-Template.html` as the base (logo embedded base64, ribbon, Montserrat). Self-contained HTML, no external deps.
+- **`ReportService`** — Renders the 3 report types (technical/executive/presales) with Brand 2025 redesign: framework score gauges, AD hygiene section, hardware/software summary. Self-contained HTML, Montserrat font, no external deps.
+- **`BinaryPatcher`** — Replaces UTF-16LE sentinel strings in the compiled agent .exe to produce org-specific binaries. Sentinels: `@@KRYOSS_ENROLL:` (64 chars), `@@KRYOSS_APIURL:` (256 chars), `@@KRYOSS_ORGNAM:` (128 chars), `@@KRYOSS_MSPNAM:` (128 chars), `@@CLRPRI:` (32 chars), `@@CLRACC:` (32 chars). Called by `AgentDownloadFunction`.
+- **`InventoryFunction`** — Org-level hardware and software inventory. Software endpoint includes 600+ commercial application detection list for normalizing `DisplayName` registry values into recognized products.
 
 ---
 
@@ -121,7 +145,8 @@ src/KryossApi/
 |---|---|
 | Auth/RBAC | `modules`, `actions`, `permissions`, `roles`, `role_permissions`, `users`, `actlog` |
 | Org | `franchises`, `organizations`, `auth_api_keys`, `org_crypto_keys` |
-| CMDB | `machines`, `machine_snapshots` (with `raw_*` JSON cols), `machine_software`, `machine_users` |
+| CMDB | `machines`, `machine_snapshots` (with `raw_*` JSON cols), `machine_software`, `machine_users`, `machine_disks` (per-drive), `machine_ports` (open ports) |
+| AD Hygiene | `ad_hygiene` (stale machines/users, privileged accounts, kerberoastable, delegation, LAPS, domain info) |
 | Catalog | `control_categories`, `control_defs`, `frameworks`, `platforms`, `control_frameworks`, `control_platforms` |
 | Assessment | `assessments`, `assessment_controls`, `assessment_runs`, `control_results`, `run_framework_scores` |
 | Enrollment | `enrollment_codes` |
@@ -181,8 +206,14 @@ src/KryossApi/
 ## Known gaps (see `../CLAUDE.md` for details)
 
 1. ✅ `check_json` casing — fixed by `seed_005b_fix_casing.sql`
-2. 🟠 Agent payload partially enriched — HardwareInfo expanded (~25 fields), but `raw_*` blocks (network, users, security posture) still not populated
-3. ✅ Platform scope — server resolves from OS string, agent sends `X-Agent-Id`; MS19/MS22/MS25 now have 647 controls linked (seed_007c)
+2. ✅ Platform scope — server resolves from OS string, agent sends `X-Agent-Id`; MS19/MS22/MS25 now have 647 controls linked (seed_007c)
+3. ✅ Hardware inventory — ~25 fields + multi-disk in `machine_disks` table
+4. ✅ Software inventory — 600+ commercial app detection, org-level endpoint
+5. ✅ Port scanning — `machine_ports` table, TCP top 100 + UDP top 20
+6. ✅ AD Hygiene — `ad_hygiene` table, full security audit (privileged, kerberoastable, LAPS, delegation, domain level)
+7. ✅ Binary patching — `BinaryPatcher` + `AgentDownloadFunction` for org-specific .exe
+8. ✅ Report redesign — Brand 2025 layout with framework gauges, AD hygiene section
+9. 🟡 `raw_*` blocks — `raw_users`, `raw_network`, `raw_security_posture` not populated as structured raw blocks in payload (data available via dedicated endpoints)
 
 ## Auth config (Easy Auth on func-kryoss)
 

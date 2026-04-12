@@ -24,12 +24,15 @@ export interface HardwareItem {
   ipAddress: string | null;
   macAddress: string | null;
   lastSeenAt: string | null;
-  win11Ready: boolean;
+  win11Ready: boolean | null; // null = N/A (servers)
   win11Blockers: string[];
+  disks: { driveLetter: string; label: string | null; diskType: string | null; totalGb: number | null; freeGb: number | null; fileSystem: string | null; }[];
 }
 
 export interface HardwareInventoryResponse {
   total: number;
+  workstations?: number;
+  servers?: number;
   win11Ready: number;
   win11NotReady: number;
   items: HardwareItem[];

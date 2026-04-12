@@ -18,6 +18,8 @@ namespace KryossAgent.Models;
 [JsonSerializable(typeof(List<ControlDef>))]
 [JsonSerializable(typeof(PlatformInfo))]
 [JsonSerializable(typeof(HardwareInfo))]
+[JsonSerializable(typeof(DiskInfo))]
+[JsonSerializable(typeof(List<DiskInfo>))]
 [JsonSerializable(typeof(SoftwareItem))]
 [JsonSerializable(typeof(List<SoftwareItem>))]
 // Primitive types that can appear polymorphically inside CheckResult.Value (object?).

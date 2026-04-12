@@ -147,6 +147,8 @@ public static class TargetDiscovery
 
     // Store hygiene report for access after discovery
     public static AdHygieneReport? LastHygieneReport { get; private set; }
+    public static int LastDiscoveredActiveCount { get; private set; }
+    public static int LastDiscoveredActiveUserCount { get; private set; }
 
     /// <summary>
     /// Query Active Directory for Windows computer objects.
@@ -210,19 +212,20 @@ public static class TargetDiscovery
                     }
                     else
                     {
-                        // Dormant (>60 days) — candidate for removal
+                        // Dormant (>60 days) — remove from AD
                         dormantMachines.Add(new AdHygieneItem(name, "Computer", "Dormant", daysInactive,
-                            $"{os} — last logon {lastLogonDate:yyyy-MM-dd} — candidate for removal"));
+                            $"{os} — last logon {lastLogonDate:yyyy-MM-dd} — remove from AD"));
                     }
                 }
                 else
                 {
                     // Never logged on
                     dormantMachines.Add(new AdHygieneItem(name, "Computer", "Dormant", 9999,
-                        $"{os} — never logged on — candidate for removal"));
+                        $"{os} — never logged on — remove from AD"));
                 }
             }
 
+            LastDiscoveredActiveCount = active.Count;
             Console.WriteLine($"  AD machines: {active.Count} active, {staleMachines.Count} stale (30-60d), {dormantMachines.Count} dormant (>60d)");
 
             // Audit users
@@ -338,9 +341,11 @@ public static class TargetDiscovery
             var sixtyDaysAgo = DateTime.UtcNow.AddDays(-60).ToFileTimeUtc();
             var ninetyDaysAgo = DateTime.UtcNow.AddDays(-90).ToFileTimeUtc();
 
+            int totalProcessed = 0;
             using var found = searcher.FindAll();
             foreach (SearchResult sr in found)
             {
+                totalProcessed++;
                 var samName = sr.Properties.Contains("sAMAccountName") && sr.Properties["sAMAccountName"].Count > 0
                     ? (string)sr.Properties["sAMAccountName"][0] : null;
                 var displayName = sr.Properties.Contains("displayName") && sr.Properties["displayName"].Count > 0
@@ -363,7 +368,7 @@ public static class TargetDiscovery
                 if (isDisabled)
                 {
                     disabled.Add(new AdHygieneItem(samName, "User", "Disabled", 0,
-                        $"{displayName} — account disabled but still in AD"));
+                        $"{displayName} — disabled, remove from AD"));
                     continue;
                 }
 
@@ -371,7 +376,7 @@ public static class TargetDiscovery
                 if (pwdNeverExpires)
                 {
                     neverExpire.Add(new AdHygieneItem(samName, "User", "PwdNeverExpires", 0,
-                        $"{displayName} — password set to never expire"));
+                        $"{displayName} — pwd never expires"));
                 }
 
                 // Last logon check
@@ -384,7 +389,7 @@ public static class TargetDiscovery
                     if (lastLogon < sixtyDaysAgo)
                     {
                         dormant.Add(new AdHygieneItem(samName, "User", "Dormant", daysInactive,
-                            $"{displayName} — last logon {lastLogonDate:yyyy-MM-dd} — candidate for removal"));
+                            $"{displayName} — last logon {lastLogonDate:yyyy-MM-dd} — remove from AD"));
                     }
                     else if (lastLogon < thirtyDaysAgo)
                     {
@@ -406,6 +411,14 @@ public static class TargetDiscovery
                     }
                 }
             }
+
+            // Count active users = total processed - stale - dormant - disabled
+            // (neverExpire can overlap with active, so don't subtract them)
+            var uniqueIssueUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var u in stale) uniqueIssueUsers.Add(u.Name);
+            foreach (var u in dormant) uniqueIssueUsers.Add(u.Name);
+            foreach (var u in disabled) uniqueIssueUsers.Add(u.Name);
+            LastDiscoveredActiveUserCount = Math.Max(0, totalProcessed - uniqueIssueUsers.Count);
 
             Console.WriteLine($"  AD users: {stale.Count} stale, {dormant.Count} dormant, {disabled.Count} disabled, {neverExpire.Count} pwd-never-expires");
         }
@@ -478,7 +491,7 @@ public static class TargetDiscovery
                 if (sam is null || sam.EndsWith("$")) continue; // Skip machine accounts
                 var spn = sr.Properties.Contains("servicePrincipalName") ? sr.Properties["servicePrincipalName"][0]?.ToString() : "";
                 kerberoastable.Add(new AdHygieneItem(sam!, "Security", "Kerberoastable", 0,
-                    $"{display} — SPN: {spn} (vulnerable to Kerberoasting)"));
+                    $"{display} — SPN: {spn} (kerberoastable)"));
             }
 
             // ── 3. Unconstrained delegation ──
@@ -498,7 +511,7 @@ public static class TargetDiscovery
                 // Skip domain controllers (they naturally have this flag)
                 if (os?.Contains("Domain Controller", StringComparison.OrdinalIgnoreCase) == true) continue;
                 unconstrained.Add(new AdHygieneItem(name!, "Security", "UnconstrainedDelegation", 0,
-                    $"{os} — trusted for unconstrained delegation (high risk)"));
+                    $"{os} — unconstrained delegation"));
             }
 
             // ── 4. AdminCount residual (users with adminCount=1 who aren't current admins) ──
@@ -519,7 +532,7 @@ public static class TargetDiscovery
                 if (sam is null || sam.Equals("Administrator", StringComparison.OrdinalIgnoreCase)) continue;
                 if (currentAdmins.Contains(sam)) continue; // Skip actual current admins
                 adminCount.Add(new AdHygieneItem(sam, "Security", "AdminCountResidue", 0,
-                    $"{display} — adminCount=1 but not in privileged groups (residual permissions)"));
+                    $"{display} — adminCount=1, residual admin perms"));
             }
 
             // ── 5. LAPS coverage (machines without ms-Mcs-AdmPwd attribute) ──
@@ -540,7 +553,7 @@ public static class TargetDiscovery
                 {
                     var name = sr.Properties.Contains("name") ? sr.Properties["name"][0]?.ToString() : "Unknown";
                     noLaps.Add(new AdHygieneItem(name!, "Security", "NoLAPS", 0,
-                        "No LAPS password managed — local admin password may be shared/static"));
+                        "No LAPS — shared local admin"));
                 }
                 else
                 {

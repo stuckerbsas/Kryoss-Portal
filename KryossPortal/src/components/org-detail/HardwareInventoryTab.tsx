@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useOrgParam } from '@/hooks/useOrgParam';
 import {
   Search,
   Monitor,
@@ -7,7 +9,6 @@ import {
   Cpu,
 } from 'lucide-react';
 import { useHardwareInventory } from '@/api/inventory';
-import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,7 +38,8 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 export function HardwareInventoryTab() {
-  const { orgId } = useOrgParam();
+  const { orgId, orgSlug } = useOrgParam();
+  const navigate = useNavigate();
   const { data, isLoading } = useHardwareInventory(orgId);
   const [search, setSearch] = useState('');
 
@@ -88,8 +90,8 @@ export function HardwareInventoryTab() {
     );
   }
 
-  const readyPct =
-    data.total > 0 ? Math.round((data.win11Ready / data.total) * 100) : 0;
+  const wsCount = data.workstations ?? data.total;
+  const readyPct = wsCount > 0 ? Math.round((data.win11Ready / wsCount) * 100) : 0;
 
   return (
     <div className="space-y-4">
@@ -174,8 +176,9 @@ export function HardwareInventoryTab() {
           </TableHeader>
           <TableBody>
             {filtered.map((m) => {
-              const lowDisk =
-                m.diskFreeGb !== null && m.diskFreeGb < 20;
+              const lowDisk = m.disks && m.disks.length > 0
+                ? m.disks.some((d) => d.totalGb && d.freeGb != null && (d.freeGb / d.totalGb) * 100 < 20)
+                : m.diskFreeGb !== null && m.diskFreeGb < 20;
               const noTpm = m.tpmPresent !== true;
               let rowClass = '';
               if (lowDisk) rowClass = 'bg-red-50';
@@ -183,7 +186,14 @@ export function HardwareInventoryTab() {
 
               return (
                 <TableRow key={m.id} className={rowClass}>
-                  <TableCell className="font-medium">{m.hostname}</TableCell>
+                  <TableCell>
+                    <button
+                      className="font-medium text-left hover:underline hover:text-primary cursor-pointer"
+                      onClick={() => navigate(`/organizations/${orgSlug}/machines/${m.hostname}`)}
+                    >
+                      {m.hostname}
+                    </button>
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {m.osName ?? 'Unknown'}
                     {m.osVersion ? ` (${m.osVersion})` : ''}
@@ -196,18 +206,35 @@ export function HardwareInventoryTab() {
                     {m.ramGb != null ? `${m.ramGb} GB` : 'N/A'}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {m.diskType ?? ''}
-                    {m.diskSizeGb != null ? ` ${m.diskSizeGb} GB` : ''}
-                    {m.diskFreeGb != null ? (
-                      <span
-                        className={
-                          lowDisk ? 'text-red-600 font-medium' : ''
-                        }
-                      >
-                        {' '}
-                        ({m.diskFreeGb.toFixed(1)} free)
-                      </span>
-                    ) : null}
+                    {m.disks && m.disks.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {m.disks.map((d) => {
+                          const dLow = d.totalGb && d.freeGb != null ? (d.freeGb / d.totalGb) * 100 < 20 : false;
+                          return (
+                            <div key={d.driveLetter}>
+                              <span className="font-mono">{d.driveLetter}:</span>{' '}
+                              {d.totalGb != null ? `${d.totalGb}GB` : '?'}{' '}
+                              {d.diskType ?? ''}{' '}
+                              {d.freeGb != null ? (
+                                <span className={dLow ? 'text-red-600 font-medium' : ''}>
+                                  ({d.freeGb.toFixed(1)} free)
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <>
+                        {m.diskType ?? ''}
+                        {m.diskSizeGb != null ? ` ${m.diskSizeGb} GB` : ''}
+                        {m.diskFreeGb != null ? (
+                          <span className={lowDisk ? 'text-red-600 font-medium' : ''}>
+                            {' '}({m.diskFreeGb.toFixed(1)} free)
+                          </span>
+                        ) : null}
+                      </>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {[m.manufacturer, m.model].filter(Boolean).join(' / ') ||
@@ -223,15 +250,23 @@ export function HardwareInventoryTab() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {m.win11Ready ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <span
-                        title={m.win11Blockers.join(', ')}
-                        className="cursor-help"
-                      >
-                        <XCircle className="h-4 w-4 text-red-500" />
+                    {m.win11Ready === null ? (
+                      <span className="text-xs text-muted-foreground">N/A</span>
+                    ) : m.win11Ready ? (
+                      <span className="inline-flex items-center gap-1 text-green-600 text-xs">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Ready
                       </span>
+                    ) : (
+                      <div>
+                        <span className="inline-flex items-center gap-1 text-red-500 text-xs">
+                          <XCircle className="h-3.5 w-3.5" /> Not Ready
+                        </span>
+                        {m.win11Blockers && m.win11Blockers.length > 0 && (
+                          <div className="text-xs text-red-400 mt-0.5">
+                            {m.win11Blockers.join(' · ')}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">

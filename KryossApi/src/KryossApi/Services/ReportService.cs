@@ -1072,14 +1072,7 @@ public class ReportService : IReportService
 
     private static void AppendRibbonSvg(StringBuilder sb)
     {
-        sb.AppendLine(@"<svg class='cover-ribbon' viewBox='0 0 360 900' xmlns='http://www.w3.org/2000/svg'>
-            <rect fill='#006536' x='280' y='-100' width='45' height='1200' transform='rotate(-35 300 450)'/>
-            <rect fill='#2BB673' x='320' y='-100' width='45' height='1200' transform='rotate(-35 340 450)'/>
-            <rect fill='#39B54A' x='360' y='-100' width='45' height='1200' transform='rotate(-35 380 450)'/>
-            <rect fill='#8DC63F' x='400' y='-100' width='45' height='1200' transform='rotate(-35 420 450)'/>
-            <rect fill='#B2D235' x='440' y='-100' width='45' height='1200' transform='rotate(-35 460 450)'/>
-            <rect fill='#D3E173' x='480' y='-100' width='45' height='1200' transform='rotate(-35 500 450)'/>
-        </svg>");
+        sb.AppendLine($"<img class='cover-ribbon' src='{RibbonData.DataUri}' alt='' />");
     }
 
     private static void AppendPageHeader(StringBuilder sb, string title, ReportBranding brand)
@@ -1194,7 +1187,7 @@ public class ReportService : IReportService
         /* Cover */
         .cover { width: 210mm; min-height: 297mm; margin: 0 auto 20px; background: #3D4043; position: relative;
                  overflow: hidden; display: flex; align-items: flex-end; page-break-after: always; }
-        .cover-ribbon { position: absolute; bottom: 0; right: 0; width: 50%; height: 100%; pointer-events: none; }
+        .cover-ribbon { position: absolute; bottom: 0; right: -404px; width: 100%; height: 59%; pointer-events: none; object-fit: cover; object-position: right bottom; }
         .cover-content { padding: 44px; position: relative; z-index: 2; color: #fff; }
         .cover .logo { height: 50px; margin-bottom: 30px; display: block; }
         .eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: {{brand.AccentColor}}; margin-bottom: 12px; }
@@ -1354,7 +1347,7 @@ public class ReportService : IReportService
         /* Cover */
         .cover { width: 210mm; min-height: 297mm; margin: 0 auto 20px; background: #3D4043; position: relative;
                  overflow: hidden; display: flex; align-items: flex-end; page-break-after: always; }
-        .cover-ribbon { position: absolute; bottom: 0; right: 0; width: 50%; height: 100%; pointer-events: none; }
+        .cover-ribbon { position: absolute; bottom: 0; right: -404px; width: 100%; height: 59%; pointer-events: none; object-fit: cover; object-position: right bottom; }
         .cover-content { padding: 44px; position: relative; z-index: 2; color: #fff; }
         .cover .logo { height: 50px; margin-bottom: 30px; display: block; }
         .eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: {{brand.AccentColor}}; margin-bottom: 12px; }

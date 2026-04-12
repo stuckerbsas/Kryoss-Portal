@@ -42,6 +42,12 @@ public class KryossDbContext : DbContext
     public DbSet<EnrollmentCode> EnrollmentCodes => Set<EnrollmentCode>();
     public DbSet<OrgCryptoKey> OrgCryptoKeys => Set<OrgCryptoKey>();
 
+    // CMDB - Disk inventory
+    public DbSet<MachineDisk> MachineDisks => Set<MachineDisk>();
+
+    // CMDB - Port scan results
+    public DbSet<MachinePort> MachinePorts => Set<MachinePort>();
+
     // AD Hygiene
     public DbSet<AdHygieneScan> AdHygieneScans => Set<AdHygieneScan>();
     public DbSet<AdHygieneFinding> AdHygieneFindings => Set<AdHygieneFinding>();
@@ -238,6 +244,22 @@ public class KryossDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasQueryFilter(x => x.DeletedAt == null);
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+        });
+
+        // ── CMDB - Disk inventory ──
+        mb.Entity<MachineDisk>(e =>
+        {
+            e.ToTable("machine_disks");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+        });
+
+        // ── CMDB - Port scan results ──
+        mb.Entity<MachinePort>(e =>
+        {
+            e.ToTable("machine_ports");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
         });
 
         // ── AD Hygiene ──

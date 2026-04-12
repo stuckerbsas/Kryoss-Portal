@@ -185,6 +185,44 @@ public class EvaluationService : IEvaluationService
                     machine.OsName, machine.OsVersion, machine.OsBuild);
             }
 
+            // Persist individual disk inventory
+            if (payload.Hardware?.Disks is { Count: > 0 })
+            {
+                var existingDisks = await _db.MachineDisks
+                    .Where(d => d.MachineId == machineId)
+                    .ToDictionaryAsync(d => d.DriveLetter);
+
+                foreach (var disk in payload.Hardware.Disks)
+                {
+                    if (string.IsNullOrEmpty(disk.DriveLetter)) continue;
+                    var letter = disk.DriveLetter[..1].ToUpperInvariant();
+
+                    if (existingDisks.TryGetValue(letter, out var existing))
+                    {
+                        existing.Label = disk.Label;
+                        existing.DiskType = disk.DiskType;
+                        existing.TotalGb = disk.TotalGb;
+                        existing.FreeGb = disk.FreeGb;
+                        existing.FileSystem = disk.FileSystem;
+                        existing.UpdatedAt = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        _db.MachineDisks.Add(new Data.Entities.MachineDisk
+                        {
+                            MachineId = machineId,
+                            DriveLetter = letter,
+                            Label = disk.Label,
+                            DiskType = disk.DiskType,
+                            TotalGb = disk.TotalGb,
+                            FreeGb = disk.FreeGb,
+                            FileSystem = disk.FileSystem,
+                            UpdatedAt = DateTime.UtcNow,
+                        });
+                    }
+                }
+            }
+
             await _db.SaveChangesAsync();
         }
 
@@ -347,6 +385,17 @@ public class HardwareInfo
     public int? SystemAgeDays { get; set; }
     public DateTime? LastBootAt { get; set; }
     public string? Tpm { get; set; } // legacy compat
+    public List<DiskInfo>? Disks { get; set; }
+}
+
+public class DiskInfo
+{
+    public string DriveLetter { get; set; } = null!;
+    public string? Label { get; set; }
+    public string? DiskType { get; set; }
+    public int? TotalGb { get; set; }
+    public decimal? FreeGb { get; set; }
+    public string? FileSystem { get; set; }
 }
 
 public class SoftwareInfo
