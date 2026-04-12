@@ -52,6 +52,9 @@ public class KryossDbContext : DbContext
     public DbSet<AdHygieneScan> AdHygieneScans => Set<AdHygieneScan>();
     public DbSet<AdHygieneFinding> AdHygieneFindings => Set<AdHygieneFinding>();
 
+    // CMDB - Threat detection
+    public DbSet<MachineThreat> MachineThreats => Set<MachineThreat>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // ── Auth ──
@@ -275,6 +278,14 @@ public class KryossDbContext : DbContext
             e.ToTable("ad_hygiene_findings");
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Scan).WithMany(x => x.Findings).HasForeignKey(x => x.ScanId);
+        });
+
+        // ── CMDB - Threat detection ──
+        mb.Entity<MachineThreat>(e =>
+        {
+            e.ToTable("machine_threats");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
         });
     }
 }

@@ -100,7 +100,7 @@ public class ReportService : IReportService
             CompanyName = brand?.Name ?? franchise.BrandName ?? franchise.Name,
             PrimaryColor = brand?.ColorPrimary ?? franchise.BrandColorPrimary ?? "#006536",
             AccentColor = brand?.ColorAccent ?? franchise.BrandColorAccent ?? "#A2C564",
-            LogoUrl = brand?.LogoUrl ?? franchise.BrandLogoUrl
+            LogoUrl = brand?.LogoUrl ?? franchise.BrandLogoUrl ?? LogoData.DataUri
         };
 
         return reportType switch
@@ -543,7 +543,7 @@ public class ReportService : IReportService
             CompanyName = brand?.Name ?? franchise.BrandName ?? franchise.Name,
             PrimaryColor = brand?.ColorPrimary ?? franchise.BrandColorPrimary ?? "#006536",
             AccentColor = brand?.ColorAccent ?? franchise.BrandColorAccent ?? "#A2C564",
-            LogoUrl = brand?.LogoUrl ?? franchise.BrandLogoUrl
+            LogoUrl = brand?.LogoUrl ?? franchise.BrandLogoUrl ?? LogoData.DataUri
         };
 
         return reportType switch

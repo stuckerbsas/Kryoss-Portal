@@ -10,6 +10,7 @@ import { EnrollmentTab } from './components/org-detail/EnrollmentTab';
 import { ReportsTab } from './components/org-detail/ReportsTab';
 import { HygieneTab } from './components/org-detail/HygieneTab';
 import { PortsTab } from './components/org-detail/PortsTab';
+import { ThreatsTab } from './components/org-detail/ThreatsTab';
 import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
 import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
               { path: 'reports', element: <ReportsTab /> },
               { path: 'hygiene', element: <HygieneTab /> },
               { path: 'ports', element: <PortsTab /> },
+              { path: 'threats', element: <ThreatsTab /> },
               {
                 path: 'machines/:machineId',
                 handle: { crumb: (_: unknown, p: Record<string, string>) => p.machineId },

@@ -254,7 +254,8 @@ if (checks.Count == 0)
 }
 
 // ── Detect platform & inventory ──
-if (!silent) Console.Write("  Scanning: collecting system info...");
+if (!silent) Console.WriteLine("  Scanning local machine...");
+if (!silent) Console.Write("    Collecting system info...");
 var platformInfo = PlatformDetector.DetectPlatform();
 var hardwareInfo = PlatformDetector.DetectHardware();
 List<SoftwareItem> softwareList;
@@ -267,7 +268,22 @@ catch (Exception ex)
     if (verbose) Console.Error.WriteLine($"  [WARN] Software enumeration failed: {ex.Message}");
     softwareList = [];
 }
-if (!silent) Console.Write("\r  Scanning: running 647 security checks...");
+if (!silent) Console.WriteLine(" done");
+
+// ── Threat detection ──
+if (!silent) Console.Write("    Scanning for threats...");
+List<ThreatFinding> threats;
+try
+{
+    threats = ThreatDetector.ScanAll();
+}
+catch
+{
+    threats = [];
+}
+if (!silent) Console.WriteLine($" {threats.Count} found");
+
+if (!silent) Console.Write("    Running security checks...");
 
 ShellEngine.Verbose = verbose;
 ICheckEngine[] engines =
@@ -328,7 +344,7 @@ var engineTasks = activeEngines
             {
                 lock (logLock)
                 {
-                    Console.Write($"\r  Scanning: {done}/{totalEngines} engines done ({controls.Count} {engine.Type} checks)   ");
+                    Console.Write($"\r    Running security checks... {done}/{totalEngines} engines   ");
                     Console.Out.Flush();
                 }
             }
@@ -357,9 +373,11 @@ var durationMs = (int)sw.ElapsedMilliseconds;
 
 if (!silent)
 {
-    Console.Write($"\r  Scanning: complete — {allResults.Count} checks in {durationMs / 1000.0:F1}s          ");
-    Console.WriteLine();
+    Console.WriteLine($"\r    Security checks complete — {allResults.Count} checks in {durationMs / 1000.0:F1}s          ");
 }
+
+// ── Attach threats to hardware info ──
+hardwareInfo.Threats = threats;
 
 // ── Build and upload payload ──
 var payload = new AssessmentPayload
@@ -371,7 +389,7 @@ var payload = new AssessmentPayload
     Platform = platformInfo,
     Hardware = hardwareInfo,
     Software = softwareList,
-    Results = allResults
+    Results = allResults,
 };
 
 try

@@ -223,6 +223,27 @@ public class EvaluationService : IEvaluationService
                 }
             }
 
+            // Persist threat detection findings
+            if (payload.Hardware?.Threats is { Count: > 0 })
+            {
+                var oldThreats = await _db.MachineThreats.Where(t => t.MachineId == machineId).ToListAsync();
+                _db.MachineThreats.RemoveRange(oldThreats);
+
+                foreach (var threat in payload.Hardware.Threats)
+                {
+                    _db.MachineThreats.Add(new Data.Entities.MachineThreat
+                    {
+                        MachineId = machineId,
+                        ThreatName = threat.ThreatName,
+                        Category = threat.Category,
+                        Severity = threat.Severity,
+                        Vector = threat.Vector,
+                        Detail = threat.Detail,
+                        DetectedAt = DateTime.UtcNow,
+                    });
+                }
+            }
+
             await _db.SaveChangesAsync();
         }
 
@@ -386,6 +407,7 @@ public class HardwareInfo
     public DateTime? LastBootAt { get; set; }
     public string? Tpm { get; set; } // legacy compat
     public List<DiskInfo>? Disks { get; set; }
+    public List<ThreatFinding>? Threats { get; set; }
 }
 
 public class DiskInfo
@@ -396,6 +418,15 @@ public class DiskInfo
     public int? TotalGb { get; set; }
     public decimal? FreeGb { get; set; }
     public string? FileSystem { get; set; }
+}
+
+public class ThreatFinding
+{
+    public string ThreatName { get; set; } = null!;
+    public string Category { get; set; } = null!;
+    public string Severity { get; set; } = null!;
+    public string Vector { get; set; } = null!;
+    public string? Detail { get; set; }
 }
 
 public class SoftwareInfo

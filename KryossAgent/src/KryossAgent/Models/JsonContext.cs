@@ -22,6 +22,8 @@ namespace KryossAgent.Models;
 [JsonSerializable(typeof(List<DiskInfo>))]
 [JsonSerializable(typeof(SoftwareItem))]
 [JsonSerializable(typeof(List<SoftwareItem>))]
+[JsonSerializable(typeof(ThreatFinding))]
+[JsonSerializable(typeof(List<ThreatFinding>))]
 // Primitive types that can appear polymorphically inside CheckResult.Value (object?).
 // Without these, source-gen throws NotSupportedException when an engine writes a
 // boxed long/int/bool/string/double to Value (e.g. EventLogConfiguration.MaximumSizeInBytes

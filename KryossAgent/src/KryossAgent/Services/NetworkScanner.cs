@@ -625,21 +625,11 @@ public static class NetworkScanner
 
     private static async Task UploadPortResults(ScanResult[] results)
     {
-        var portFindings = results
+        var machinesWithPorts = results
             .Where(r => r.OpenPorts is { Count: > 0 })
-            .SelectMany(r => r.OpenPorts!.Select(p => new
-            {
-                host = r.Name,
-                address = r.Address,
-                port = p.Port,
-                protocol = p.Protocol,
-                status = p.Status,
-                service = p.Service,
-                risk = p.Risk
-            }))
             .ToList();
 
-        if (portFindings.Count == 0) return;
+        if (machinesWithPorts.Count == 0) return;
 
         try
         {
@@ -647,14 +637,30 @@ public static class NetworkScanner
             if (!config.IsEnrolled) return;
 
             using var client = new ApiClient(config);
-            await client.SubmitPortResultsAsync(new
+            int totalUploaded = 0;
+
+            foreach (var machine in machinesWithPorts)
             {
-                scannedBy = Environment.MachineName,
-                scannedAt = DateTime.UtcNow,
-                totalPorts = portFindings.Count,
-                findings = portFindings
-            });
-            Console.WriteLine($"  Port Scan: {portFindings.Count} open ports uploaded to portal");
+                try
+                {
+                    await client.SubmitPortResultsAsync(new
+                    {
+                        machineHostname = machine.Name,
+                        ports = machine.OpenPorts!.Select(p => new
+                        {
+                            port = p.Port,
+                            protocol = p.Protocol,
+                            status = p.Status,
+                            service = p.Service,
+                            risk = p.Risk
+                        }).ToList()
+                    });
+                    totalUploaded += machine.OpenPorts!.Count;
+                }
+                catch { /* skip individual machine failures */ }
+            }
+
+            Console.WriteLine($"  Port Scan: {totalUploaded} open ports across {machinesWithPorts.Count} machines uploaded to portal");
         }
         catch (Exception ex)
         {

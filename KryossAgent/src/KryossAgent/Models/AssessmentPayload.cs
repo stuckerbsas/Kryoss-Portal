@@ -112,6 +112,10 @@ public class HardwareInfo
     [JsonPropertyName("disks")]
     public List<DiskInfo> Disks { get; set; } = [];
 
+    // Threat detection
+    [JsonPropertyName("threats")]
+    public List<ThreatFinding> Threats { get; set; } = [];
+
     // Legacy compat
     [JsonPropertyName("tpm")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -154,6 +158,25 @@ public class SoftwareItem
     [JsonPropertyName("publisher")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Publisher { get; set; }
+}
+
+public class ThreatFinding
+{
+    [JsonPropertyName("threatName")]
+    public string ThreatName { get; set; } = null!;
+
+    [JsonPropertyName("category")]
+    public string Category { get; set; } = null!;
+
+    [JsonPropertyName("severity")]
+    public string Severity { get; set; } = null!;
+
+    [JsonPropertyName("vector")]
+    public string Vector { get; set; } = null!;
+
+    [JsonPropertyName("detail")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Detail { get; set; }
 }
 
 /// <summary>

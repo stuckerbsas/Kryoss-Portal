@@ -28,9 +28,11 @@ import {
   KeyRound,
   History,
   Plug,
+  ShieldAlert,
 } from 'lucide-react';
 import { useMachine, useMachineSoftware, useRunDetail } from '@/api/machines';
 import { useMachinePorts } from '@/api/ports';
+import { useMachineThreats } from '@/api/threats';
 import { useTrend } from '@/api/dashboard';
 import { GradeBadge } from '@/components/shared/GradeBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -575,6 +577,107 @@ function PortsTabContent({ machineId }: { machineId: string | undefined }) {
   );
 }
 
+// ── Tab: Threats ──
+
+function ThreatsTabContent({ machineId }: { machineId: string | undefined }) {
+  const { data, isLoading } = useMachineThreats(machineId);
+
+  if (isLoading) return <TabSkeleton rows={8} cards={4} />;
+
+  if (!data || data.threats.length === 0)
+    return <EmptyState icon={<ShieldAlert className="size-10" />} title="No threats detected" description="No threat indicators found on this machine." />;
+
+  function categoryBadge(category: string) {
+    const config: Record<string, string> = {
+      browser_hijacker: 'bg-amber-100 text-amber-800',
+      adware: 'bg-yellow-100 text-yellow-800',
+      stalkerware: 'bg-red-200 text-red-900',
+      keylogger: 'bg-red-200 text-red-900',
+      rat: 'bg-red-200 text-red-900',
+      c2_tool: 'bg-red-200 text-red-900',
+      cryptominer: 'bg-purple-100 text-purple-800',
+      ransomware: 'bg-red-200 text-red-900',
+      fake_av: 'bg-amber-100 text-amber-800',
+      loader_stealer: 'bg-red-100 text-red-800',
+      employee_monitor: 'bg-blue-100 text-blue-800',
+      pup: 'bg-gray-100 text-gray-600',
+    };
+    return (
+      <Badge variant="secondary" className={config[category] ?? 'bg-gray-100 text-gray-500'}>
+        {category.replace(/_/g, ' ')}
+      </Badge>
+    );
+  }
+
+  function threatSeverityColor(sev: string): string {
+    switch (sev) {
+      case 'critical': return 'bg-red-200 text-red-900 hover:bg-red-200';
+      case 'high': return 'bg-red-100 text-red-800 hover:bg-red-100';
+      case 'medium': return 'bg-amber-100 text-amber-800 hover:bg-amber-100';
+      case 'low': return 'bg-blue-100 text-blue-800 hover:bg-blue-100';
+      default: return 'bg-gray-100 text-gray-500 hover:bg-gray-100';
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">Total</div>
+          <div className="text-2xl font-bold tabular-nums">{data.total}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">Critical</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: data.critical > 0 ? '#C0392B' : '#006536' }}>{data.critical}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">High</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: data.high > 0 ? '#D97706' : '#006536' }}>{data.high}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">Medium</div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: data.medium > 0 ? '#D97706' : '#006536' }}>{data.medium}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-sm text-muted-foreground">Low</div>
+          <div className="text-2xl font-bold tabular-nums">{data.low}</div>
+        </Card>
+      </div>
+
+      {/* Threats table */}
+      <div className="max-h-[600px] overflow-y-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Threat Name</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Severity</TableHead>
+              <TableHead>Vector</TableHead>
+              <TableHead>Detail</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.threats.map((t, i) => (
+              <TableRow key={i}>
+                <TableCell className="font-medium text-sm">{t.threatName}</TableCell>
+                <TableCell>{categoryBadge(t.category)}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary" className={threatSeverityColor(t.severity)}>{t.severity}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="text-xs">{t.vector}</Badge>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{t.detail ?? '--'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 // ── Shared Controls View (reused by Controls and could be reused elsewhere) ──
 
 function ControlResultsView({ run, severity, setSeverity, status, setStatus, search, setSearch }: any) {
@@ -760,6 +863,9 @@ export function MachineDetail() {
           <TabsTrigger value="security" className="gap-1.5">
             <KeyRound className="size-3.5" /> Security
           </TabsTrigger>
+          <TabsTrigger value="threats" className="gap-1.5">
+            <ShieldAlert className="size-3.5" /> Threats
+          </TabsTrigger>
           <TabsTrigger value="ports" className="gap-1.5">
             <Plug className="size-3.5" /> Ports
           </TabsTrigger>
@@ -782,6 +888,10 @@ export function MachineDetail() {
 
         <TabsContent value="security">
           <SecurityTabContent machineId={machineId} latestRunId={latestRun?.id} />
+        </TabsContent>
+
+        <TabsContent value="threats">
+          <ThreatsTabContent machineId={machineId} />
         </TabsContent>
 
         <TabsContent value="ports">
