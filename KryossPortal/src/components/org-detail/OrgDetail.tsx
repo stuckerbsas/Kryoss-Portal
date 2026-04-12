@@ -21,6 +21,8 @@ const tabs = [
     end: false,
     permission: 'enrollment:create',
   },
+  { label: 'Hardware', to: 'hardware', end: false, permission: 'machines:read' },
+  { label: 'Software', to: 'software-inventory', end: false, permission: 'machines:read' },
   { label: 'Reports', to: 'reports', end: false, permission: 'reports:read' },
   { label: 'AD Hygiene', to: 'hygiene', end: false, permission: 'assessment:read' },
 ] as const;
