@@ -87,16 +87,28 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
   const apiPath = buildApiPath(targetType, targetId, reportType, framework);
 
   const handleOpenTab = async () => {
+    // Open window IMMEDIATELY on user click (before async fetch)
+    // Browsers block window.open after async delays
+    const newWindow = window.open('about:blank', '_blank');
+    if (newWindow) {
+      newWindow.document.write('<html><head><title>Generating report...</title></head><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#666"><p>Generating report, please wait...</p></body></html>');
+    }
+
     setLoading(true);
     try {
       const html = await fetchReport(apiPath);
-      const blob = new Blob([html], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      // Clean up after a delay (browser needs time to load)
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      if (newWindow) {
+        newWindow.document.open();
+        newWindow.document.write(html);
+        newWindow.document.close();
+      }
       toast.success('Report opened');
     } catch (err: any) {
+      if (newWindow) {
+        newWindow.document.open();
+        newWindow.document.write(`<html><body style="font-family:sans-serif;padding:40px;color:#C0392B"><h2>Report generation failed</h2><p>${err.message}</p></body></html>`);
+        newWindow.document.close();
+      }
       toast.error(`Failed to generate report: ${err.message}`);
     } finally {
       setLoading(false);

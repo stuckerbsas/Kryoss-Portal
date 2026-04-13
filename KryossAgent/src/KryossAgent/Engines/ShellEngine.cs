@@ -23,6 +23,41 @@ public class ShellEngine : ICheckEngine
         @"C:\Windows"
     ];
 
+    // ── C-3: Strict executable allowlist ──
+    // Only these specific executables are permitted. This blocks LOLBins like
+    // mshta.exe, regsvr32.exe, rundll32.exe, wscript.exe, cscript.exe,
+    // bitsadmin.exe, msiexec.exe, etc. that could enable RCE via a
+    // compromised API server or MitM attack.
+    private static readonly HashSet<string> AllowedExecutables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Audit/policy tools
+        "auditpol.exe", "secedit.exe", "gpresult.exe",
+        // Network
+        "netsh.exe", "ipconfig.exe", "nslookup.exe", "arp.exe",
+        // System info
+        "systeminfo.exe", "wmic.exe", "hostname.exe", "whoami.exe",
+        "bcdedit.exe", "manage-bde.exe", "tpmtool.exe",
+        // Disk/file
+        "fsutil.exe", "cipher.exe", "icacls.exe",
+        // Event/service
+        "wevtutil.exe", "sc.exe", "schtasks.exe",
+        // Domain
+        "dsregcmd.exe", "nltest.exe", "net.exe",
+        // Backup
+        "wbadmin.exe", "vssadmin.exe",
+        // Shell (restricted — arguments are controlled by check_json)
+        "cmd.exe", "powershell.exe",
+        // IIS (server)
+        "appcmd.exe",
+        // Certificate
+        "certutil.exe",
+        // DNS (server)
+        "dnscmd.exe",
+        // Utilities
+        "reg.exe", "where.exe", "findstr.exe", "tasklist.exe",
+        "citool.exe",
+    };
+
     // Executables that hang on certain systems (DCs, servers) and can't be killed.
     // These are skipped entirely — the control gets an "info" result.
     private static readonly HashSet<string> SkipExecutables = new(StringComparer.OrdinalIgnoreCase)
@@ -139,11 +174,24 @@ public class ShellEngine : ICheckEngine
             var dir = Path.GetDirectoryName(executable) ?? "";
             if (AllowedPaths.Any(p => dir.StartsWith(p, StringComparison.OrdinalIgnoreCase)) &&
                 File.Exists(executable))
+            {
+                // C-3: Also verify the filename is in the strict allowlist
+                var fileName = Path.GetFileName(executable);
+                if (!AllowedExecutables.Contains(fileName))
+                    return null; // Not in allowlist — blocked
                 return executable;
+            }
             return null;
         }
 
         // Otherwise search the allowlisted directories.
+        // C-3: Check filename against strict allowlist first
+        var exeName = executable.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? executable : executable + ".exe";
+        if (!AllowedExecutables.Contains(Path.GetFileName(exeName)) &&
+            !AllowedExecutables.Contains(Path.GetFileName(executable)))
+            return null; // Not in allowlist — blocked
+
         foreach (var basePath in AllowedPaths)
         {
             var fullPath = Path.Combine(basePath, executable);

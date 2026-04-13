@@ -85,14 +85,22 @@ public sealed class PinnedHttpHandler : HttpClientHandler
 
         if (_logOnly)
         {
-            // Print once per process lifetime, only in verbose mode.
-            if (Interlocked.Exchange(ref _logged, 1) == 0
-                && Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
+            // C-5: ALWAYS warn when SPKI pinning is disabled, not just in verbose mode.
+            // Production deployments MUST set the SpkiPins registry value to enforce
+            // TLS certificate pinning. Without pinning, a rogue CA or compromised
+            // corporate proxy can MitM the agent-to-API connection, which combined
+            // with server-controlled command execution (C-3) enables RCE as SYSTEM.
+            if (Interlocked.Exchange(ref _logged, 1) == 0)
             {
                 Console.Error.WriteLine(
-                    $"[TLS] SPKI pinning is in LOG-ONLY mode. Observed pin: {spkiHash}");
+                    "[SECURITY WARNING] SPKI pinning is DISABLED — TLS MitM protection is reduced to CA trust only.");
                 Console.Error.WriteLine(
-                    "[TLS] Set HKLM\\SOFTWARE\\Kryoss\\Agent\\SpkiPins to enforce.");
+                    "[SECURITY WARNING] Set HKLM\\SOFTWARE\\Kryoss\\Agent\\SpkiPins to enforce certificate pinning.");
+                if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
+                {
+                    Console.Error.WriteLine(
+                        $"[TLS] Observed SPKI pin: {spkiHash}");
+                }
             }
             return true;
         }

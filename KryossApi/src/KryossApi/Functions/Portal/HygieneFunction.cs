@@ -122,6 +122,20 @@ public class HygieneFunction
             return bad;
         }
 
+        // HIGH-01: Verify the user has access to this organization
+        if (!_user.IsAdmin)
+        {
+            var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+                await _db.Organizations.AnyAsync(o => o.Id == orgId && o.FranchiseId == _user.FranchiseId.Value);
+            var orgBelongsToUser = _user.OrganizationId.HasValue && orgId == _user.OrganizationId.Value;
+            if (!orgBelongsToFranchise && !orgBelongsToUser)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         var latestScan = await _db.AdHygieneScans
             .Where(s => s.OrganizationId == orgId)
             .OrderByDescending(s => s.ScannedAt)

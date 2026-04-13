@@ -123,6 +123,24 @@ public class PortsFunction
             return bad;
         }
 
+        // HIGH-01: Verify the machine belongs to the authenticated user's org/franchise
+        if (!_user.IsAdmin)
+        {
+            var machineOrgId = await _db.Machines
+                .Where(m => m.Id == machineId)
+                .Select(m => m.OrganizationId)
+                .FirstOrDefaultAsync();
+            var hasAccess = (_user.OrganizationId.HasValue && machineOrgId == _user.OrganizationId.Value)
+                || (_user.FranchiseId.HasValue && await _db.Organizations
+                    .AnyAsync(o => o.Id == machineOrgId && o.FranchiseId == _user.FranchiseId.Value));
+            if (!hasAccess)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         var ports = await _db.MachinePorts
             .Where(p => p.MachineId == machineId)
             .OrderByDescending(p =>

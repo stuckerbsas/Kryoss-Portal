@@ -86,11 +86,10 @@ public class ResultsFunction
             bodyBytes = ms.ToArray();
         }
 
-        // Detect content type. If it's an envelope we MUST decrypt; if it's
-        // plaintext JSON we accept it during the rollout window but log a
-        // warning so we can track adoption. Once all agents are upgraded
-        // (tracked in security-baseline.md backlog), the plaintext branch
-        // becomes a hard reject.
+        // CRIT-04: Detect content type and enforce envelope encryption when the
+        // org has a public key configured (meaning the agent has the key too).
+        // Plaintext fallback is only allowed for orgs that haven't completed
+        // the encryption rollout (no public key in org_crypto_keys).
         var contentType = req.Headers.TryGetValues("Content-Type", out var ctValues)
             ? ctValues.FirstOrDefault() ?? "application/json"
             : "application/json";
@@ -140,7 +139,22 @@ public class ResultsFunction
         }
         else
         {
-            // Plaintext fallback (rollout window). Will be removed.
+            // CRIT-04: Check if this org has a public key configured.
+            // If yes, the agent MUST use envelope encryption — reject plaintext.
+            var orgHasPublicKey = await _db.OrgCryptoKeys
+                .AnyAsync(k => k.OrganizationId == _currentUser.OrganizationId!.Value);
+
+            if (orgHasPublicKey)
+            {
+                _logger.LogWarning(
+                    "REJECTED plaintext payload from org {OrgId} — org has public key, envelope required",
+                    _currentUser.OrganizationId);
+                var reject = req.CreateResponse(HttpStatusCode.BadRequest);
+                await reject.WriteAsJsonAsync(new { error = "Envelope encryption required. Upgrade agent." });
+                return reject;
+            }
+
+            // Plaintext fallback — only for orgs that haven't completed encryption rollout.
             _logger.LogWarning(
                 "Plaintext payload received from org {OrgId} — agent should be upgraded to envelope encryption",
                 _currentUser.OrganizationId);

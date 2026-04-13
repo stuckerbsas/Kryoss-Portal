@@ -151,6 +151,20 @@ public class MachinesFunction
             return notFound;
         }
 
+        // HIGH-01: Verify the machine belongs to the authenticated user's org/franchise
+        if (!_user.IsAdmin)
+        {
+            var hasAccess = (_user.OrganizationId.HasValue && machine.OrganizationId == _user.OrganizationId.Value)
+                || (_user.FranchiseId.HasValue && await _db.Organizations
+                    .AnyAsync(o => o.Id == machine.OrganizationId && o.FranchiseId == _user.FranchiseId.Value));
+            if (!hasAccess)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         // Load per-disk inventory
         var disks = await _db.MachineDisks
             .Where(d => d.MachineId == id)
@@ -268,6 +282,24 @@ public class MachinesFunction
             return notFound;
         }
 
+        // HIGH-01: Verify the machine belongs to the authenticated user's org/franchise
+        if (!_user.IsAdmin)
+        {
+            var machineOrgId = await _db.Machines
+                .Where(m => m.Id == machineId)
+                .Select(m => m.OrganizationId)
+                .FirstOrDefaultAsync();
+            var hasAccess = (_user.OrganizationId.HasValue && machineOrgId == _user.OrganizationId.Value)
+                || (_user.FranchiseId.HasValue && await _db.Organizations
+                    .AnyAsync(o => o.Id == machineOrgId && o.FranchiseId == _user.FranchiseId.Value));
+            if (!hasAccess)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(run);
         return response;
@@ -281,6 +313,24 @@ public class MachinesFunction
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/machines/{machineId:guid}/software")] HttpRequestData req,
         Guid machineId)
     {
+        // HIGH-01: Verify the machine belongs to the authenticated user's org/franchise
+        if (!_user.IsAdmin)
+        {
+            var machineOrgId = await _db.Machines
+                .Where(m => m.Id == machineId)
+                .Select(m => m.OrganizationId)
+                .FirstOrDefaultAsync();
+            var hasAccess = (_user.OrganizationId.HasValue && machineOrgId == _user.OrganizationId.Value)
+                || (_user.FranchiseId.HasValue && await _db.Organizations
+                    .AnyAsync(o => o.Id == machineOrgId && o.FranchiseId == _user.FranchiseId.Value));
+            if (!hasAccess)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         var rawPayload = await _db.AssessmentRuns
             .Where(r => r.MachineId == machineId)
             .OrderByDescending(r => r.StartedAt)

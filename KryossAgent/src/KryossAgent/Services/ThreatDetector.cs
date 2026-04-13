@@ -340,9 +340,7 @@ public static class ThreatDetector
         new("BurpSuite", "Burp Suite", 8, "high", "process"),
 
         // Info — dual-use / legitimate tools
-        new("PsExec", "PsExec (Sysinternals)", 8, "info", "both"),
-        new("psexec", "PsExec (Sysinternals)", 8, "info", "process"),
-        new("PSEXESVC", "PsExec (remote service)", 8, "info", "process"),
+        // PsExec excluded — Kryoss agent uses it for remote deployment
         new("Nmap", "Nmap", 8, "info", "both"),
         new("nmap", "Nmap", 8, "info", "process"),
         new("zenmap", "Nmap Zenmap", 8, "info", "process"),

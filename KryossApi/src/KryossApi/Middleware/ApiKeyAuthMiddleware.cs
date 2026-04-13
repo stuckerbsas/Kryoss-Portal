@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using KryossApi.Data;
@@ -14,12 +15,17 @@ namespace KryossApi.Middleware;
 /// <summary>
 /// Authenticates agent requests via X-Api-Key header + HMAC-SHA256 signature.
 /// Resolves org from API key and populates ICurrentUserService with org context.
-/// Also validates HMAC: HMAC(ApiSecret, timestamp + method + path + bodyHash).
+/// Also validates HMAC: HMAC(ApiSecret, timestamp + method + path + agentId + bodyHash).
 /// Timestamp must be within 5 minutes (anti-replay).
+/// HMAC signature is MANDATORY when the org has an ApiSecret configured (CRIT-03).
 /// </summary>
 public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
 {
     private static readonly TimeSpan MaxTimestampSkew = TimeSpan.FromMinutes(5);
+
+    // ── HIGH-05: In-memory rate limiter per organization ──
+    private static readonly ConcurrentDictionary<Guid, (int Count, DateTime WindowStart)> _rateLimits = new();
+    private const int MaxRequestsPerMinute = 60;
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
@@ -79,9 +85,42 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        // Validate HMAC signature if present (required for non-enroll agent routes)
-        if (!string.IsNullOrEmpty(org.ApiSecret) && !string.IsNullOrEmpty(signature))
+        // ── HIGH-05: Rate limiting per org ──
         {
+            var now = DateTime.UtcNow;
+            var entry = _rateLimits.GetOrAdd(org.Id, _ => (0, now));
+            if (now - entry.WindowStart > TimeSpan.FromMinutes(1))
+            {
+                _rateLimits[org.Id] = (1, now);
+            }
+            else if (entry.Count >= MaxRequestsPerMinute)
+            {
+                logger.LogWarning("Rate limit exceeded for org {OrgId}", org.Id);
+                var resp = httpReq.CreateResponse((System.Net.HttpStatusCode)429);
+                await resp.WriteAsJsonAsync(new { error = "Rate limit exceeded" });
+                context.GetInvocationResult().Value = resp;
+                return;
+            }
+            else
+            {
+                _rateLimits[org.Id] = (entry.Count + 1, entry.WindowStart);
+            }
+        }
+
+        // ── CRIT-03: HMAC signature is MANDATORY when org has an ApiSecret ──
+        // Previously, omitting X-Signature would skip HMAC validation entirely,
+        // allowing an attacker with just the API key to bypass signature checks.
+        if (!string.IsNullOrEmpty(org.ApiSecret))
+        {
+            if (string.IsNullOrEmpty(signature))
+            {
+                logger.LogWarning("HMAC signature required but missing for org {OrgId}", org.Id);
+                var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
+                await resp.WriteAsJsonAsync(new { error = "X-Signature header required" });
+                context.GetInvocationResult().Value = resp;
+                return;
+            }
+
             if (!await ValidateHmac(httpReq, context, org.ApiSecret, signature, timestampStr, logger))
             {
                 var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
@@ -147,9 +186,13 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             return false;
         }
 
-        // Build signing string: timestamp + method + path + bodyHash
+        // Build signing string: timestamp + method + path + agentId + bodyHash
+        // Agent C-4: AgentId is now included in the canonical signing string
+        // to prevent replay attacks that swap the X-Agent-Id header.
         var method = req.Method.ToUpperInvariant();
         var path = req.Url.PathAndQuery;
+        var agentIdForHmac = req.Headers.TryGetValues("X-Agent-Id", out var agentIdHmacVals)
+            ? agentIdHmacVals.FirstOrDefault() ?? "" : "";
 
         // Read body for hashing — must use async (Kestrel disallows sync IO)
         byte[] bodyBytes;
@@ -171,7 +214,7 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
         }
 
         var bodyHash = Convert.ToHexString(SHA256.HashData(bodyBytes)).ToLowerInvariant();
-        var signingString = $"{timestampStr}{method}{path}{bodyHash}";
+        var signingString = $"{timestampStr}{method}{path}{agentIdForHmac}{bodyHash}";
 
         var keyBytes = Encoding.UTF8.GetBytes(secret);
         var expectedSig = Convert.ToHexString(
@@ -185,11 +228,10 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
 
         if (!isValid)
         {
-            logger.LogWarning("HMAC mismatch — debug info:");
-            logger.LogWarning("  Method: {Method} | Path: {Path} | BodyLen: {Len}", method, path, bodyBytes.Length);
-            logger.LogWarning("  BodyHash:   {Hash}", bodyHash);
-            logger.LogWarning("  Expected:   {Exp}", expectedSig[..16] + "...");
-            logger.LogWarning("  Got:        {Got}", signature.ToLowerInvariant()[..Math.Min(16, signature.Length)] + "...");
+            // MED-03: Do not log partial signatures — they leak HMAC material.
+            // Only log request metadata for debugging.
+            logger.LogWarning("HMAC mismatch for {Method} {Path} (body {Len} bytes)",
+                method, path, bodyBytes.Length);
         }
 
         return isValid;

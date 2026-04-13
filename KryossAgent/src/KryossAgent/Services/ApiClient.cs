@@ -230,9 +230,6 @@ public class ApiClient : IDisposable
             request.Headers.Add("X-Agent-Id", _config.AgentId.ToString());
 
         // Hardware fingerprint — see field comment at the top of the class.
-        // Not yet part of the HMAC canonical string (v1 format is frozen);
-        // upgrading the canonical format is a coordinated server+agent
-        // change tracked in security-baseline.md.
         request.Headers.Add("X-Hwid", _hwid);
 
         if (!string.IsNullOrEmpty(_config.ApiSecret))
@@ -242,7 +239,11 @@ public class ApiClient : IDisposable
                 SHA256.HashData(body ?? [])
             ).ToLowerInvariant();
 
-            var signingString = $"{timestamp}{method.Method.ToUpperInvariant()}{path}{bodyHash}";
+            // C-4: Include AgentId in the HMAC canonical string to prevent
+            // replay attacks that swap the X-Agent-Id header. The server-side
+            // validation in ApiKeyAuthMiddleware.cs matches this format.
+            var agentId = _config.AgentId != Guid.Empty ? _config.AgentId.ToString() : "";
+            var signingString = $"{timestamp}{method.Method.ToUpperInvariant()}{path}{agentId}{bodyHash}";
             var signature = Convert.ToHexString(
                 HMACSHA256.HashData(
                     Encoding.UTF8.GetBytes(_config.ApiSecret),

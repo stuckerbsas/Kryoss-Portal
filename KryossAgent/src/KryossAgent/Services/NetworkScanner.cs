@@ -224,6 +224,11 @@ public static class NetworkScanner
                 // Disconnect stale mapping first
                 await RunProcess("net", $"use {uncShare} /delete /y", 5_000);
 
+                // SECURITY NOTE (C-2): Password is visible in the process command line.
+                // Any process on the system can see it via wmic/Get-Process/TaskManager.
+                // It also appears in process creation audit logs (Event ID 4688).
+                // TODO: Replace with WNetAddConnection2 P/Invoke for secure credential
+                // passing that does not expose the password on the command line.
                 var netResult = await RunProcess("net",
                     $"use {uncShare} /user:{username} \"{password}\" /y", 15_000);
                 if (netResult.ExitCode != 0)

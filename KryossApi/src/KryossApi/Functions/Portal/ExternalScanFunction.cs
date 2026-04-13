@@ -69,6 +69,20 @@ public class ExternalScanFunction
             return notFound;
         }
 
+        // HIGH-01 + MED-06: Verify the user has access to this organization
+        if (!_user.IsAdmin)
+        {
+            var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+                await _db.Organizations.AnyAsync(o => o.Id == body.OrganizationId && o.FranchiseId == _user.FranchiseId.Value);
+            var orgBelongsToUser = _user.OrganizationId.HasValue && body.OrganizationId == _user.OrganizationId.Value;
+            if (!orgBelongsToFranchise && !orgBelongsToUser)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         // Create scan record
         var scan = new ExternalScan
         {
@@ -132,6 +146,20 @@ public class ExternalScanFunction
             return bad;
         }
 
+        // HIGH-01: Verify the user has access to this organization
+        if (!_user.IsAdmin)
+        {
+            var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+                await _db.Organizations.AnyAsync(o => o.Id == orgId && o.FranchiseId == _user.FranchiseId.Value);
+            var orgBelongsToUser = _user.OrganizationId.HasValue && orgId == _user.OrganizationId.Value;
+            if (!orgBelongsToFranchise && !orgBelongsToUser)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         var scan = await _db.ExternalScans
             .Where(s => s.OrganizationId == orgId)
             .OrderByDescending(s => s.CreatedAt)
@@ -176,6 +204,20 @@ public class ExternalScanFunction
             return notFound;
         }
 
+        // HIGH-01: Verify the scan belongs to the authenticated user's org/franchise
+        if (!_user.IsAdmin)
+        {
+            var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+                await _db.Organizations.AnyAsync(o => o.Id == scan.OrganizationId && o.FranchiseId == _user.FranchiseId.Value);
+            var orgBelongsToUser = _user.OrganizationId.HasValue && scan.OrganizationId == _user.OrganizationId.Value;
+            if (!orgBelongsToFranchise && !orgBelongsToUser)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
         var responseObj = BuildScanResponse(scan);
         var resp = req.CreateResponse(HttpStatusCode.OK);
         await resp.WriteAsJsonAsync(responseObj);
@@ -197,6 +239,20 @@ public class ExternalScanFunction
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
             await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
             return bad;
+        }
+
+        // HIGH-01: Verify the user has access to this organization
+        if (!_user.IsAdmin)
+        {
+            var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+                await _db.Organizations.AnyAsync(o => o.Id == orgId && o.FranchiseId == _user.FranchiseId.Value);
+            var orgBelongsToUser = _user.OrganizationId.HasValue && orgId == _user.OrganizationId.Value;
+            if (!orgBelongsToFranchise && !orgBelongsToUser)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
         }
 
         var scans = await _db.ExternalScans

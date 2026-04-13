@@ -49,6 +49,32 @@ public class ExternalScanService
         _log = log;
     }
 
+    // ── CRIT-02: SSRF protection — block private/reserved IP ranges ──
+    /// <summary>
+    /// Returns true if the IP is in a private, reserved, loopback, link-local,
+    /// multicast, or cloud metadata range. These MUST NOT be scanned externally
+    /// to prevent SSRF attacks against internal infrastructure, Azure IMDS, etc.
+    /// </summary>
+    private static bool IsPrivateOrReserved(IPAddress ip)
+    {
+        var bytes = ip.GetAddressBytes();
+        if (bytes.Length == 4)
+        {
+            if (bytes[0] == 10) return true;                                    // 10.0.0.0/8
+            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true; // 172.16.0.0/12
+            if (bytes[0] == 192 && bytes[1] == 168) return true;                // 192.168.0.0/16
+            if (bytes[0] == 127) return true;                                    // 127.0.0.0/8 loopback
+            if (bytes[0] == 169 && bytes[1] == 254) return true;                // 169.254.0.0/16 link-local + Azure IMDS
+            if (bytes[0] == 0) return true;                                      // 0.0.0.0/8
+            if (bytes[0] >= 224) return true;                                    // 224.0.0.0+ multicast + reserved
+            if (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) return true; // 100.64.0.0/10 CGN (RFC 6598)
+            if (bytes[0] == 168 && bytes[1] == 63 && bytes[2] == 129 && bytes[3] == 16) return true; // Azure wireserver
+        }
+        // Block all IPv6 for now — external scans should target public IPv4
+        if (bytes.Length == 16) return true;
+        return false;
+    }
+
     /// <summary>
     /// Run a full external scan: resolve DNS, scan ports on each IP, save results.
     /// </summary>
@@ -65,7 +91,20 @@ public class ExternalScanService
         {
             // 1. Resolve DNS records to collect unique IPs
             var dnsInfo = await ResolveDnsAsync(scan.Target);
-            var uniqueIps = dnsInfo.AllIps.Distinct().ToList();
+            var allIps = dnsInfo.AllIps.Distinct().ToList();
+
+            // CRIT-02: Filter out private/reserved IPs to prevent SSRF
+            var uniqueIps = new List<string>();
+            foreach (var ipStr in allIps)
+            {
+                if (IPAddress.TryParse(ipStr, out var ip) && IsPrivateOrReserved(ip))
+                {
+                    _log.LogWarning("External scan {ScanId}: skipping private/reserved IP {Ip} (SSRF protection)",
+                        scanId, ipStr);
+                    continue;
+                }
+                uniqueIps.Add(ipStr);
+            }
 
             _log.LogInformation("External scan {ScanId}: target={Target}, IPs found={Count}",
                 scanId, scan.Target, uniqueIps.Count);

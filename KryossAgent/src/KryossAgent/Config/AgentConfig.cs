@@ -73,6 +73,8 @@ public class AgentConfig
 
     /// <summary>
     /// Save config to registry after enrollment.
+    /// C-1: After writing values, restrict the registry key ACL to SYSTEM-only
+    /// to prevent local credential theft by non-SYSTEM administrators.
     /// </summary>
     public void Save()
     {
@@ -86,5 +88,30 @@ public class AgentConfig
             key.SetValue("AssessmentId", AssessmentId.Value.ToString());
         if (AssessmentName is not null)
             key.SetValue("AssessmentName", AssessmentName);
+
+        // C-1: Restrict ACL to SYSTEM-only. This prevents local administrators
+        // and other processes from reading the API secret and impersonating
+        // this agent. Best-effort — non-critical if it fails (some systems
+        // may not support this operation).
+        try
+        {
+            var security = new System.Security.AccessControl.RegistrySecurity();
+            security.AddAccessRule(new System.Security.AccessControl.RegistryAccessRule(
+                new System.Security.Principal.SecurityIdentifier(
+                    System.Security.Principal.WellKnownSidType.LocalSystemSid, null),
+                System.Security.AccessControl.RegistryRights.FullControl,
+                System.Security.AccessControl.InheritanceFlags.ContainerInherit |
+                    System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            key.SetAccessControl(security);
+        }
+        catch
+        {
+            // Non-critical — best effort. Log if verbose.
+            if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
+                Console.Error.WriteLine("[WARN] Failed to set SYSTEM-only ACL on registry key.");
+        }
     }
 }

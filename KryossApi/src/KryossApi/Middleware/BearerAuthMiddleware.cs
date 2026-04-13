@@ -20,6 +20,24 @@ namespace KryossApi.Middleware;
 ///
 /// Bootstrap: if no users exist at all, the first authenticated caller
 /// is auto-provisioned as super_admin to allow initial setup.
+///
+/// HIGH-02 SECURITY WARNING: This middleware trusts X-MS-CLIENT-PRINCIPAL
+/// without cryptographic verification. Easy Auth is configured with
+/// requireAuthentication=false (AllowAnonymous), so Azure does NOT block
+/// unauthenticated requests. Security relies on:
+///   1. Azure SWA proxy strips/replaces the X-MS-CLIENT-PRINCIPAL header
+///      before forwarding — preventing client-side forgery.
+///   2. The Function App URL (func-kryoss.azurewebsites.net) MUST be
+///      firewalled to only accept traffic from the SWA backend.
+///
+/// If the Function App is directly accessible without SWA in front, an
+/// attacker can craft a fake X-MS-CLIENT-PRINCIPAL header and impersonate
+/// any user. MITIGATIONS:
+///   - Network restriction: configure Azure Networking on the Function App
+///     to accept only the SWA backend IP range.
+///   - Long-term: validate the JWT from the Authorization header directly
+///     using Microsoft.Identity.Web instead of trusting Easy Auth headers.
+///   - Alternative: set requireAuthentication=true in Easy Auth config.
 /// </summary>
 public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
 {
@@ -50,6 +68,20 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
             await resp.WriteAsJsonAsync(new { error = "Authentication required" });
             context.GetInvocationResult().Value = resp;
             return;
+        }
+
+        // HIGH-02: Additional header check. When Easy Auth processes a valid token,
+        // it sets BOTH X-MS-CLIENT-PRINCIPAL and X-MS-CLIENT-PRINCIPAL-ID.
+        // Checking for the secondary header raises the bar against forgery
+        // (an attacker would need to know which OID to put in both headers).
+        var principalIdHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL-ID", out var pidValues)
+            ? pidValues.FirstOrDefault() : null;
+        if (string.IsNullOrEmpty(principalIdHeader))
+        {
+            var logger2 = context.InstanceServices.GetRequiredService<ILogger<BearerAuthMiddleware>>();
+            logger2.LogWarning("X-MS-CLIENT-PRINCIPAL present but X-MS-CLIENT-PRINCIPAL-ID missing — possible forgery attempt");
+            // Allow for now (SWA may not always set this), but log for monitoring.
+            // TODO: Make this a hard reject once SWA header behavior is confirmed.
         }
 
         // Decode base64 principal (Azure EasyAuth / SWA format)
