@@ -57,7 +57,22 @@ export interface M365ScanResult {
   scannedAt: string;
 }
 
+export interface M365ConsentUrlResponse {
+  url: string;
+}
+
 // ── Hooks ──
+
+export function useM365ConsentUrl(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['m365-consent-url', organizationId],
+    queryFn: () =>
+      apiFetch<M365ConsentUrlResponse>(
+        `/v2/m365/consent-url?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
 
 export function useM365(organizationId: string | undefined) {
   return useQuery({

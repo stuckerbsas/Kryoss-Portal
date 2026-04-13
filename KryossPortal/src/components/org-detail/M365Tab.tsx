@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Cloud,
   RefreshCw,
@@ -12,11 +13,14 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  ChevronDown,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useM365,
   useM365Connect,
+  useM365ConsentUrl,
   useM365Scan,
   useM365Disconnect,
   type M365Finding,
@@ -102,19 +106,39 @@ const categoryLabels: Record<string, string> = {
   admin_roles: 'Admin Roles',
   guest_access: 'Guest Access',
   mail_security: 'Mail Security',
+  stale_accounts: 'Stale Accounts',
+  app_registrations: 'App Registrations',
+  secure_score: 'Secure Score',
+  identity_protection: 'Identity Protection',
+  intune: 'Intune / Devices',
+  dlp: 'Data Loss Prevention',
+  security_alerts: 'Security Alerts',
+  sharepoint: 'SharePoint',
+  org_config: 'Organization Config',
 };
 
-// ── Connect Form ──
+// ── Connect Form (one-click consent + manual fallback) ──
 
 function ConnectForm({ orgId }: { orgId: string }) {
+  const { data: consentData, isLoading: consentLoading } = useM365ConsentUrl(orgId);
+  const [showManual, setShowManual] = useState(false);
+
+  // Manual form state
   const [tenantId, setTenantId] = useState('');
   const [tenantName, setTenantName] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
-
   const connect = useM365Connect();
 
-  const handleConnect = () => {
+  const handleConsent = () => {
+    if (consentData?.url) {
+      window.location.href = consentData.url;
+    } else {
+      toast.error('Consent URL not available. Try the manual setup below.');
+    }
+  };
+
+  const handleManualConnect = () => {
     if (!tenantId || !clientId || !clientSecret) {
       toast.error('Tenant ID, Client ID, and Client Secret are required');
       return;
@@ -145,78 +169,124 @@ function ConnectForm({ orgId }: { orgId: string }) {
       <EmptyState
         icon={<Cloud className="h-12 w-12" />}
         title="No M365 tenant connected"
-        description="Connect a Microsoft 365 / Entra ID tenant to audit cloud security configuration."
+        description="Connect a Microsoft 365 / Entra ID tenant to audit 50 cloud security checks across Conditional Access, MFA, Intune, DLP, and more."
       />
 
+      {/* One-click consent button */}
       <Card className="max-w-2xl mx-auto">
         <CardHeader>
           <CardTitle className="text-base">Connect M365 Tenant</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 space-y-2">
-            <p className="font-medium">Setup instructions:</p>
+            <p className="font-medium">How it works:</p>
             <ol className="list-decimal list-inside space-y-1 text-xs">
-              <li>Go to Azure Portal &gt; Entra ID &gt; App registrations &gt; New registration</li>
-              <li>Name it "Kryoss Security Audit" (single tenant)</li>
-              <li>Go to API permissions and add Microsoft Graph (Application):
-                <span className="font-mono text-xs"> Directory.Read.All, Policy.Read.All, User.Read.All, UserAuthenticationMethod.Read.All, MailboxSettings.Read, Mail.Read</span>
-              </li>
-              <li>Grant admin consent for all permissions</li>
-              <li>Go to Certificates &amp; secrets &gt; New client secret</li>
-              <li>Copy the Tenant ID, Application (client) ID, and secret value below</li>
+              <li>Click the button below to open Microsoft's admin consent screen</li>
+              <li>Sign in with a Global Administrator account from the customer's tenant</li>
+              <li>Review and approve the read-only security audit permissions</li>
+              <li>You'll be redirected back here with the scan results</li>
             </ol>
+            <p className="text-xs text-blue-600 mt-2">
+              All permissions are read-only. Kryoss never modifies tenant configuration.
+            </p>
           </div>
 
-          <div>
-            <label className="text-sm font-medium">Tenant ID (Directory ID)</label>
-            <Input
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              value={tenantId}
-              onChange={(e) => setTenantId(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium">Tenant Name (optional)</label>
-            <Input
-              placeholder="Contoso Inc."
-              value={tenantName}
-              onChange={(e) => setTenantName(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium">Application (Client) ID</label>
-            <Input
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium">Client Secret</label>
-            <Input
-              type="password"
-              placeholder="Client secret value"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-            />
-          </div>
-
-          <Button onClick={handleConnect} disabled={connect.isPending} className="w-full">
-            {connect.isPending ? (
+          <Button
+            onClick={handleConsent}
+            disabled={consentLoading || !consentData?.url}
+            className="w-full h-12 text-base"
+            size="lg"
+          >
+            {consentLoading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Connecting and scanning...
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Loading...
               </>
             ) : (
               <>
-                <Cloud className="mr-2 h-4 w-4" />
-                Connect Tenant
+                <ExternalLink className="mr-2 h-5 w-5" />
+                Connect M365 Tenant
               </>
             )}
           </Button>
+
+          {/* Manual setup toggle */}
+          <div className="pt-2 border-t">
+            <button
+              onClick={() => setShowManual(!showManual)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown
+                className={`h-3 w-3 transition-transform ${showManual ? 'rotate-180' : ''}`}
+              />
+              Advanced: Manual setup with custom App Registration
+            </button>
+
+            {showManual && (
+              <div className="mt-4 space-y-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  Use this only if you need a dedicated App Registration per customer
+                  (e.g., for compliance isolation). The one-click flow above is recommended.
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Tenant ID (Directory ID)</label>
+                  <Input
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    value={tenantId}
+                    onChange={(e) => setTenantId(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Tenant Name (optional)</label>
+                  <Input
+                    placeholder="Contoso Inc."
+                    value={tenantName}
+                    onChange={(e) => setTenantName(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Application (Client) ID</label>
+                  <Input
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Client Secret</label>
+                  <Input
+                    type="password"
+                    placeholder="Client secret value"
+                    value={clientSecret}
+                    onChange={(e) => setClientSecret(e.target.value)}
+                  />
+                </div>
+
+                <Button
+                  onClick={handleManualConnect}
+                  disabled={connect.isPending}
+                  variant="outline"
+                  className="w-full"
+                >
+                  {connect.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Connecting and scanning...
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="mr-2 h-4 w-4" />
+                      Connect with Custom Credentials
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -285,6 +355,23 @@ export function M365Tab() {
   const disconnect = useM365Disconnect();
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle consent callback redirect params
+  useEffect(() => {
+    const connected = searchParams.get('connected');
+    const error = searchParams.get('error');
+
+    if (connected === 'true') {
+      toast.success('M365 tenant connected successfully! Initial scan complete.');
+      searchParams.delete('connected');
+      setSearchParams(searchParams, { replace: true });
+    } else if (error) {
+      toast.error(`M365 connection failed: ${decodeURIComponent(error)}`);
+      searchParams.delete('error');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   if (isLoading) {
     return (
