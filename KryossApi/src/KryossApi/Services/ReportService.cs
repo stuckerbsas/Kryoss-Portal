@@ -691,11 +691,25 @@ public class ReportService : IReportService
         var reportTitle = frameworkName != null ? $"{frameworkName} Organization Report" : "Security Assessment Report";
         var sb = new StringBuilder();
         var totalMachines = runs.Count;
-        var avgScore = runs.Average(r => r.GlobalScore ?? 0);
+        // When filtered by framework, recalculate stats from filtered results
+        decimal avgScore;
+        int totalPass, totalWarn, totalFail;
+        if (frameworkName != null && allResults.Count > 0)
+        {
+            totalPass = allResults.Count(r => r.Status == "pass");
+            totalWarn = allResults.Count(r => r.Status == "warn");
+            totalFail = allResults.Count(r => r.Status == "fail");
+            var total = totalPass + totalWarn + totalFail;
+            avgScore = total > 0 ? Math.Round((decimal)totalPass / total * 100, 1) : 0;
+        }
+        else
+        {
+            avgScore = Math.Round(runs.Average(r => r.GlobalScore ?? 0), 1);
+            totalPass = (int)runs.Sum(r => r.PassCount ?? 0);
+            totalWarn = (int)runs.Sum(r => r.WarnCount ?? 0);
+            totalFail = (int)runs.Sum(r => r.FailCount ?? 0);
+        }
         var orgGrade = GetGrade(avgScore);
-        var totalPass = runs.Sum(r => r.PassCount ?? 0);
-        var totalWarn = runs.Sum(r => r.WarnCount ?? 0);
-        var totalFail = runs.Sum(r => r.FailCount ?? 0);
         var scanDate = runs.Max(r => r.CompletedAt ?? r.StartedAt);
 
         var riskyPorts = enrichment.Ports.Where(p => p.Risk != null).ToList();
@@ -967,7 +981,23 @@ public class ReportService : IReportService
         var reportTitle = frameworkName != null ? $"{frameworkName} Technical Assessment" : "Technical Assessment";
         var sb = new StringBuilder();
         var totalMachines = runs.Count;
-        var avgScore = runs.Average(r => r.GlobalScore ?? 0);
+        decimal avgScore;
+        int totalPass, totalWarn, totalFail;
+        if (frameworkName != null && allResults.Count > 0)
+        {
+            totalPass = allResults.Count(r => r.Status == "pass");
+            totalWarn = allResults.Count(r => r.Status == "warn");
+            totalFail = allResults.Count(r => r.Status == "fail");
+            var total = totalPass + totalWarn + totalFail;
+            avgScore = total > 0 ? Math.Round((decimal)totalPass / total * 100, 1) : 0;
+        }
+        else
+        {
+            avgScore = Math.Round(runs.Average(r => r.GlobalScore ?? 0), 1);
+            totalPass = (int)runs.Sum(r => r.PassCount ?? 0);
+            totalWarn = (int)runs.Sum(r => r.WarnCount ?? 0);
+            totalFail = (int)runs.Sum(r => r.FailCount ?? 0);
+        }
         var orgGrade = GetGrade(avgScore);
         var scanDate = runs.Max(r => r.CompletedAt ?? r.StartedAt);
 
@@ -1275,10 +1305,25 @@ public class ReportService : IReportService
         var reportTitle = frameworkName != null ? $"{frameworkName} Security Posture" : "Security Posture Assessment";
         var sb = new StringBuilder();
         var totalMachines = runs.Count;
-        var avgScore = runs.Average(r => r.GlobalScore ?? 0);
+        decimal avgScore;
+        int totalPass, totalWarn, totalFail;
+        if (frameworkName != null && allResults.Count > 0)
+        {
+            totalPass = allResults.Count(r => r.Status == "pass");
+            totalWarn = allResults.Count(r => r.Status == "warn");
+            totalFail = allResults.Count(r => r.Status == "fail");
+            var total = totalPass + totalWarn + totalFail;
+            avgScore = total > 0 ? Math.Round((decimal)totalPass / total * 100, 1) : 0;
+        }
+        else
+        {
+            avgScore = Math.Round(runs.Average(r => r.GlobalScore ?? 0), 1);
+            totalPass = (int)runs.Sum(r => r.PassCount ?? 0);
+            totalWarn = (int)runs.Sum(r => r.WarnCount ?? 0);
+            totalFail = (int)runs.Sum(r => r.FailCount ?? 0);
+        }
         var orgGrade = GetGrade(avgScore);
         var scanDate = runs.Max(r => r.CompletedAt ?? r.StartedAt);
-        var totalFail = runs.Sum(r => r.FailCount ?? 0);
         var riskyPorts = enrichment.Ports.Where(p => p.Risk != null).ToList();
         var threatCount = enrichment.Threats.Count;
 
