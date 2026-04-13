@@ -182,7 +182,7 @@ IF NOT EXISTS (SELECT 1 FROM control_defs WHERE control_id='AV-013')
 INSERT INTO control_defs (control_id, category_id, name, [type], severity, check_json, remediation, is_active, version, created_by)
 VALUES ('AV-013', @catDefender,
     N'Windows Defender Antivirus Signature Version',
-    'command', 'info',
+    'command', 'low',
     N'{"executable":"powershell.exe","arguments":"-NoProfile -Command \"(Get-MpComputerStatus).AntivirusSignatureVersion\"","expected":"","operator":"neq","display":"Collecting antivirus signature version"}',
     N'Informational: captures the current antivirus definition version for inventory and comparison across the fleet.',
     1, 1, @systemUserId);
@@ -396,7 +396,7 @@ IF NOT EXISTS (SELECT 1 FROM control_defs WHERE control_id='AV-035')
 INSERT INTO control_defs (control_id, category_id, name, [type], severity, check_json, remediation, is_active, version, created_by)
 VALUES ('AV-035', @catEPP,
     N'Third-Party Antivirus Product Registered',
-    'command', 'info',
+    'command', 'low',
     N'{"executable":"powershell.exe","arguments":"-NoProfile -Command \"Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -ErrorAction SilentlyContinue | Select-Object -ExpandProperty displayName | ConvertTo-Json\"","expected":"","operator":"neq","optional":true,"display":"Detecting registered antivirus products via WMI SecurityCenter2"}',
     N'Informational: lists all antivirus products registered with Windows Security Center. Use this to verify that the expected AV product is installed and registered across the fleet.',
     1, 1, @systemUserId);
@@ -405,7 +405,7 @@ IF NOT EXISTS (SELECT 1 FROM control_defs WHERE control_id='AV-036')
 INSERT INTO control_defs (control_id, category_id, name, [type], severity, check_json, remediation, is_active, version, created_by)
 VALUES ('AV-036', @catEPP,
     N'EDR Agent Present - CrowdStrike Falcon',
-    'service', 'info',
+    'service', 'low',
     N'{"serviceName":"CSFalconService","expectedStatus":"Running","optional":true,"display":"Checking for CrowdStrike Falcon EDR service"}',
     N'Informational: detects whether CrowdStrike Falcon sensor is installed and running. If expected by policy, ensure the CSFalconService service is present and in Running state.',
     1, 1, @systemUserId);
@@ -414,7 +414,7 @@ IF NOT EXISTS (SELECT 1 FROM control_defs WHERE control_id='AV-037')
 INSERT INTO control_defs (control_id, category_id, name, [type], severity, check_json, remediation, is_active, version, created_by)
 VALUES ('AV-037', @catEPP,
     N'EDR Agent Present - SentinelOne',
-    'service', 'info',
+    'service', 'low',
     N'{"serviceName":"SentinelAgent","expectedStatus":"Running","optional":true,"display":"Checking for SentinelOne EDR service"}',
     N'Informational: detects whether SentinelOne agent is installed and running. If expected by policy, ensure the SentinelAgent service is present and in Running state.',
     1, 1, @systemUserId);
@@ -423,7 +423,7 @@ IF NOT EXISTS (SELECT 1 FROM control_defs WHERE control_id='AV-038')
 INSERT INTO control_defs (control_id, category_id, name, [type], severity, check_json, remediation, is_active, version, created_by)
 VALUES ('AV-038', @catEPP,
     N'EDR Agent Present - VMware Carbon Black',
-    'service', 'info',
+    'service', 'low',
     N'{"serviceName":"CbDefense","expectedStatus":"Running","optional":true,"display":"Checking for Carbon Black EDR service"}',
     N'Informational: detects whether VMware Carbon Black agent is installed and running. The service name is CbDefense (Carbon Black Cloud) or CarbonBlack (legacy). If expected by policy, verify service status.',
     1, 1, @systemUserId);
@@ -432,7 +432,7 @@ IF NOT EXISTS (SELECT 1 FROM control_defs WHERE control_id='AV-039')
 INSERT INTO control_defs (control_id, category_id, name, [type], severity, check_json, remediation, is_active, version, created_by)
 VALUES ('AV-039', @catEPP,
     N'EDR Agent Present - Palo Alto Cortex XDR',
-    'service', 'info',
+    'service', 'low',
     N'{"serviceName":"CortexXDR","expectedStatus":"Running","optional":true,"display":"Checking for Cortex XDR EDR service"}',
     N'Informational: detects whether Palo Alto Cortex XDR agent is installed and running. If expected by policy, ensure the CortexXDR service (or cyserver) is present and in Running state.',
     1, 1, @systemUserId);
@@ -441,7 +441,7 @@ IF NOT EXISTS (SELECT 1 FROM control_defs WHERE control_id='AV-040')
 INSERT INTO control_defs (control_id, category_id, name, [type], severity, check_json, remediation, is_active, version, created_by)
 VALUES ('AV-040', @catEPP,
     N'Microsoft Defender for Endpoint Onboarded',
-    'registry', 'info',
+    'registry', 'low',
     N'{"hive":"HKLM","path":"SOFTWARE\\Microsoft\\Windows Advanced Threat Protection\\Status","valueName":"OnboardingState","expected":1,"operator":"eq","optional":true,"display":"Checking Microsoft Defender for Endpoint onboarding status"}',
     N'Informational: checks whether the machine is onboarded to Microsoft Defender for Endpoint (MDE). OnboardingState = 1 means the device is connected to the MDE cloud service for advanced threat detection, EDR, and automated investigation.',
     1, 1, @systemUserId);
