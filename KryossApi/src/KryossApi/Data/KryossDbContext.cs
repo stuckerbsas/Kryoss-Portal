@@ -55,6 +55,14 @@ public class KryossDbContext : DbContext
     // CMDB - Threat detection
     public DbSet<MachineThreat> MachineThreats => Set<MachineThreat>();
 
+    // External scans (cloud-side pentest)
+    public DbSet<ExternalScan> ExternalScans => Set<ExternalScan>();
+    public DbSet<ExternalScanResult> ExternalScanResults => Set<ExternalScanResult>();
+
+    // M365 / Entra ID
+    public DbSet<M365Tenant> M365Tenants => Set<M365Tenant>();
+    public DbSet<M365Finding> M365Findings => Set<M365Finding>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // ── Auth ──
@@ -286,6 +294,39 @@ public class KryossDbContext : DbContext
             e.ToTable("machine_threats");
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+        });
+
+        // ── External scans (cloud-side pentest) ──
+        mb.Entity<ExternalScan>(e =>
+        {
+            e.ToTable("external_scans");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasMany(x => x.Results).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<ExternalScanResult>(e =>
+        {
+            e.ToTable("external_scan_results");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+        });
+
+        // ── M365 / Entra ID ──
+        mb.Entity<M365Tenant>(e =>
+        {
+            e.ToTable("m365_tenants");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.OrganizationId).IsUnique();
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasMany(x => x.Findings).WithOne(x => x.Tenant).HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<M365Finding>(e =>
+        {
+            e.ToTable("m365_findings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
         });
     }
 }

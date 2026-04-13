@@ -57,6 +57,8 @@ builder.Services.AddScoped<IEvaluationService, EvaluationService>();
 builder.Services.AddScoped<IActlogService, ActlogService>();
 builder.Services.AddScoped<ICryptoService, CryptoService>();
 builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<ExternalScanService>();
+builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
 
 // ── Application Insights ──
 builder.Services

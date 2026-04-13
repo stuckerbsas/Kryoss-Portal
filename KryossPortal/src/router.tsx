@@ -11,6 +11,8 @@ import { ReportsTab } from './components/org-detail/ReportsTab';
 import { HygieneTab } from './components/org-detail/HygieneTab';
 import { PortsTab } from './components/org-detail/PortsTab';
 import { ThreatsTab } from './components/org-detail/ThreatsTab';
+import { ExternalScanTab } from './components/org-detail/ExternalScanTab';
+import { M365Tab } from './components/org-detail/M365Tab';
 import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
 import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
@@ -48,6 +50,8 @@ export const router = createBrowserRouter([
               { path: 'hygiene', element: <HygieneTab /> },
               { path: 'ports', element: <PortsTab /> },
               { path: 'threats', element: <ThreatsTab /> },
+              { path: 'external-scan', element: <ExternalScanTab /> },
+              { path: 'm365', element: <M365Tab /> },
               {
                 path: 'machines/:machineId',
                 handle: { crumb: (_: unknown, p: Record<string, string>) => p.machineId },

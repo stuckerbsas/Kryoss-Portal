@@ -46,6 +46,10 @@
 | GET | `/v2/inventory/software?organizationId=X` | `InventoryFunction.Software` | Org-level software inventory (600+ commercial app detection) |
 | GET | `/v2/hygiene?organizationId=X` | `HygieneFunction.Get` | AD hygiene findings for portal |
 | GET | `/v2/agent/download?orgId=X&enrollmentCodeId=Y` | `AgentDownloadFunction` | Download org-patched agent binary |
+| POST | `/v2/m365/connect` | `M365Function.Connect` | Connect M365 tenant + initial scan |
+| POST | `/v2/m365/scan` | `M365Function.Scan` | Re-run M365 security scan |
+| GET | `/v2/m365?organizationId=X` | `M365Function.Get` | Latest M365 scan results |
+| DELETE | `/v2/m365/disconnect` | `M365Function.Disconnect` | Remove M365 tenant connection |
 
 ### Agent API (v1) — additional endpoints
 
@@ -77,6 +81,7 @@ src/KryossApi/
 │       ├── InventoryFunction.cs        <- /v2/inventory/hardware + /v2/inventory/software (600+ apps)
 │       ├── HygieneFunction.cs          <- POST /v1/hygiene (agent) + GET /v2/hygiene (portal)
 │       ├── AgentDownloadFunction.cs    <- /v2/agent/download (patched binary)
+│       ├── M365Function.cs            <- M365/Entra ID: connect, scan, get, disconnect
 │       ├── OrganizationsFunction.cs
 │       ├── MeFunction.cs
 │       └── RecycleBinFunction.cs
@@ -94,6 +99,7 @@ src/KryossApi/
 │   ├── BinaryPatcher.cs             <- UTF-16LE sentinel replacement in agent .exe binary
 │   ├── ActlogService.cs             <- Audit logging
 │   ├── CurrentUserService.cs        <- Request-scoped user context
+│   ├── M365ScannerService.cs         <- Graph API client: 30 M365/Entra ID security checks
 │   └── AuditInterceptor.cs          <- EF Core CreatedBy/UpdatedBy interceptor
 ├── Data/
 │   ├── KryossDbContext.cs           <- All DbSets
@@ -107,6 +113,7 @@ src/KryossApi/
 │       ├── MachinePort.cs           <- open ports per host (port, protocol, state, service)
 │       ├── AdHygiene.cs             <- AD hygiene findings (stale objects, security issues)
 │       ├── Brand.cs                 <- Brand/MSP customization
+│       ├── M365Tenant.cs            <- M365Tenant + M365Finding entities
 │       ├── Organization.cs
 │       └── Auth.cs
 └── Models/                          <- (empty — DTOs inline in functions)
@@ -151,6 +158,7 @@ src/KryossApi/
 | Assessment | `assessments`, `assessment_controls`, `assessment_runs`, `control_results`, `run_framework_scores` |
 | Enrollment | `enrollment_codes` |
 | CRM/Tickets | `crm_*`, `tickets_*` (tables exist, features Phase 5+) |
+| M365/Cloud | `m365_tenants`, `m365_findings` (Phase 4: Entra ID / M365 security checks) |
 
 **Schema files to read when DB-adjacent changes are needed:**
 - `sql/004_assessment.sql` — core catalog + assessment tables

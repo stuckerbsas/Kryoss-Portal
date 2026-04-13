@@ -27,6 +27,8 @@ const tabs = [
   { label: 'AD Hygiene', to: 'hygiene', end: false, permission: 'assessment:read' },
   { label: 'Ports', to: 'ports', end: false, permission: 'machines:read' },
   { label: 'Threats', to: 'threats', end: false, permission: 'machines:read' },
+  { label: 'External Scan', to: 'external-scan', end: false, permission: 'assessment:read' },
+  { label: 'M365 / Cloud', to: 'm365', end: false, permission: 'assessment:read' },
 ] as const;
 
 export function OrgDetail() {
