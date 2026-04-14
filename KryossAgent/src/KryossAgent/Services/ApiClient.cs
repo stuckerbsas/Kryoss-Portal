@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -65,7 +66,7 @@ public class ApiClient : IDisposable
     /// POST /v1/enroll — no HMAC needed (public endpoint).
     /// </summary>
     public async Task<EnrollmentResponse?> EnrollAsync(string code, string hostname,
-        PlatformInfo? platform, HardwareInfo? hardware)
+        PlatformInfo? platform)
     {
         var enrollBody = new EnrollRequest
         {
@@ -178,6 +179,10 @@ public class ApiClient : IDisposable
     /// <summary>
     /// POST /v1/hygiene — submit AD hygiene findings (HMAC signed).
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "Hygiene payloads use anonymous types that are rooted by callers.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050",
+        Justification = "Hygiene payloads use anonymous types that are rooted by callers.")]
     public async Task SubmitHygieneAsync(object hygienePayload)
     {
         var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(hygienePayload);
@@ -200,6 +205,10 @@ public class ApiClient : IDisposable
     /// <summary>
     /// Upload port scan results from a network scan to the API.
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "Port payloads use anonymous types that are rooted by callers.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050",
+        Justification = "Port payloads use anonymous types that are rooted by callers.")]
     public async Task SubmitPortResultsAsync(object portPayload)
     {
         var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(portPayload);
@@ -251,8 +260,20 @@ public class ApiClient : IDisposable
                 )
             ).ToLowerInvariant();
 
+            if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
+            {
+                Console.Error.WriteLine($"  [HMAC] ts={timestamp} method={method.Method.ToUpperInvariant()} path={path}");
+                Console.Error.WriteLine($"  [HMAC] agentId={agentId} bodyLen={body?.Length ?? 0} bodyHash={bodyHash[..16]}...");
+                Console.Error.WriteLine($"  [HMAC] secretLen={_config.ApiSecret.Length} apiKeyPrefix={_config.ApiKey[..Math.Min(8, _config.ApiKey.Length)]}...");
+                Console.Error.WriteLine($"  [HMAC] localUtc={DateTimeOffset.UtcNow:O}");
+            }
+
             request.Headers.Add("X-Timestamp", timestamp);
             request.Headers.Add("X-Signature", signature);
+        }
+        else if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
+        {
+            Console.Error.WriteLine($"  [HMAC] WARNING: ApiSecret is empty — no HMAC signature will be sent");
         }
 
         return request;

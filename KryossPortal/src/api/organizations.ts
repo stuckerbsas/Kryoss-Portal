@@ -102,3 +102,27 @@ export function useDeleteOrganization() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['organizations'] }),
   });
 }
+
+// ── v1.5.1: Protocol Audit toggle ──────────────────────────────────────────
+
+export interface ProtocolAuditStatus {
+  id: string;
+  protocolAuditEnabled: boolean;
+  protocolAuditEnabledAt?: string | null;
+  protocolAuditEnabledBy?: string | null;
+}
+
+export function useToggleProtocolAudit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      apiFetch<ProtocolAuditStatus>(`/v2/organizations/${id}/protocol-audit`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['organization', vars.id] });
+      qc.invalidateQueries({ queryKey: ['organizations'] });
+    },
+  });
+}

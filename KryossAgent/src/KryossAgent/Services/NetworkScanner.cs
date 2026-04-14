@@ -1,26 +1,22 @@
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using KryossAgent.Config;
 
 namespace KryossAgent.Services;
 
 /// <summary>
-/// Result of scanning a single remote target.
+/// Result of scanning a single network target (discovery + port scan).
 /// </summary>
 public record ScanResult(
     string Name,
     string Address,
-    string Status,
+    string Status,  // "Scanned" or "Unreachable"
     string? Error,
-    string? ResultLine,
     int DurationMs,
     List<PortScanner.PortResult>? OpenPorts = null);
 
 /// <summary>
-/// Orchestrates remote network scans: discovers targets, deploys the agent
-/// binary via SMB, executes it remotely via PsExec, and collects results.
-/// Replaces the legacy Invoke-KryossDeployment.ps1 PowerShell script.
+/// Orchestrates network discovery, port scanning, and AD hygiene reporting.
+/// v1.3.0: Remote deployment removed — discovery + ports + hygiene only.
 /// </summary>
 public static class NetworkScanner
 {
@@ -30,43 +26,6 @@ public static class NetworkScanner
     {
         // ── Parse arguments ──
         int threads = ParseIntArg(args, "--threads") ?? 10;
-        bool reenroll = HasFlag(args, "--reenroll");
-        bool wantCredential = HasFlag(args, "--credential");
-
-        string? enrollCode = GetArg(args, "--code") ?? EmbeddedConfig.EnrollmentCode;
-        if (string.IsNullOrEmpty(enrollCode))
-        {
-            Console.Error.WriteLine("[ERROR] No enrollment code available. Use --code <code> or patch the binary.");
-            return 1;
-        }
-
-        // ── Credential prompt ──
-        // Always prompt for credentials in interactive mode (admin share requires them).
-        // In --silent mode, only prompt if --credential is explicitly passed.
-        string? username = null;
-        string? password = null;
-
-        if (wantCredential || !silent)
-        {
-            Console.WriteLine("  Credentials required for remote admin access.");
-            Console.Write("  Username (domain\\user): ");
-            username = Console.ReadLine()?.Trim();
-            if (!string.IsNullOrEmpty(username))
-            {
-                Console.Write("  Password: ");
-                password = ReadMaskedPassword();
-                Console.WriteLine();
-            }
-
-            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("  [WARN] No credentials provided — will try current Windows identity.");
-                Console.ResetColor();
-                username = null;
-                password = null;
-            }
-        }
 
         var totalSw = Stopwatch.StartNew();
 
@@ -111,46 +70,17 @@ public static class NetworkScanner
             Console.WriteLine();
         }
 
-        // ── Build agent args for remote execution ──
-        var remoteArgs = "--silent";
-        if (reenroll) remoteArgs += " --reenroll";
-        remoteArgs += $" --code {enrollCode}";
-
-        // Pass through --api-url if specified
-        var apiUrl = GetArg(args, "--api-url") ?? EmbeddedConfig.ApiUrl;
-        if (!string.IsNullOrEmpty(apiUrl))
-            remoteArgs += $" --api-url {apiUrl}";
-
-        // ── Execute scans in parallel ──
-        var selfPath = Environment.ProcessPath
-            ?? throw new InvalidOperationException("Cannot determine own executable path.");
-
+        // ── Port scan each target in parallel ──
         var results = new ScanResult[targets.Count];
         int completed = 0;
         var semaphore = new SemaphoreSlim(threads, threads);
-
-        PsExecRunner psExec;
-        try
-        {
-            psExec = new PsExecRunner();
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[ERROR] Failed to initialize PsExec: {ex.Message}");
-            return 1;
-        }
-
-        using var _ = psExec;
 
         var tasks = targets.Select((target, index) => Task.Run(async () =>
         {
             await semaphore.WaitAsync();
             try
             {
-                var result = await ScanSingleTarget(
-                    target, selfPath, remoteArgs,
-                    username, password, psExec);
-
+                var result = await ScanTarget(target);
                 results[index] = result;
                 var seq = Interlocked.Increment(ref completed);
                 PrintProgress(seq, targets.Count, result, silent);
@@ -171,35 +101,26 @@ public static class NetworkScanner
         if (!silent) PrintHygieneReport();
 
         // ── Upload hygiene to API ──
-        await UploadHygieneReport(enrollCode!);
+        await UploadHygieneReport();
 
         // ── Upload port scan results to API ──
         await UploadPortResults(results);
 
-        // Return non-zero if any targets failed or were unreachable
-        bool anyFailed = results.Any(r =>
-            r.Status is "ScanFailed" or "Unreachable" or "DeployFailed");
+        // Return non-zero if any targets were unreachable
+        bool anyFailed = results.Any(r => r.Status == "Unreachable");
         return anyFailed ? 2 : 0;
     }
 
-    private static async Task<ScanResult> ScanSingleTarget(
-        TargetDiscovery.ScanTarget target,
-        string selfPath,
-        string remoteArgs,
-        string? username,
-        string? password,
-        PsExecRunner psExec)
+    /// <summary>
+    /// Ping + port scan a single target. No remote deployment.
+    /// </summary>
+    private static async Task<ScanResult> ScanTarget(TargetDiscovery.ScanTarget target)
     {
         var sw = Stopwatch.StartNew();
-        string remotePath = @"C:\Windows\Temp\KryossAgent.exe";
-        string uncShare = $@"\\{target.Address}\C$";
-        string uncPath = $@"\\{target.Address}\C$\Windows\Temp\KryossAgent.exe";
-        bool netUseConnected = false;
-        bool smbWasStarted = false;
 
         try
         {
-            // ── Step 0: Quick ping to skip offline machines fast ──
+            // ── Quick ping to skip offline machines fast ──
             try
             {
                 using var ping = new System.Net.NetworkInformation.Ping();
@@ -208,250 +129,34 @@ public static class NetworkScanner
                 {
                     sw.Stop();
                     return new ScanResult(target.Hostname, target.Address,
-                        "Unreachable", "Offline (ping failed)", null, (int)sw.ElapsedMilliseconds);
+                        "Unreachable", "Offline (ping failed)", (int)sw.ElapsedMilliseconds);
                 }
             }
             catch
             {
                 sw.Stop();
                 return new ScanResult(target.Hostname, target.Address,
-                    "Unreachable", "Offline (ping failed)", null, (int)sw.ElapsedMilliseconds);
+                    "Unreachable", "Offline (ping failed)", (int)sw.ElapsedMilliseconds);
             }
 
-            // ── Step 1: Connect admin share (net use with creds, or direct) ──
-            if (username is not null && password is not null)
-            {
-                // Disconnect stale mapping first
-                await RunProcess("net", $"use {uncShare} /delete /y", 5_000);
-
-                // SECURITY NOTE (C-2): Password is visible in the process command line.
-                // Any process on the system can see it via wmic/Get-Process/TaskManager.
-                // It also appears in process creation audit logs (Event ID 4688).
-                // TODO: Replace with WNetAddConnection2 P/Invoke for secure credential
-                // passing that does not expose the password on the command line.
-                var netResult = await RunProcess("net",
-                    $"use {uncShare} /user:{username} \"{password}\" /y", 15_000);
-                if (netResult.ExitCode != 0)
-                {
-                    sw.Stop();
-                    return new ScanResult(target.Hostname, target.Address,
-                        "Unreachable", $"Access denied (net use exit {netResult.ExitCode})",
-                        null, (int)sw.ElapsedMilliseconds);
-                }
-                netUseConnected = true;
-            }
-
-            // ── Step 2: Copy agent binary (with SMB service recovery) ──
+            // ── Port scan ──
+            List<PortScanner.PortResult>? openPorts = null;
             try
             {
-                File.Copy(selfPath, uncPath, overwrite: true);
+                openPorts = await PortScanner.ScanTcpAsync(target.Address, concurrency: 100, timeoutMs: 500);
             }
-            catch (Exception)
-            {
-                // SMB might be disabled — try starting it remotely via RPC (port 135)
-                var scStart = await RunProcess("sc", $@"\\{target.Address} start LanmanServer", 10_000);
-                if (scStart.ExitCode == 0)
-                {
-                    smbWasStarted = true;
-                    await Task.Delay(3000); // Wait for service to start
-
-                    // Re-map if we had credentials
-                    if (username is not null && password is not null)
-                    {
-                        await RunProcess("net", $"use {uncShare} /delete /y", 5_000);
-                        await RunProcess("net", $"use {uncShare} /user:{username} \"{password}\" /y", 15_000);
-                    }
-
-                    // Retry copy
-                    try
-                    {
-                        File.Copy(selfPath, uncPath, overwrite: true);
-                    }
-                    catch (Exception retryEx)
-                    {
-                        sw.Stop();
-                        return new ScanResult(target.Hostname, target.Address,
-                            "DeployFailed", $"Copy failed after SMB start: {retryEx.Message}",
-                            null, (int)sw.ElapsedMilliseconds);
-                    }
-                }
-                else
-                {
-                    // Try WinRM as last resort to start SMB
-                    var winrmResult = await RunProcess("powershell",
-                        $"-NoProfile -Command \"Invoke-Command -ComputerName {target.Address} -ScriptBlock {{ Start-Service LanmanServer }}\"",
-                        15_000);
-                    if (winrmResult.ExitCode == 0)
-                    {
-                        smbWasStarted = true;
-                        await Task.Delay(3000);
-
-                        if (username is not null && password is not null)
-                        {
-                            await RunProcess("net", $"use {uncShare} /delete /y", 5_000);
-                            await RunProcess("net", $"use {uncShare} /user:{username} \"{password}\" /y", 15_000);
-                        }
-
-                        try
-                        {
-                            File.Copy(selfPath, uncPath, overwrite: true);
-                        }
-                        catch (Exception winrmRetryEx)
-                        {
-                            sw.Stop();
-                            return new ScanResult(target.Hostname, target.Address,
-                                "DeployFailed", $"Copy failed after WinRM SMB start: {winrmRetryEx.Message}",
-                                null, (int)sw.ElapsedMilliseconds);
-                        }
-                    }
-                    else
-                    {
-                        sw.Stop();
-                        return new ScanResult(target.Hostname, target.Address,
-                            "Unreachable", "SMB disabled, RPC and WinRM failed to start it",
-                            null, (int)sw.ElapsedMilliseconds);
-                    }
-                }
-            }
-
-            // ── Step 4: Run via PsExec ──
-            var psResult = await psExec.RunRemoteAsync(
-                target.Address, remotePath, remoteArgs, username, password);
-
-            var resultLine = psResult.ParseResultLine();
-
-            // Extract a short error from PsExec stderr (first meaningful line)
-            var shortError = ExtractShortError(psResult.Stderr);
-
-            string status;
-            string? error = null;
-
-            if (psResult.ExitCode == 0 && resultLine is not null && resultLine.Contains("OK", StringComparison.OrdinalIgnoreCase))
-            {
-                status = "OK";
-            }
-            else if (psResult.ExitCode == 2 || (resultLine is not null &&
-                (resultLine.Contains("OFFLINE", StringComparison.OrdinalIgnoreCase) ||
-                 resultLine.Contains("SKIP", StringComparison.OrdinalIgnoreCase))))
-            {
-                status = "Partial";
-                error = resultLine ?? shortError;
-            }
-            else
-            {
-                status = "ScanFailed";
-                error = resultLine ?? shortError;
-                if (string.IsNullOrWhiteSpace(error))
-                    error = $"PsExec exit {psResult.ExitCode}";
-            }
-
-            // Port scan (only for successful scans)
-            List<PortScanner.PortResult>? openPorts = null;
-            if (status == "OK" || status == "Partial")
-            {
-                try
-                {
-                    openPorts = await PortScanner.ScanTcpAsync(target.Address, concurrency: 100, timeoutMs: 500);
-                }
-                catch { /* non-critical */ }
-            }
+            catch { /* non-critical */ }
 
             sw.Stop();
             return new ScanResult(target.Hostname, target.Address,
-                status, error, resultLine is not null ? $"RESULT: {resultLine}" : null,
-                (int)sw.ElapsedMilliseconds, openPorts);
+                "Scanned", null, (int)sw.ElapsedMilliseconds, openPorts);
         }
         catch (Exception ex)
         {
             sw.Stop();
             return new ScanResult(target.Hostname, target.Address,
-                "ScanFailed", ex.Message, null, (int)sw.ElapsedMilliseconds);
+                "Unreachable", ex.Message, (int)sw.ElapsedMilliseconds);
         }
-        finally
-        {
-            // ── Cleanup ──
-            try { File.Delete(uncPath); } catch { /* best-effort */ }
-
-            // Stop SMB service if we started it (leave the machine as we found it)
-            if (smbWasStarted)
-            {
-                try
-                {
-                    await RunProcess("sc", $@"\\{target.Address} stop LanmanServer", 10_000);
-                }
-                catch { /* best-effort */ }
-            }
-
-            if (netUseConnected)
-            {
-                try
-                {
-                    await RunProcess("net", $"use {uncShare} /delete /y", 10_000);
-                }
-                catch { /* best-effort */ }
-            }
-        }
-    }
-
-    /// <summary>Extract the first meaningful error line from PsExec stderr.</summary>
-    private static string ExtractShortError(string stderr)
-    {
-        if (string.IsNullOrWhiteSpace(stderr)) return "";
-        foreach (var line in stderr.Split('\n'))
-        {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed)) continue;
-            if (trimmed.StartsWith("PsExec", StringComparison.OrdinalIgnoreCase)) continue;
-            if (trimmed.StartsWith("Copyright", StringComparison.OrdinalIgnoreCase)) continue;
-            if (trimmed.StartsWith("Sysinternals", StringComparison.OrdinalIgnoreCase)) continue;
-            if (trimmed.StartsWith("Connecting to", StringComparison.OrdinalIgnoreCase)) continue;
-            if (trimmed.StartsWith("Starting PSEXESVC", StringComparison.OrdinalIgnoreCase)) continue;
-            // Found a meaningful line
-            return trimmed.Length > 80 ? trimmed[..80] + "..." : trimmed;
-        }
-        return stderr.Trim().Length > 80 ? stderr.Trim()[..80] + "..." : stderr.Trim();
-    }
-
-    private static async Task<bool> ProbeTcp445(string address)
-    {
-        try
-        {
-            using var client = new TcpClient();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            await client.ConnectAsync(address, 445, cts.Token);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcess(
-        string fileName, string arguments, int timeoutMs)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-
-        using var proc = Process.Start(psi)!;
-        var stdout = await proc.StandardOutput.ReadToEndAsync();
-        var stderr = await proc.StandardError.ReadToEndAsync();
-
-        var exited = proc.WaitForExit(timeoutMs);
-        if (!exited)
-        {
-            try { proc.Kill(entireProcessTree: true); } catch { }
-            return (-1, stdout, stderr + $"\n[TIMEOUT] exceeded {timeoutMs}ms");
-        }
-
-        return (proc.ExitCode, stdout, stderr);
     }
 
     private static void PrintProgress(int seq, int total, ScanResult result, bool silent)
@@ -459,10 +164,10 @@ public static class NetworkScanner
         if (silent) return;
 
         var duration = result.DurationMs / 1000;
+        var portCount = result.OpenPorts?.Count ?? 0;
         var detail = result.Status switch
         {
-            "OK" => result.ResultLine ?? "OK",
-            "Partial" => result.ResultLine ?? result.Error ?? "Partial",
+            "Scanned" => $"{portCount} open port(s)",
             _ => result.Error ?? result.Status,
         };
 
@@ -470,8 +175,7 @@ public static class NetworkScanner
         {
             var color = result.Status switch
             {
-                "OK" => ConsoleColor.Green,
-                "Partial" => ConsoleColor.Yellow,
+                "Scanned" => ConsoleColor.Green,
                 _ => ConsoleColor.Red,
             };
 
@@ -483,36 +187,8 @@ public static class NetworkScanner
 
     private static void PrintSummary(ScanResult[] results, bool silent, TimeSpan elapsed)
     {
-        int ok = results.Count(r => r.Status == "OK");
-        int partial = results.Count(r => r.Status == "Partial");
-        int failed = results.Count(r => r.Status is "ScanFailed" or "DeployFailed" or "AccessDenied");
+        int scanned = results.Count(r => r.Status == "Scanned");
         int unreachable = results.Count(r => r.Status == "Unreachable");
-
-        // Compute fleet averages from OK results
-        var okResults = results.Where(r => r.ResultLine is not null && r.Status == "OK").ToArray();
-        double avgScore = 0;
-        int fastestMs = 0, slowestMs = 0, avgMs = 0;
-        if (okResults.Length > 0)
-        {
-            // Parse scores from RESULT: OK | HOST | 17.01% F | P:25 W:189 F:424
-            var scores = new List<double>();
-            foreach (var r in okResults)
-            {
-                var parts = r.ResultLine!.Split('|');
-                if (parts.Length >= 3)
-                {
-                    var scorePart = parts[2].Trim().Split('%')[0].Trim();
-                    if (double.TryParse(scorePart, System.Globalization.NumberStyles.Any,
-                        System.Globalization.CultureInfo.InvariantCulture, out var s))
-                        scores.Add(s);
-                }
-            }
-            if (scores.Count > 0) avgScore = scores.Average();
-
-            fastestMs = okResults.Min(r => r.DurationMs);
-            slowestMs = okResults.Max(r => r.DurationMs);
-            avgMs = (int)okResults.Average(r => r.DurationMs);
-        }
 
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Cyan;
@@ -522,18 +198,10 @@ public static class NetworkScanner
         Console.ResetColor();
         Console.WriteLine($"    Targets:       {results.Length}");
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"    Scanned OK:    {ok}");
+        Console.WriteLine($"    Scanned:       {scanned}");
         Console.ResetColor();
-        if (partial > 0) { Console.ForegroundColor = ConsoleColor.Yellow; Console.WriteLine($"    Partial:       {partial}"); Console.ResetColor(); }
-        if (failed > 0) { Console.ForegroundColor = ConsoleColor.Red; Console.WriteLine($"    Failed:        {failed}"); Console.ResetColor(); }
         if (unreachable > 0) Console.WriteLine($"    Unreachable:   {unreachable}");
         Console.WriteLine();
-
-        if (okResults.Length > 0)
-        {
-            Console.WriteLine($"    Avg Score:     {avgScore:F1}%");
-            Console.WriteLine($"    Scan Time:     fastest {fastestMs / 1000}s / avg {avgMs / 1000}s / slowest {slowestMs / 1000}s");
-        }
 
         // Port scan summary — show risky open ports across all targets
         var allRiskyPorts = results
@@ -566,7 +234,7 @@ public static class NetworkScanner
         Console.WriteLine();
     }
 
-    private static async Task UploadHygieneReport(string enrollCode)
+    private static async Task UploadHygieneReport()
     {
         var report = TargetDiscovery.LastHygieneReport;
         if (report is null) return;
@@ -809,31 +477,6 @@ public static class NetworkScanner
         Console.WriteLine("\n  ══════════════════════════════════════════");
         Console.ResetColor();
         Console.WriteLine();
-    }
-
-    private static string ReadMaskedPassword()
-    {
-        var password = new System.Text.StringBuilder();
-        while (true)
-        {
-            var key = Console.ReadKey(intercept: true);
-            if (key.Key == ConsoleKey.Enter)
-                break;
-            if (key.Key == ConsoleKey.Backspace)
-            {
-                if (password.Length > 0)
-                {
-                    password.Length--;
-                    Console.Write("\b \b");
-                }
-            }
-            else if (!char.IsControl(key.KeyChar))
-            {
-                password.Append(key.KeyChar);
-                Console.Write('*');
-            }
-        }
-        return password.ToString();
     }
 
     // ── CLI helpers (local to NetworkScanner) ──

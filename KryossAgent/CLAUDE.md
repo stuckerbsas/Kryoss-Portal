@@ -85,21 +85,23 @@ KryossAgent/
 
 ---
 
-## Engines — efficiency matrix
+## Engines — efficiency matrix (v1.4.0 — zero Process.Start)
 
-| Engine | Type string | Batch? | Tech | Notes |
-|---|---|---|---|---|
-| RegistryEngine | `registry` | Per-control | `Microsoft.Win32.Registry` | Fastest. Handles 4 hives + HKU user enumeration |
-| SeceditEngine | `secedit` | ✅ Batch (1 call) | `secedit.exe /export /cfg` | ~2 sec for 26+ checks |
-| AuditpolEngine | `auditpol` | ✅ Batch (1 call) | `auditpol /get /category:* /r` | ~1 sec for all subcats |
-| NetAccountsEngine | `netaccount` | ✅ Batch (1 call) | `net accounts` | Password/lockout fields only |
-| FirewallEngine | `firewall` | Per-control | Registry only (`SharedAccess\Parameters\FirewallPolicy`) | No netsh, no COM |
-| ServiceEngine | `service` | Per-control | `ServiceController` | No sc.exe, no WMI |
-| ShellEngine | `command` | Per-control | `Process.Start` | Honors `TimeoutSeconds` (default 15s), 4KB stdout cap, allowlist `System32/SysWOW64/Windows` |
-| EventLogEngine | `eventlog` | Per-control | `System.Diagnostics.Eventing.Reader` | AOT-safe. CheckType: max_size, retention, last_cleared, event_count, latest_event |
-| CertStoreEngine | `certstore` | Per-control | `X509Store` | AOT-safe. CheckType: count_self_signed, count_expiring, count_weak_key, list_thumbprints |
-| BitLockerEngine | `bitlocker` | ✅ Batch (1 call) | `manage-bde -status` parse | Single batched invocation per engine run, per-drive dictionary |
-| TpmEngine | `tpm` | ✅ Batch (1 call) | registry + `tpmtool getdeviceinformation` | Graceful fallback if tpmtool missing |
+| Engine | Type string | Tech | Notes |
+|---|---|---|---|
+| RegistryEngine | `registry` | `Microsoft.Win32.Registry` | HKLM/HKCU/HKU/HKCR + user enum |
+| SecurityPolicyEngine | `secedit` | P/Invoke `NetUserModalsGet` + registry | Replaces SeceditEngine + NetAccountsEngine. 31 controls |
+| NetAccountCompatEngine | `netaccount` | Delegates to SecurityPolicyEngine | Backward compat wrapper |
+| AuditpolEngine | `auditpol` | P/Invoke `AuditQuerySystemPolicy` (advapi32.dll) | 24 controls, no auditpol.exe |
+| FirewallEngine | `firewall` | Registry only | No netsh, no COM |
+| ServiceEngine | `service` | `ServiceController` | No sc.exe, no WMI |
+| NativeCommandEngine | `command` | Registry + WMI + .NET APIs | Replaces ShellEngine. Routes by `parent` field (Test-DeviceJoinStatus, Test-WHfBProvisioned, Test-EventLogRetention, Test-BackupPosture, Test-WdacPolicies). Unknown parents return "info" |
+| EventLogEngine | `eventlog` | `System.Diagnostics.Eventing.Reader` | AOT-safe |
+| CertStoreEngine | `certstore` | `X509Store` | AOT-safe |
+| BitLockerEngine | `bitlocker` | WMI `Win32_EncryptableVolume` (root\CIMV2\Security\MicrosoftVolumeEncryption) | Replaces manage-bde.exe parsing |
+| TpmEngine | `tpm` | WMI `Win32_Tpm` (root\CIMV2\Security\MicrosoftTpm) + registry | Replaces tpmtool.exe |
+
+**v1.4.0 security contract:** `grep Process.Start` in `KryossAgent/src/` returns **ZERO** matches. The agent is a pure passive sensor — all data collection via registry, WMI read queries, P/Invoke, and .NET APIs. No external executables, no shell commands, no process spawning. PlatformDetector also converted to WMI `MSFT_PhysicalDisk` (replaces `Get-PhysicalDisk` PowerShell calls).
 
 **Dispatch:** `Program.cs` groups controls by `c.Type` and runs the matching engine with ALL controls of that type in one call (`engine.Execute(IReadOnlyList<ControlDef>)`). Batch engines exploit this, per-control engines iterate internally.
 

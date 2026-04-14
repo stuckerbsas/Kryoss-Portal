@@ -5,7 +5,7 @@ using KryossAgent.Models;
 using KryossAgent.Services;
 
 // ── Kryoss Security Agent ──
-// v1.0.0
+// v1.3.0
 
 // Global exception handler — NEVER let the agent die silently
 AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -30,7 +30,7 @@ if (args.Any(a => a is "/?" or "-?" or "--help" or "-h" or "/h"))
 // ── Validate arguments ──
 var knownFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
-    "--silent", "--verbose", "--alone", "--scan", "--reenroll", "--credential",
+    "--silent", "--verbose", "--scan", "--reenroll",
     "--code", "--api-url", "--threads", "--targets", "--targets-file",
     "--discover-ad", "--discover-arp", "--discover-subnet",
 };
@@ -56,7 +56,6 @@ var sw = Stopwatch.StartNew();
 var silent = args.Contains("--silent", StringComparer.OrdinalIgnoreCase);
 var verbose = args.Contains("--verbose", StringComparer.OrdinalIgnoreCase);
 if (verbose) Environment.SetEnvironmentVariable("KRYOSS_VERBOSE", "1");
-var aloneMode = args.Contains("--alone", StringComparer.OrdinalIgnoreCase);
 var scanMode = args.Contains("--scan", StringComparer.OrdinalIgnoreCase);
 
 // ── Banner (always show first, even in --scan mode) ──
@@ -77,7 +76,7 @@ if (!silent)
     else
     {
         Console.WriteLine("╔══════════════════════════════════════════╗");
-        Console.WriteLine("║       Kryoss Security Agent v1.2.2      ║");
+        Console.WriteLine("║       Kryoss Security Agent v1.3.0      ║");
         Console.WriteLine("║         TeamLogic IT Assessment          ║");
         Console.WriteLine("╚══════════════════════════════════════════╝");
     }
@@ -167,14 +166,15 @@ if (!config.IsEnrolled)
 
     var hostname = Environment.MachineName;
     var platform = PlatformDetector.DetectPlatform();
-    var hardware = PlatformDetector.DetectHardware();
+    // Hardware detection deferred to after controls download — not needed for
+    // enrollment (EnrollAsync only uses OS strings from platform).
 
     if (!silent) Console.WriteLine($"  Enrolling {hostname}...");
 
     try
     {
         using var enrollClient = new ApiClient(config);
-        var enrollment = await enrollClient.EnrollAsync(code, hostname, platform, hardware);
+        var enrollment = await enrollClient.EnrollAsync(code, hostname, platform);
         if (enrollment is null)
         {
             Console.Error.WriteLine("[ERROR] Enrollment returned null.");
@@ -201,6 +201,22 @@ if (!config.IsEnrolled)
             Console.WriteLine($"  Assessment: {enrollment.AssessmentName ?? "Default"} ({enrollment.AssessmentId})");
             Console.ResetColor();
             Console.WriteLine();
+        }
+
+        // v1.5.1: Protocol Usage Audit — opt-in per-org via portal toggle.
+        // Configures NTLM+SMB1 audit and resizes event logs on this machine.
+        if (enrollment.ProtocolAuditEnabled)
+        {
+            if (!silent) Console.WriteLine("  Configuring protocol usage audit (NTLM + SMBv1)...");
+            try
+            {
+                ProtocolAuditService.Configure(verbose);
+                if (!silent && !verbose) Console.WriteLine("  Protocol audit configured.");
+            }
+            catch (Exception paEx)
+            {
+                if (!silent) Console.Error.WriteLine($"  [WARN] Protocol audit config failed: {paEx.Message}");
+            }
         }
     }
     catch (Exception ex)
@@ -285,20 +301,20 @@ if (!silent) Console.WriteLine($" {threats.Count} found");
 
 if (!silent) Console.Write("    Running security checks...");
 
-ShellEngine.Verbose = verbose;
+var securityPolicyEngine = new SecurityPolicyEngine();
 ICheckEngine[] engines =
 [
     new RegistryEngine(),
-    new SeceditEngine(),
-    new AuditpolEngine(),
+    securityPolicyEngine,                        // Type="secedit" — P/Invoke (replaces SeceditEngine)
+    new AuditpolEngine(),                        // P/Invoke AuditQuerySystemPolicy (no auditpol.exe)
     new FirewallEngine(),
     new ServiceEngine(),
-    new NetAccountsEngine(),
-    new ShellEngine(),
+    new NetAccountCompatEngine(securityPolicyEngine), // Type="netaccount" — delegates to SecurityPolicyEngine
+    new NativeCommandEngine(),                   // Type="command" — WMI/registry (replaces ShellEngine, zero Process.Start)
     new EventLogEngine(),
     new CertStoreEngine(),
-    new BitLockerEngine(),
-    new TpmEngine()
+    new BitLockerEngine(),                       // WMI Win32_EncryptableVolume (no manage-bde.exe)
+    new TpmEngine()                              // WMI Win32_Tpm (no tpmtool.exe)
 ];
 
 var allResults = new List<CheckResult>();
@@ -383,7 +399,7 @@ hardwareInfo.Threats = threats;
 var payload = new AssessmentPayload
 {
     AgentId = config.AgentId,
-    AgentVersion = "1.2.2",
+    AgentVersion = "1.3.0",
     Timestamp = DateTime.UtcNow,
     DurationMs = durationMs,
     Platform = platformInfo,
@@ -419,29 +435,21 @@ try
         }
     }
 
-    // ── Network scan: runs by default unless --alone or --silent ──
-    if (!aloneMode && !silent && !scanMode)
+    // ── v1.3.0: Stateless cycle ──
+    // Wipe credentials from registry after successful upload IF no offline
+    // queue items remain. Next run will re-enroll (cheap, <1s) and use fresh
+    // credentials. Zero on-disk state when idle = minimal attack surface.
+    // If offline queue has items, KEEP credentials — next run needs them to
+    // re-sign and upload the queued payloads.
+    var pendingCount = OfflineStore.LoadPending().Count;
+    if (pendingCount == 0)
     {
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("  ═══════════════════════════════════════");
-        Console.WriteLine("  Starting network scan...");
-        Console.WriteLine("  ═══════════════════════════════════════");
-        Console.ResetColor();
-        Console.WriteLine();
-
-        try
-        {
-            var scanArgs = new List<string> { "--scan" };
-            if (enrollCode is not null) { scanArgs.Add("--code"); scanArgs.Add(enrollCode); }
-            // Pass through reenroll if it was specified
-            if (forceReenroll) scanArgs.Add("--reenroll");
-            var netResult = await NetworkScanner.RunAsync(scanArgs.ToArray(), silent);
-        }
-        catch (Exception scanEx)
-        {
-            Console.Error.WriteLine($"[WARN] Network scan failed: {scanEx.Message}");
-        }
+        AgentConfig.Wipe();
+        if (verbose) Console.WriteLine("  [state] Registry wiped (stateless cycle complete)");
+    }
+    else if (verbose)
+    {
+        Console.WriteLine($"  [state] Registry kept ({pendingCount} offline payloads pending)");
     }
 
     Environment.Exit(0);
@@ -505,15 +513,14 @@ static async Task UploadPendingResults(AgentConfig config, bool silent)
 static void PrintHelp()
 {
     Console.WriteLine(@"
-Kryoss Security Agent v1.2.2
+Kryoss Security Agent v1.3.0
 TeamLogic IT — Security Assessment Tool
 
 USAGE:
   KryossAgent.exe [options]
 
 DEFAULT BEHAVIOR (no flags):
-  Enrolls this machine, runs 647 security controls, uploads results,
-  then scans the entire network (AD discovery + remote deployment).
+  Enrolls this machine, runs security controls, uploads results.
 
 OPTIONS:
 
@@ -523,29 +530,26 @@ OPTIONS:
     --reenroll           Clear existing enrollment and re-enroll
 
   Scan mode:
-    --alone              Scan only this machine (skip network scan)
-    --scan               Network scan only (skip local assessment)
+    --scan               Network discovery + port scan + AD hygiene (no remote deployment)
 
-  Network discovery (used with default or --scan):
+  Network discovery (used with --scan):
     --discover-ad [OU]   Discover machines via Active Directory
     --discover-arp       Discover machines via ARP table
     --discover-subnet CIDR  Probe subnet (e.g. 192.168.1.0/24)
     --targets H1,H2,H3  Explicit target list (comma-separated)
     --targets-file FILE  Read targets from file (one per line)
-    --credential         Prompt for remote admin credentials
     --threads N          Parallel scan threads (default: 10)
 
   Output:
-    --silent             No console output (for remote PsExec execution)
+    --silent             No console output (for scheduled/automated execution)
     --verbose            Show detailed engine output and command progress
 
   Help:
     --help, -?, /?       Show this help message
 
 EXAMPLES:
-  KryossAgent.exe                              Scan local + entire network (default)
-  KryossAgent.exe --alone                      Scan only this machine
-  KryossAgent.exe --scan --threads 20          Network scan with 20 threads
+  KryossAgent.exe                              Scan this machine (default)
+  KryossAgent.exe --scan --threads 20          Network discovery + port scan
   KryossAgent.exe --reenroll --code XXXX       Re-enroll and scan
   KryossAgent.exe --scan --discover-subnet 10.0.0.0/24
   KryossAgent.exe --verbose                    Full detail output
@@ -553,7 +557,7 @@ EXAMPLES:
 EXIT CODES:
   0   Success
   1   Fatal error (enrollment failed, no controls, etc.)
-  2   Partial (upload deferred, some targets failed)
+  2   Partial (upload deferred, some targets unreachable)
   99  Unhandled exception
 ");
 }

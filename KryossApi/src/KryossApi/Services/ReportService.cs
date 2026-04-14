@@ -7,26 +7,30 @@ namespace KryossApi.Services;
 
 public interface IReportService
 {
-    Task<string> GenerateHtmlReportAsync(Guid runId, string reportType = "technical", string? frameworkCode = null);
-    Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null);
+    Task<string> GenerateHtmlReportAsync(Guid runId, string reportType = "technical", string? frameworkCode = null, string lang = "en");
+    Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null, string lang = "en");
 }
 
 /// <summary>
 /// Generates branded HTML assessment reports.
-/// Supports: executive (summary), technical (full detail), presales (highlight risks).
+/// Supports: executive (summary), technical (full detail), presales (highlight risks),
+/// exec-onepager (org-level C-level brief, bilingual, strict A4).
 /// White-label: uses franchise branding (logo, colors, name).
 /// </summary>
 public class ReportService : IReportService
 {
     private readonly KryossDbContext _db;
+    private readonly ICurrentUserService _currentUser;
 
-    public ReportService(KryossDbContext db)
+    public ReportService(KryossDbContext db, ICurrentUserService currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
-    public async Task<string> GenerateHtmlReportAsync(Guid runId, string reportType = "technical", string? frameworkCode = null)
+    public async Task<string> GenerateHtmlReportAsync(Guid runId, string reportType = "technical", string? frameworkCode = null, string lang = "en")
     {
+        _ = lang; // Reserved: per-run builders are still English-only. Bilingual applies to exec-onepager (org) in this turn.
         var run = await _db.AssessmentRuns
             .Include(r => r.Machine)
             .Include(r => r.Organization)
@@ -543,7 +547,7 @@ public class ReportService : IReportService
     // ORG-LEVEL CONSOLIDATED REPORT
     // ==========================================================================
 
-    public async Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null)
+    public async Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null, string lang = "en")
     {
         var org = await _db.Organizations
             .Include(o => o.Franchise)
@@ -673,11 +677,56 @@ public class ReportService : IReportService
             LogoUrl = brand?.LogoUrl ?? franchise.BrandLogoUrl ?? LogoData.DataUri
         };
 
+        // Load the operator identity for the report footer (Path A profile:
+        // name from Entra ID claims, phone/job_title from `users` if the
+        // operator has filled them in via SQL or the future profile page).
+        var userInfo = await BuildReportUserInfoAsync(org);
+
         return reportType switch
         {
             "technical" => BuildOrgTechnicalReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment),
             "presales" => BuildOrgPresalesReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment),
+            "exec-onepager" => BuildOrgExecutiveOnePager(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
             _ => BuildOrgExecutiveReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment)
+        };
+    }
+
+    /// <summary>
+    /// Loads the identity shown in the report footer. Falls back gracefully
+    /// when the profile is incomplete: missing fields render as "—".
+    /// </summary>
+    private async Task<ReportUserInfo> BuildReportUserInfoAsync(Organization org)
+    {
+        // Franchise phone as a secondary source — if the operator has no
+        // personal phone, we at least show the MSP main line (anchored to
+        // the franchise / brand already loaded on `org`).
+        var franchise = org.Franchise;
+        string? fallbackPhone = franchise?.ContactPhone;
+
+        if (_currentUser.UserId == Guid.Empty)
+        {
+            return new ReportUserInfo
+            {
+                FullName = _currentUser.DisplayName,
+                Email = _currentUser.Email,
+                Phone = _currentUser.Phone ?? fallbackPhone,
+                JobTitle = _currentUser.JobTitle,
+                CompanyName = franchise?.Name
+            };
+        }
+
+        var dbUser = await _db.Users
+            .Where(u => u.Id == _currentUser.UserId)
+            .Select(u => new { u.DisplayName, u.Email, u.Phone, u.JobTitle })
+            .FirstOrDefaultAsync();
+
+        return new ReportUserInfo
+        {
+            FullName = dbUser?.DisplayName ?? _currentUser.DisplayName,
+            Email = dbUser?.Email ?? _currentUser.Email,
+            Phone = dbUser?.Phone ?? _currentUser.Phone ?? fallbackPhone,
+            JobTitle = dbUser?.JobTitle ?? _currentUser.JobTitle,
+            CompanyName = franchise?.Name
         };
     }
 
@@ -1691,6 +1740,231 @@ public class ReportService : IReportService
         sb.AppendLine($"<img class='cover-ribbon' src='{RibbonData.DataUri}' alt='' />");
     }
 
+    // ======================================================================
+    // ORG: EXECUTIVE ONE-PAGER (Brand 2025, bilingual, strict A4)
+    // Layout: page 1 = cover (existing pattern)
+    //         page 2 = one page (header + KPIs + frameworks + top risks +
+    //                 quick wins + remediation + footer with user info)
+    // ======================================================================
+    private static string BuildOrgExecutiveOnePager(Organization org, List<AssessmentRun> runs,
+        List<OrgControlResult> allResults, ReportBranding brand, string? frameworkName,
+        List<FrameworkScoreDto> frameworkScores, HygieneScanDto? hygiene, OrgEnrichment enrichment,
+        ReportUserInfo userInfo, string lang)
+    {
+        var sb = new StringBuilder();
+
+        // Recompute global KPIs the same way BuildOrgExecutiveReport does.
+        var totalMachines = runs.Count;
+        decimal avgScore;
+        int totalPass, totalWarn, totalFail;
+        if (frameworkName != null && allResults.Count > 0)
+        {
+            totalPass = allResults.Count(r => r.Status == "pass");
+            totalWarn = allResults.Count(r => r.Status == "warn");
+            totalFail = allResults.Count(r => r.Status == "fail");
+            var total = totalPass + totalWarn + totalFail;
+            avgScore = total > 0 ? Math.Round((decimal)totalPass / total * 100, 1) : 0;
+        }
+        else
+        {
+            avgScore = runs.Count > 0
+                ? Math.Round(runs.Average(r => r.GlobalScore ?? 0), 1)
+                : 0;
+            totalPass = (int)runs.Sum(r => r.PassCount ?? 0);
+            totalWarn = (int)runs.Sum(r => r.WarnCount ?? 0);
+            totalFail = (int)runs.Sum(r => r.FailCount ?? 0);
+        }
+        var orgGrade = GetGrade(avgScore);
+        var scanDate = runs.Count > 0 ? runs.Max(r => r.CompletedAt ?? r.StartedAt) : DateTime.UtcNow;
+
+        // Top risks: failures with critical/high severity, grouped by ControlId,
+        // sorted by number of machines affected.
+        var topRisks = allResults
+            .Where(r => r.Status == "fail" &&
+                        (r.Severity == "critical" || r.Severity == "high"))
+            .GroupBy(r => r.ControlId)
+            .Select(g => new
+            {
+                g.First().ControlId,
+                g.First().Name,
+                g.First().Category,
+                Severity = g.First().Severity,
+                MachineCount = g.Select(x => x.RunId).Distinct().Count()
+            })
+            .OrderByDescending(x => x.Severity == "critical" ? 1 : 0)
+            .ThenByDescending(x => x.MachineCount)
+            .Take(3)
+            .ToList();
+
+        // Quick wins: failures with low/medium severity, sorted by machine count.
+        // These are "cheap to fix, high visible impact" items an MSP can quote.
+        var quickWins = allResults
+            .Where(r => r.Status == "fail" &&
+                        (r.Severity == "low" || r.Severity == "medium"))
+            .GroupBy(r => r.ControlId)
+            .Select(g => new
+            {
+                g.First().ControlId,
+                g.First().Name,
+                g.First().Category,
+                Severity = g.First().Severity,
+                MachineCount = g.Select(x => x.RunId).Distinct().Count()
+            })
+            .OrderByDescending(x => x.MachineCount)
+            .ThenByDescending(x => x.Severity == "medium" ? 1 : 0)
+            .Take(3)
+            .ToList();
+
+        // Estimated remediation hours — heuristic: severity × machines affected.
+        var bySeverity = allResults
+            .Where(r => r.Status == "fail")
+            .GroupBy(r => r.Severity)
+            .ToDictionary(g => g.Key, g => g.Count());
+        int HoursFor(string sev, double per) => (int)Math.Round((bySeverity.TryGetValue(sev, out var c) ? c : 0) * per);
+        var estHours = HoursFor("critical", 4) + HoursFor("high", 2) + HoursFor("medium", 1) + ((bySeverity.TryGetValue("low", out var lowC) ? lowC : 0) / 2);
+
+        var criticalFailCount = bySeverity.TryGetValue("critical", out var cf) ? cf : 0;
+        var reportTitle = frameworkName != null
+            ? $"{frameworkName} — {T("op.title", lang)}"
+            : T("op.title", lang);
+
+        AppendHtmlHead(sb, $"{reportTitle} - {org.Name}", brand, isOrgReport: true, htmlLang: lang);
+
+        // ---- PAGE 1: COVER ----
+        sb.AppendLine("<div class='cover'>");
+        AppendRibbonSvg(sb);
+        sb.AppendLine("<div class='cover-content'>");
+        if (brand.LogoUrl is not null)
+            sb.AppendLine($"<img src='{HtmlEncode(brand.LogoUrl)}' class='logo' alt='{HtmlEncode(brand.CompanyName)}'>");
+        sb.AppendLine($"<p class='eyebrow'>{HtmlEncode(T("op.eyebrow", lang))}</p>");
+        sb.AppendLine($"<h1>{HtmlEncode(reportTitle)}</h1>");
+        sb.AppendLine($"<h2>{HtmlEncode(T("op.cover.for", lang))}: {HtmlEncode(org.Name)}</h2>");
+        sb.AppendLine($"<p class='meta'>{HtmlEncode(T("op.cover.date", lang))}: {scanDate:MMMM dd, yyyy}</p>");
+        sb.AppendLine($"<div class='grade-badge grade-{orgGrade.Replace("+", "plus")}'>{HtmlEncode(orgGrade)}</div>");
+        sb.AppendLine($"<p class='score'>{avgScore}%</p>");
+        sb.AppendLine("</div></div>");
+
+        // ---- PAGE 2: ONE-PAGER ----
+        sb.AppendLine("<div class='page onepager'>");
+
+        // Header band (keeps the existing visual vocabulary)
+        sb.AppendLine("<div class='op-header'>");
+        sb.AppendLine("<div>");
+        sb.AppendLine($"<div class='op-sub'>{HtmlEncode(T("op.eyebrow", lang))}</div>");
+        sb.AppendLine($"<div class='op-title'>{HtmlEncode(org.Name)}</div>");
+        sb.AppendLine("</div>");
+        if (brand.LogoUrl is not null)
+            sb.AppendLine($"<img src='{HtmlEncode(brand.LogoUrl)}' alt='{HtmlEncode(brand.CompanyName)}'>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='op-stripe'></div>");
+
+        sb.AppendLine("<div class='op-body'>");
+
+        // KPIs row
+        sb.AppendLine("<div class='op-kpis'>");
+        sb.AppendLine("<div class='op-kpi op-kpi-hero'>");
+        sb.AppendLine($"<span class='op-kpi-val'>{avgScore}%</span>");
+        sb.AppendLine($"<span class='op-kpi-label'>{HtmlEncode(T("op.kpi.score", lang))}</span>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='op-kpi op-kpi-grade'>");
+        sb.AppendLine($"<span class='op-kpi-val'>{HtmlEncode(orgGrade)}</span>");
+        sb.AppendLine($"<span class='op-kpi-label'>{HtmlEncode(T("op.kpi.grade", lang))}</span>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='op-kpi'>");
+        sb.AppendLine($"<span class='op-kpi-val'>{totalMachines}</span>");
+        sb.AppendLine($"<span class='op-kpi-label'>{HtmlEncode(T("op.kpi.machines", lang))}</span>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='op-kpi'>");
+        sb.AppendLine($"<span class='op-kpi-val' style='color:#C0392B'>{criticalFailCount}</span>");
+        sb.AppendLine($"<span class='op-kpi-label'>{HtmlEncode(T("op.kpi.critical", lang))}</span>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div>");
+
+        // Framework compliance (compact)
+        if (frameworkScores.Count > 0)
+        {
+            sb.AppendLine($"<div class='op-section-title'>{HtmlEncode(T("op.frameworks", lang))}</div>");
+            sb.AppendLine("<div class='op-fw-bars'>");
+            AppendFrameworkBars(sb, frameworkScores);
+            sb.AppendLine("</div>");
+        }
+
+        // Risks + wins side-by-side
+        sb.AppendLine("<div class='op-lists'>");
+
+        // Left column: top risks
+        sb.AppendLine("<div class='op-list-col'>");
+        sb.AppendLine($"<div class='op-section-title'>{HtmlEncode(T("op.risks", lang))}</div>");
+        if (topRisks.Count == 0)
+        {
+            sb.AppendLine($"<p style='font-size:8pt;color:#666'>{HtmlEncode(T("op.no_risks", lang))}</p>");
+        }
+        else
+        {
+            int n = 1;
+            foreach (var r in topRisks)
+            {
+                var mLabel = r.MachineCount == 1 ? T("op.risk.machine", lang) : T("op.risk.machines", lang);
+                sb.AppendLine("<div class='op-risk'>");
+                sb.AppendLine($"<div class='op-num'>{n++}</div>");
+                sb.AppendLine("<div>");
+                sb.AppendLine($"<strong>{HtmlEncode(r.Name)}</strong>");
+                sb.AppendLine($"<div class='op-meta'>{HtmlEncode(r.Category)} · {HtmlEncode(T("op.risk.affects", lang))} {r.MachineCount} {HtmlEncode(mLabel)}</div>");
+                sb.AppendLine("</div>");
+                sb.AppendLine("</div>");
+            }
+        }
+        sb.AppendLine("</div>");
+
+        // Right column: quick wins
+        sb.AppendLine("<div class='op-list-col'>");
+        sb.AppendLine($"<div class='op-section-title'>{HtmlEncode(T("op.wins", lang))}</div>");
+        if (quickWins.Count == 0)
+        {
+            sb.AppendLine($"<p style='font-size:8pt;color:#666'>{HtmlEncode(T("op.no_wins", lang))}</p>");
+        }
+        else
+        {
+            int n = 1;
+            foreach (var w in quickWins)
+            {
+                var mLabel = w.MachineCount == 1 ? T("op.risk.machine", lang) : T("op.risk.machines", lang);
+                sb.AppendLine("<div class='op-win'>");
+                sb.AppendLine($"<div class='op-num'>{n++}</div>");
+                sb.AppendLine("<div>");
+                sb.AppendLine($"<strong>{HtmlEncode(w.Name)}</strong>");
+                sb.AppendLine($"<div class='op-meta'>{HtmlEncode(w.Category)} · {HtmlEncode(T("op.risk.affects", lang))} {w.MachineCount} {HtmlEncode(mLabel)}</div>");
+                sb.AppendLine("</div>");
+                sb.AppendLine("</div>");
+            }
+        }
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div>"); // /op-lists
+
+        // Remediation box
+        sb.AppendLine("<div class='op-remediation'>");
+        sb.AppendLine("<div>");
+        sb.AppendLine($"<div style='font-weight:700'>{HtmlEncode(T("op.remediation.label", lang))}</div>");
+        sb.AppendLine($"<div style='font-size:7.5pt;color:#666;margin-top:1mm'>{HtmlEncode(T("op.remediation.note", lang))}</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine($"<div class='op-hours'>{estHours} <span style='font-size:9pt;font-weight:600;color:#555'>{HtmlEncode(T("op.remediation.hours", lang))}</span></div>");
+        sb.AppendLine("</div>");
+
+        sb.AppendLine("</div>"); // /op-body
+
+        // Footer with logged-in user info
+        AppendOnePagerFooter(sb, userInfo, org, lang);
+
+        sb.AppendLine("</div>"); // /page.onepager
+
+        sb.AppendLine("</body></html>");
+
+        // Ensure unused locals don't trip the compiler if future edits remove them.
+        _ = totalWarn; _ = totalFail; _ = hygiene; _ = enrichment;
+
+        return sb.ToString();
+    }
+
     private static void AppendPageHeader(StringBuilder sb, string title, ReportBranding brand)
     {
         sb.AppendLine("<div class='ph'>");
@@ -1709,15 +1983,219 @@ public class ReportService : IReportService
         sb.AppendLine("</div>");
     }
 
-    private static void AppendHtmlHead(StringBuilder sb, string title, ReportBranding brand, bool isOrgReport)
+    private static void AppendHtmlHead(StringBuilder sb, string title, ReportBranding brand, bool isOrgReport, string htmlLang = "en")
     {
-        sb.AppendLine("<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>");
+        sb.AppendLine($"<!DOCTYPE html><html lang='{HtmlEncode(htmlLang)}'><head><meta charset='UTF-8'>");
         sb.AppendLine("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
         sb.AppendLine($"<title>{HtmlEncode(title)}</title>");
         sb.AppendLine("<link href='https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap' rel='stylesheet'>");
         sb.AppendLine("<style>");
         sb.AppendLine(isOrgReport ? GetOrgReportStyles(brand) : GetReportStyles(brand));
+        // A4 print discipline layered AFTER the base styles — overrides the
+        // generic `@media print` line at the bottom of each style block.
+        sb.AppendLine(GetA4PrintCss(brand));
         sb.AppendLine("</style></head><body>");
+    }
+
+    /// <summary>
+    /// CSS Paged Media for strict A4 output. Added on top of the existing
+    /// styles so the 3 legacy reports also get improved printing without
+    /// rewriting them.
+    /// </summary>
+    private static string GetA4PrintCss(ReportBranding brand) => $$"""
+        /* ── A4 print discipline ─────────────────────────────────────── */
+        @page { size: A4; margin: 0; }
+        @media print {
+            html, body { background: #fff !important; }
+            body { font-size: 10pt; }
+            .cover, .page {
+                width: 210mm !important;
+                min-height: 297mm !important;
+                max-height: 297mm !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                overflow: hidden !important;
+                page-break-after: always;
+                break-after: page;
+                position: relative;
+            }
+            .cover:last-of-type, .page:last-of-type {
+                page-break-after: auto;
+                break-after: auto;
+            }
+            .risk-card, .headline-item, .stat, .fw-bar-row, .cat-header,
+            .results-table tr, .hw-col, .recommendation-box, .insight-box,
+            .op-risk, .op-win, .op-kpi, .op-footer, .op-header {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            .no-print { display: none !important; }
+        }
+
+        /* ── Executive One-Pager layout (screen + print) ─────────────── */
+        .onepager { page-break-after: always; position: relative; }
+        .onepager .op-header {
+            background: #3D4043; color: #fff;
+            padding: 10mm 12mm 6mm; display: flex;
+            justify-content: space-between; align-items: center;
+        }
+        .onepager .op-header .op-title { font-size: 14pt; font-weight: 700; line-height: 1.1; }
+        .onepager .op-header .op-sub { font-size: 9pt; color: {{brand.AccentColor}}; letter-spacing: 0.08em; text-transform: uppercase; }
+        .onepager .op-header img { height: 10mm; }
+        .onepager .op-stripe {
+            height: 3mm;
+            background: linear-gradient(90deg, #006536 0%, #2BB673 20%, #39B54A 40%, #8DC63F 60%, #B2D235 80%, #D3E173 100%);
+        }
+        .onepager .op-body { padding: 6mm 12mm 0; }
+
+        .op-kpis { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 4mm; margin-bottom: 5mm; }
+        .op-kpi {
+            background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 2mm;
+            padding: 4mm; text-align: center;
+        }
+        .op-kpi.op-kpi-hero { background: {{brand.PrimaryColor}}; color: #fff; border-color: {{brand.PrimaryColor}}; }
+        .op-kpi .op-kpi-val { display: block; font-size: 22pt; font-weight: 900; line-height: 1; }
+        .op-kpi .op-kpi-label { display: block; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2mm; color: #666; }
+        .op-kpi.op-kpi-hero .op-kpi-label { color: {{brand.AccentColor}}; }
+        .op-kpi.op-kpi-grade .op-kpi-val { font-size: 28pt; color: {{brand.PrimaryColor}}; }
+
+        .op-section-title {
+            font-size: 9pt; font-weight: 800; text-transform: uppercase;
+            letter-spacing: 0.1em; color: {{brand.PrimaryColor}};
+            border-bottom: 1.5pt solid {{brand.AccentColor}};
+            padding-bottom: 1mm; margin: 4mm 0 2.5mm;
+        }
+
+        .op-fw-bars { margin-bottom: 4mm; }
+        .op-fw-bars .fw-bar-row { margin-bottom: 2mm; }
+        .op-fw-bars .fw-label { font-size: 8pt; width: 18mm; }
+        .op-fw-bars .fw-track { height: 3.5mm; }
+        .op-fw-bars .fw-pct { font-size: 8pt; width: 12mm; }
+        .op-fw-bars .fw-detail { font-size: 7pt; width: 22mm; }
+
+        .op-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+        .op-list-col { }
+        .op-risk, .op-win {
+            display: flex; gap: 3mm; padding: 2.5mm 3mm;
+            border-radius: 1.5mm; margin-bottom: 2mm;
+            font-size: 8.5pt; line-height: 1.35;
+        }
+        .op-risk { background: #fef2f2; border: 0.5pt solid #fecaca; }
+        .op-win  { background: #f0fdf4; border: 0.5pt solid {{brand.PrimaryColor}}44; }
+        .op-risk .op-num, .op-win .op-num {
+            width: 5mm; height: 5mm; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 8pt; color: #fff; flex-shrink: 0;
+        }
+        .op-risk .op-num { background: #C0392B; }
+        .op-win  .op-num { background: {{brand.PrimaryColor}}; }
+        .op-risk strong, .op-win strong { display: block; font-size: 9pt; margin-bottom: 0.5mm; }
+        .op-risk .op-meta, .op-win .op-meta { font-size: 7pt; color: #666; margin-top: 0.5mm; }
+
+        .op-remediation {
+            background: #f0f4ff; border: 0.5pt solid #c7d2fe;
+            border-radius: 2mm; padding: 3mm 4mm; margin-top: 3mm;
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 9pt;
+        }
+        .op-remediation .op-hours { font-size: 16pt; font-weight: 900; color: {{brand.PrimaryColor}}; }
+
+        .op-footer {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            padding: 4mm 12mm 6mm; border-top: 0.5pt solid #e5e7eb;
+            background: #fafafa;
+            font-size: 7.5pt; color: #555; line-height: 1.4;
+        }
+        .op-footer .op-footer-row { display: flex; justify-content: space-between; gap: 6mm; }
+        .op-footer .op-footer-user { font-weight: 600; color: #3D4043; font-size: 8pt; }
+        .op-footer .op-footer-brand { color: #999; font-size: 7pt; text-align: right; }
+        """;
+
+    /// <summary>
+    /// Minimal i18n. Returns the English string unless `lang` is "es" and
+    /// a Spanish translation is defined.
+    /// </summary>
+    private static string T(string key, string lang)
+    {
+        return lang == "es"
+            ? (_esStrings.TryGetValue(key, out var es) ? es : (_enStrings.TryGetValue(key, out var en0) ? en0 : key))
+            : (_enStrings.TryGetValue(key, out var en) ? en : key);
+    }
+
+    private static readonly Dictionary<string, string> _enStrings = new()
+    {
+        ["op.eyebrow"]           = "EXECUTIVE BRIEF",
+        ["op.title"]             = "Security Posture — Executive Brief",
+        ["op.header.subtitle"]   = "C-Level One-Page Summary",
+        ["op.kpi.score"]         = "Overall score",
+        ["op.kpi.grade"]         = "Grade",
+        ["op.kpi.machines"]      = "Machines assessed",
+        ["op.kpi.critical"]      = "Critical failures",
+        ["op.frameworks"]        = "Framework compliance",
+        ["op.risks"]             = "Top 3 risks",
+        ["op.wins"]              = "Top 3 quick wins",
+        ["op.no_risks"]          = "No critical or high-severity findings — the fleet is in good shape.",
+        ["op.no_wins"]           = "No easy fixes pending — focus on the hardening roadmap.",
+        ["op.remediation.label"] = "Estimated remediation effort",
+        ["op.remediation.hours"] = "hours",
+        ["op.remediation.note"]  = "Ballpark based on severity × affected machines. A sizing call produces the final quote.",
+        ["op.footer.prepared"]   = "Prepared by",
+        ["op.footer.generated"]  = "Generated",
+        ["op.footer.confidential"] = "Confidential — For internal use of",
+        ["op.risk.affects"]      = "affects",
+        ["op.risk.machines"]     = "machines",
+        ["op.risk.machine"]      = "machine",
+        ["op.cover.for"]         = "Prepared for",
+        ["op.cover.date"]        = "Assessment date",
+        ["op.cover.score"]       = "Overall posture",
+    };
+
+    private static readonly Dictionary<string, string> _esStrings = new()
+    {
+        ["op.eyebrow"]           = "RESUMEN EJECUTIVO",
+        ["op.title"]             = "Postura de Seguridad — Resumen Ejecutivo",
+        ["op.header.subtitle"]   = "Resumen en una página para dirección",
+        ["op.kpi.score"]         = "Puntaje global",
+        ["op.kpi.grade"]         = "Calificación",
+        ["op.kpi.machines"]      = "Equipos evaluados",
+        ["op.kpi.critical"]      = "Fallos críticos",
+        ["op.frameworks"]        = "Cumplimiento por framework",
+        ["op.risks"]             = "Top 3 riesgos",
+        ["op.wins"]              = "Top 3 acciones rápidas",
+        ["op.no_risks"]          = "Sin hallazgos críticos ni altos — la flota está saludable.",
+        ["op.no_wins"]           = "No hay correcciones rápidas pendientes — se recomienda avanzar con el plan de hardening.",
+        ["op.remediation.label"] = "Esfuerzo estimado de remediación",
+        ["op.remediation.hours"] = "horas",
+        ["op.remediation.note"]  = "Estimación orientativa basada en severidad × equipos afectados. Una reunión de dimensionamiento da el número final.",
+        ["op.footer.prepared"]   = "Preparado por",
+        ["op.footer.generated"]  = "Generado",
+        ["op.footer.confidential"] = "Confidencial — Uso interno de",
+        ["op.risk.affects"]      = "afecta a",
+        ["op.risk.machines"]     = "equipos",
+        ["op.risk.machine"]      = "equipo",
+        ["op.cover.for"]         = "Preparado para",
+        ["op.cover.date"]        = "Fecha de evaluación",
+        ["op.cover.score"]       = "Postura general",
+    };
+
+    private static void AppendOnePagerFooter(StringBuilder sb, ReportUserInfo user, Organization org, string lang)
+    {
+        var fullName = string.IsNullOrWhiteSpace(user.FullName) ? "—" : user.FullName!;
+        var email    = string.IsNullOrWhiteSpace(user.Email)    ? "—" : user.Email!;
+        var phone    = string.IsNullOrWhiteSpace(user.Phone)    ? "—" : user.Phone!;
+        var job      = string.IsNullOrWhiteSpace(user.JobTitle) ? ""  : $" · {user.JobTitle}";
+
+        sb.AppendLine("<div class='op-footer'>");
+        sb.AppendLine("<div class='op-footer-row'>");
+        sb.AppendLine("<div>");
+        sb.AppendLine($"<div class='op-footer-user'>{HtmlEncode(T("op.footer.prepared", lang))}: {HtmlEncode(fullName)}{HtmlEncode(job)}</div>");
+        sb.AppendLine($"<div>{HtmlEncode(email)} &middot; {HtmlEncode(phone)}</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='op-footer-brand'>");
+        sb.AppendLine($"<div>{HtmlEncode(T("op.footer.confidential", lang))} {HtmlEncode(org.Name)}</div>");
+        sb.AppendLine($"<div>{HtmlEncode(T("op.footer.generated", lang))} {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div></div>");
     }
 
     private static void AppendFrameworkBars(StringBuilder sb, List<FrameworkScoreDto> frameworkScores)
@@ -2396,4 +2874,17 @@ internal class OrgEnrichment
     public List<MachineDisk> Disks { get; set; } = [];
     public List<MachinePort> Ports { get; set; } = [];
     public List<MachineThreat> Threats { get; set; } = [];
+}
+
+/// <summary>
+/// Identity of the portal user that generated the report. Shown in the
+/// Executive One-Pager footer so the C-level reader knows who to call back.
+/// </summary>
+internal class ReportUserInfo
+{
+    public string? FullName { get; set; }
+    public string? Email { get; set; }
+    public string? Phone { get; set; }
+    public string? JobTitle { get; set; }
+    public string? CompanyName { get; set; }
 }

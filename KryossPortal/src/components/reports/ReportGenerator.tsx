@@ -29,10 +29,18 @@ const FRAMEWORKS = [
   { value: 'PCI-DSS', label: 'PCI-DSS' },
 ] as const;
 
+// NOTE: 'exec-onepager' is an org-level report only. When targetType is 'run'
+// we filter it out of the dropdown so the UI never offers an invalid option.
 const REPORT_TYPES = [
-  { value: 'technical', label: 'Technical' },
-  { value: 'executive', label: 'Executive' },
-  { value: 'presales', label: 'Presales' },
+  { value: 'technical',     label: 'Technical',          orgOnly: false },
+  { value: 'executive',     label: 'Executive',          orgOnly: false },
+  { value: 'presales',      label: 'Presales',           orgOnly: false },
+  { value: 'exec-onepager', label: 'Executive One-Pager', orgOnly: true  },
+] as const;
+
+const LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Español' },
 ] as const;
 
 function buildApiPath(
@@ -40,6 +48,7 @@ function buildApiPath(
   targetId: string,
   reportType: string,
   framework: string,
+  lang: string,
 ): string {
   const base =
     targetType === 'run'
@@ -48,6 +57,7 @@ function buildApiPath(
   const params = new URLSearchParams();
   params.set('type', reportType);
   if (framework !== 'all') params.set('framework', framework);
+  if (lang !== 'en') params.set('lang', lang);
   return `${base}?${params}`;
 }
 
@@ -82,9 +92,15 @@ async function fetchReport(apiPath: string): Promise<string> {
 export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) {
   const [framework, setFramework] = useState('all');
   const [reportType, setReportType] = useState('technical');
+  const [lang, setLang] = useState<'en' | 'es'>('en');
   const [loading, setLoading] = useState(false);
 
-  const apiPath = buildApiPath(targetType, targetId, reportType, framework);
+  // Hide org-only report types when rendering against a run.
+  const availableReportTypes = REPORT_TYPES.filter(
+    (rt) => !rt.orgOnly || targetType === 'org',
+  );
+
+  const apiPath = buildApiPath(targetType, targetId, reportType, framework, lang);
 
   const handleOpenTab = async () => {
     // Open window IMMEDIATELY on user click (before async fetch)
@@ -122,7 +138,7 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
       const blob = new Blob([html], { type: 'text/html' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `Report-${framework !== 'all' ? framework + '-' : ''}${reportType}-${new Date().toISOString().slice(0, 10)}.html`;
+      a.download = `Report-${framework !== 'all' ? framework + '-' : ''}${reportType}-${lang}-${new Date().toISOString().slice(0, 10)}.html`;
       a.click();
       URL.revokeObjectURL(a.href);
       toast.success('Report downloaded');
@@ -150,13 +166,26 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
         </Select>
 
         <Select value={reportType} onValueChange={setReportType}>
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="Report Type" />
           </SelectTrigger>
           <SelectContent>
-            {REPORT_TYPES.map((rt) => (
+            {availableReportTypes.map((rt) => (
               <SelectItem key={rt.value} value={rt.value}>
                 {rt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={lang} onValueChange={(v) => setLang(v as 'en' | 'es')}>
+          <SelectTrigger className="w-[120px]">
+            <SelectValue placeholder="Language" />
+          </SelectTrigger>
+          <SelectContent>
+            {LANGUAGES.map((l) => (
+              <SelectItem key={l.value} value={l.value}>
+                {l.label}
               </SelectItem>
             ))}
           </SelectContent>

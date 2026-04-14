@@ -66,7 +66,8 @@ public class EnrollFunction
             apiSecret = result.ApiSecret,
             publicKey = result.PublicKeyPem,
             assessmentId = result.AssessmentId,
-            assessmentName = result.AssessmentName
+            assessmentName = result.AssessmentName,
+            protocolAuditEnabled = result.ProtocolAuditEnabled
         });
         return response;
     }

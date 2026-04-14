@@ -11,6 +11,8 @@ public class M365Tenant
     public string Status { get; set; } = "active";
     public DateTime? LastScanAt { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime? ConsentGrantedAt { get; set; }
+    public string? ConsentGrantedBy { get; set; }
 
     public Organization Organization { get; set; } = null!;
     public ICollection<M365Finding> Findings { get; set; } = [];

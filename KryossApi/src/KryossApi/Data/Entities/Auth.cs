@@ -65,6 +65,8 @@ public class User : IAuditable
     public Guid? OrganizationId { get; set; }
     public string AuthSource { get; set; } = null!; // entra, b2c
     public DateTime? LastLoginAt { get; set; }
+    public string? Phone { get; set; }
+    public string? JobTitle { get; set; }
 
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }

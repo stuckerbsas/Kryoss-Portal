@@ -60,6 +60,15 @@ builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<ExternalScanService>();
 builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
 
+// ── M365 multi-tenant admin consent config ──
+builder.Services.AddSingleton(new M365Config
+{
+    ClientId = Environment.GetEnvironmentVariable("M365ScannerClientId") ?? "",
+    ClientSecret = Environment.GetEnvironmentVariable("M365ScannerClientSecret") ?? "",
+    PortalBaseUrl = Environment.GetEnvironmentVariable("PortalBaseUrl")
+        ?? "https://zealous-dune-0ac672d10.6.azurestaticapps.net"
+});
+
 // ── Application Insights ──
 builder.Services
     .AddApplicationInsightsTelemetryWorkerService()

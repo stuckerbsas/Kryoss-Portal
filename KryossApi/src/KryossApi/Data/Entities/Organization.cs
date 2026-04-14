@@ -13,6 +13,13 @@ public class Organization : IAuditable
     public int BrandId { get; set; }
     public Guid? EntraTenantId { get; set; }
 
+    // v1.5.1: Protocol Usage Audit — MSP opts in per-org via portal toggle.
+    // When true, agents configure NTLM+SMB1 audit on next run and resize
+    // event logs for 90-day retention. See sql/026_protocol_audit.sql.
+    public bool ProtocolAuditEnabled { get; set; }
+    public DateTime? ProtocolAuditEnabledAt { get; set; }
+    public string? ProtocolAuditEnabledBy { get; set; }
+
     // Audit
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -7,20 +7,47 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <!-- AOT Publishing -->
-    <PublishAot>true</PublishAot>
+    <!-- AOT Publishing (disabled: conflicts with single-file;
+         enable when migrating to full JSON source-gen) -->
+    <PublishAot>false</PublishAot>
     <StripSymbols>true</StripSymbols>
     <OptimizationPreference>Size</OptimizationPreference>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
 
-    <!-- Single file for non-AOT builds -->
+    <!-- Single file + trimmed for smaller binary -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
+    <!-- IL Trimming: removes unused framework code.
+         Mode=partial keeps our code intact but trims framework DLLs
+         that aren't reachable from any call graph. Saves ~30-40 MB. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+
+    <!-- Explicitly disable features we don't use, so the trimmer can
+         remove entire subsystems. Saves ~10 MB. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EventSourceSupportDisabled>true</EventSourceSupportDisabled>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <MetricsSupport>false</MetricsSupport>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
+    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <UseNativeHttpHandler>true</UseNativeHttpHandler>
+    <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
+    <CustomResourceTypesSupport>false</CustomResourceTypesSupport>
+
+    <!-- Compression: squeezes the single-file bundle -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+
     <!-- Assembly info -->
     <AssemblyName>KryossAgent</AssemblyName>
     <RootNamespace>KryossAgent</RootNamespace>
-    <Version>1.2.2</Version>
+    <Version>1.3.0</Version>
     <Company>TeamLogic IT</Company>
     <Product>Kryoss Security Agent</Product>
     <Description>Security assessment agent for Kryoss platform</Description>
@@ -34,8 +61,21 @@
     <PackageReference Include="System.DirectoryServices" Version="8.0.*" />
   </ItemGroup>
 
+  <!-- v1.3.0: PsExec removed — agent deployed via GPO/NinjaOne/Intune -->
+
+  <!-- WMI for native BitLocker + TPM engines (v1.4.0) -->
   <ItemGroup>
-    <EmbeddedResource Include="Resources\PsExec64.exe" LogicalName="PsExec64.exe" />
+    <PackageReference Include="System.Management" Version="8.0.*" />
+  </ItemGroup>
+
+  <!-- Preserve assemblies that use reflection internally (trimming would
+       strip code the framework needs at runtime). These are rooted entirely
+       so WMI, registry, event log, and AD queries still work after trim. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="System.Management" />
+    <TrimmerRootAssembly Include="System.DirectoryServices" />
+    <TrimmerRootAssembly Include="System.Diagnostics.EventLog" />
+    <TrimmerRootAssembly Include="System.ServiceProcess.ServiceController" />
   </ItemGroup>
 
 </Project>

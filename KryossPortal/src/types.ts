@@ -28,6 +28,9 @@ export interface Organization {
   machineCount: number;
   lastAssessmentAt: string | null;
   enrollmentCodeCount: number;
+  protocolAuditEnabled?: boolean;
+  protocolAuditEnabledAt?: string | null;
+  protocolAuditEnabledBy?: string | null;
   createdAt: string;
 }
 

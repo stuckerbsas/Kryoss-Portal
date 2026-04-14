@@ -21,12 +21,14 @@ public class M365Function
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
     private readonly IM365ScannerService _scanner;
+    private readonly M365Config _m365Config;
 
-    public M365Function(KryossDbContext db, ICurrentUserService user, IM365ScannerService scanner)
+    public M365Function(KryossDbContext db, ICurrentUserService user, IM365ScannerService scanner, M365Config m365Config)
     {
         _db = db;
         _user = user;
         _scanner = scanner;
+        _m365Config = m365Config;
     }
 
     /// <summary>
@@ -169,31 +171,31 @@ public class M365Function
             return notFound;
         }
 
-        if (string.IsNullOrWhiteSpace(tenant.ClientId) || string.IsNullOrWhiteSpace(tenant.ClientSecret))
-        {
-            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteAsJsonAsync(new { error = "Tenant credentials are missing. Reconnect the tenant." });
-            return bad;
-        }
-
-        // CRIT-01: Decrypt the client secret before use
-        string decryptedSecret;
-        try
-        {
-            decryptedSecret = await DecryptSecretForOrg(tenant.ClientSecret, body.OrganizationId);
-        }
-        catch (Exception)
-        {
-            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await err.WriteAsJsonAsync(new { error = "Failed to decrypt tenant credentials. Reconnect the tenant." });
-            return err;
-        }
-
-        // Run scan
+        // Run scan — use shared creds (consent flow) or per-customer creds (legacy)
         List<M365CheckResult> scanResults;
         try
         {
-            scanResults = await _scanner.ScanAsync(tenant.TenantId, tenant.ClientId, decryptedSecret);
+            if (string.IsNullOrWhiteSpace(tenant.ClientId))
+            {
+                // Consent flow: use shared app registration credentials
+                scanResults = await _scanner.ScanAsync(tenant.TenantId);
+            }
+            else
+            {
+                // Legacy flow: decrypt per-customer credentials
+                string decryptedSecret;
+                try
+                {
+                    decryptedSecret = await DecryptSecretForOrg(tenant.ClientSecret!, body.OrganizationId);
+                }
+                catch (Exception)
+                {
+                    var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+                    await err.WriteAsJsonAsync(new { error = "Failed to decrypt tenant credentials. Reconnect the tenant." });
+                    return err;
+                }
+                scanResults = await _scanner.ScanAsync(tenant.TenantId, tenant.ClientId, decryptedSecret);
+            }
         }
         catch (Exception)
         {
@@ -310,6 +312,189 @@ public class M365Function
             findings
         });
         return response;
+    }
+
+    /// <summary>
+    /// Generate the admin consent URL for the shared M365 app registration.
+    /// GET /v2/m365/consent-url?organizationId={guid}
+    /// </summary>
+    [Function("M365_ConsentUrl")]
+    [RequirePermission("assessment:create")]
+    public async Task<HttpResponseData> ConsentUrl(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/m365/consent-url")] HttpRequestData req)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var orgIdStr = query["organizationId"];
+
+        if (!Guid.TryParse(orgIdStr, out var orgId))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
+            return bad;
+        }
+
+        // Verify org exists
+        var orgExists = await _db.Organizations.AnyAsync(o => o.Id == orgId);
+        if (!orgExists)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = "Organization not found" });
+            return notFound;
+        }
+
+        // Check if already connected
+        var existing = await _db.M365Tenants.AnyAsync(t => t.OrganizationId == orgId);
+        if (existing)
+        {
+            var conflict = req.CreateResponse(HttpStatusCode.Conflict);
+            await conflict.WriteAsJsonAsync(new { error = "An M365 tenant is already connected to this organization. Disconnect first." });
+            return conflict;
+        }
+
+        if (string.IsNullOrWhiteSpace(_m365Config.ClientId))
+        {
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteAsJsonAsync(new { error = "M365 scanner app registration not configured" });
+            return err;
+        }
+
+        var callbackUrl = Uri.EscapeDataString("https://func-kryoss.azurewebsites.net/v2/m365/consent-callback");
+        var consentUrl = $"https://login.microsoftonline.com/common/adminconsent" +
+            $"?client_id={Uri.EscapeDataString(_m365Config.ClientId)}" +
+            $"&redirect_uri={callbackUrl}" +
+            $"&state={orgId}";
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { url = consentUrl });
+        return response;
+    }
+
+    /// <summary>
+    /// Callback from Microsoft after admin consent grant.
+    /// GET /v2/m365/consent-callback?tenant={tid}&amp;admin_consent=True&amp;state={orgId}
+    /// No auth required — this is a browser redirect from Microsoft.
+    /// </summary>
+    [Function("M365_ConsentCallback")]
+    public async Task<HttpResponseData> ConsentCallback(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/m365/consent-callback")] HttpRequestData req)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+
+        // Microsoft sends error/error_description if consent was denied
+        var errorParam = query["error"];
+        var errorDesc = query["error_description"];
+        var stateParam = query["state"];
+        var tenantParam = query["tenant"];
+        var adminConsent = query["admin_consent"];
+
+        // Parse state as orgId
+        Guid orgId = Guid.Empty;
+        Guid.TryParse(stateParam, out orgId);
+
+        // Helper to build portal redirect URL
+        string BuildRedirectUrl(string orgSlug, string? queryString = null)
+        {
+            var baseUrl = _m365Config.PortalBaseUrl.TrimEnd('/');
+            var path = $"/organizations/{Uri.EscapeDataString(orgSlug)}/m365";
+            return string.IsNullOrEmpty(queryString) ? $"{baseUrl}{path}" : $"{baseUrl}{path}?{queryString}";
+        }
+
+        // If Microsoft sent an error (consent denied)
+        if (!string.IsNullOrEmpty(errorParam))
+        {
+            var orgForError = orgId != Guid.Empty
+                ? await _db.Organizations.Where(o => o.Id == orgId).Select(o => new { o.Name }).FirstOrDefaultAsync()
+                : null;
+            var slug = GenerateSlug(orgForError?.Name ?? "unknown");
+            var redirectUrl = BuildRedirectUrl(slug, $"error={Uri.EscapeDataString(errorDesc ?? errorParam)}");
+
+            var redirect = req.CreateResponse(HttpStatusCode.Redirect);
+            redirect.Headers.Add("Location", redirectUrl);
+            return redirect;
+        }
+
+        // Validate required params
+        if (string.IsNullOrWhiteSpace(tenantParam) || orgId == Guid.Empty ||
+            !string.Equals(adminConsent, "True", StringComparison.OrdinalIgnoreCase))
+        {
+            var badRedirect = req.CreateResponse(HttpStatusCode.Redirect);
+            var errorUrl = _m365Config.PortalBaseUrl.TrimEnd('/') +
+                $"/?error={Uri.EscapeDataString("Invalid consent callback parameters")}";
+            badRedirect.Headers.Add("Location", errorUrl);
+            return badRedirect;
+        }
+
+        // Verify org exists and get slug
+        var org = await _db.Organizations
+            .Where(o => o.Id == orgId)
+            .Select(o => new { o.Id, o.Name })
+            .FirstOrDefaultAsync();
+
+        if (org is null)
+        {
+            var badRedirect = req.CreateResponse(HttpStatusCode.Redirect);
+            var errorUrl = _m365Config.PortalBaseUrl.TrimEnd('/') +
+                $"/?error={Uri.EscapeDataString("Organization not found")}";
+            badRedirect.Headers.Add("Location", errorUrl);
+            return badRedirect;
+        }
+
+        var orgSlug = GenerateSlug(org.Name);
+
+        // Check no existing tenant for this org
+        var existingTenant = await _db.M365Tenants.FirstOrDefaultAsync(t => t.OrganizationId == orgId);
+        if (existingTenant != null)
+        {
+            var redirectUrl = BuildRedirectUrl(orgSlug, "error=" + Uri.EscapeDataString("M365 tenant already connected"));
+            var redirect = req.CreateResponse(HttpStatusCode.Redirect);
+            redirect.Headers.Add("Location", redirectUrl);
+            return redirect;
+        }
+
+        // Create m365_tenants row (no per-customer creds — uses shared app registration)
+        var tenant = new M365Tenant
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = orgId,
+            TenantId = tenantParam,
+            Status = "active",
+            CreatedAt = DateTime.UtcNow,
+            ConsentGrantedAt = DateTime.UtcNow
+        };
+
+        _db.M365Tenants.Add(tenant);
+        await _db.SaveChangesAsync();
+
+        // Try to run initial scan using shared creds — catch errors gracefully
+        try
+        {
+            var scanResults = await _scanner.ScanAsync(tenantParam);
+            await PersistFindings(tenant.Id, scanResults);
+            tenant.LastScanAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception)
+        {
+            // Scan failed but tenant is connected — user can retry from portal
+            tenant.Status = "expired";
+            await _db.SaveChangesAsync();
+        }
+
+        var successUrl = BuildRedirectUrl(orgSlug, "connected=true");
+        var successRedirect = req.CreateResponse(HttpStatusCode.Redirect);
+        successRedirect.Headers.Add("Location", successUrl);
+        return successRedirect;
+    }
+
+    /// <summary>
+    /// Generate a URL-friendly slug from an organization name.
+    /// Matches the portal's client-side slug generation logic.
+    /// </summary>
+    private static string GenerateSlug(string name)
+    {
+        return System.Text.RegularExpressions.Regex
+            .Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-")
+            .Trim('-');
     }
 
     /// <summary>

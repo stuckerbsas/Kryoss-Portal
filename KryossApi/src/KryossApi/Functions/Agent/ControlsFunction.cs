@@ -130,12 +130,57 @@ public class ControlsFunction
         // Build agent-friendly response: strip server-side fields.
         // Agent-relevant field list must stay in sync with
         // KryossAgent/Models/ControlDef.cs.
-        string[] agentFields =
+        //
+        // v1.5.0: expanded to support new check types (tls, user_right,
+        // applocker, custom). Both camelCase and snake_case variants are
+        // accepted so legacy seed files (BL-02xx..04xx) work without a full
+        // data migration — the camelCase key takes precedence.
+        (string camel, string snake)[] agentFieldAliases =
         [
-            "checkType", "hive", "path", "valueName", "subcategory", "profile",
-            "property", "settingName", "serviceName", "field", "executable",
-            "arguments", "display", "timeoutSeconds", "parent",
-            "logName", "storeName", "storeLocation", "drive"
+            // Core dispatch
+            ("checkType",              "check_type"),
+            // Registry-style
+            ("hive",                   "hive"),
+            ("path",                   "path"),
+            ("valueName",              "value_name"),
+            // Audit / policy / service
+            ("subcategory",            "subcategory"),
+            ("profile",                "profile"),
+            ("property",               "property"),
+            ("settingName",            "setting_name"),
+            ("serviceName",            "service_name"),
+            ("field",                  "field"),
+            // Shell / command
+            ("executable",             "executable"),
+            ("arguments",              "arguments"),
+            ("display",                "display"),
+            ("timeoutSeconds",         "timeout_seconds"),
+            ("parent",                 "parent"),
+            // Event log / certs / drives
+            ("logName",                "log_name"),
+            ("storeName",              "store_name"),
+            ("storeLocation",          "store_location"),
+            ("drive",                  "drive"),
+            // v1.5.0: TLS (SCHANNEL) handler fields
+            ("protocol",               "protocol"),
+            ("side",                   "side"),
+            // v1.5.0: User rights (LSA) handler fields
+            ("privilege",              "privilege"),
+            ("expectedSidsOrAccounts", "expected_sids_or_accounts"),
+            // v1.5.0: AppLocker handler fields
+            ("collection",             "collection"),
+            // v1.5.0: Generic comparison operators
+            ("expected",               "expected"),
+            ("operator",               "operator"),
+            ("matchPattern",           "match_pattern"),
+            // v1.5.0: Custom check notes (PowerShell one-liner description for server-side eval)
+            ("notes",                  "notes"),
+            ("label",                  "label"),
+            // v1.5.1: EventLog event_count / event_top_sources fields
+            ("eventIds",               "event_ids"),
+            ("days",                   "days"),
+            ("topN",                   "top_n"),
+            ("payloadField",           "payload_field"),
         ];
 
         var checks = new List<object>();
@@ -148,19 +193,38 @@ public class ControlsFunction
                 ["type"] = control.Type
             };
 
-            foreach (var field in agentFields)
+            foreach (var (camel, snake) in agentFieldAliases)
             {
-                if (spec.TryGetProperty(field, out var val) && val.ValueKind != JsonValueKind.Null)
+                // Prefer camelCase, fall back to snake_case
+                JsonElement val = default;
+                bool found = spec.TryGetProperty(camel, out val)
+                    && val.ValueKind != JsonValueKind.Null;
+                if (!found && camel != snake)
                 {
-                    // Preserve typed primitives (numbers/bools) for timeoutSeconds etc.
-                    agentCheck[field] = val.ValueKind switch
-                    {
-                        JsonValueKind.Number => val.TryGetInt32(out var i) ? i : val.GetDouble(),
-                        JsonValueKind.True => true,
-                        JsonValueKind.False => false,
-                        _ => val.ToString()
-                    };
+                    found = spec.TryGetProperty(snake, out val)
+                        && val.ValueKind != JsonValueKind.Null;
                 }
+                if (!found) continue;
+
+                // Preserve typed primitives + arrays
+                agentCheck[camel] = val.ValueKind switch
+                {
+                    JsonValueKind.Number => val.TryGetInt32(out var i) ? i : val.GetDouble(),
+                    JsonValueKind.True   => true,
+                    JsonValueKind.False  => false,
+                    JsonValueKind.Array  => val.EnumerateArray()
+                                              .Select(e => e.ValueKind switch
+                                              {
+                                                  JsonValueKind.Number => e.TryGetInt32(out var ii)
+                                                      ? (object)ii : e.GetDouble(),
+                                                  JsonValueKind.True   => true,
+                                                  JsonValueKind.False  => false,
+                                                  JsonValueKind.String => e.GetString()!,
+                                                  _ => e.ToString()
+                                              })
+                                              .ToArray(),
+                    _ => val.ToString()
+                };
             }
 
             checks.Add(agentCheck);

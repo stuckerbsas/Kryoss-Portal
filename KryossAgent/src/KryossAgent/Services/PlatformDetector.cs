@@ -137,84 +137,62 @@ public static class PlatformDetector
     }
 
     /// <summary>
-    /// Uses PowerShell to map each drive letter to its physical disk MediaType.
-    /// Get-PhysicalDisk for type, Get-Partition to link disk number to drive letter.
+    /// Maps each drive letter to its physical disk type (SSD/HDD/NVMe) via WMI.
+    /// Uses MSFT_PhysicalDisk (same data Get-PhysicalDisk queries) — no PowerShell.
+    /// v1.4.0: native WMI, zero Process.Start.
     /// </summary>
     private static Dictionary<string, string> GetPhysicalDiskTypeMap()
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        // Step 1: Get physical disk info (DeviceId -> MediaType)
-        var diskTypes = new Dictionary<string, string>();
-        var psi1 = new System.Diagnostics.ProcessStartInfo
+        try
         {
-            FileName = "powershell",
-            Arguments = "-NoProfile -Command \"Get-PhysicalDisk | Select-Object DeviceId, MediaType, BusType | ConvertTo-Csv -NoTypeInformation\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            CreateNoWindow = true
-        };
-        using var proc1 = System.Diagnostics.Process.Start(psi1);
-        if (proc1 is null) return result;
-        var csv1 = proc1.StandardOutput.ReadToEnd();
-        proc1.WaitForExit(10000);
-
-        foreach (var line in csv1.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (line.StartsWith('"') && !line.StartsWith("\"DeviceId\"", StringComparison.OrdinalIgnoreCase))
+            // Step 1: MSFT_PhysicalDisk in root\Microsoft\Windows\Storage gives
+            // DeviceId, MediaType (3=HDD, 4=SSD, 5=SCM), BusType (17=NVMe, etc.)
+            var diskTypes = new Dictionary<string, string>();
+            using (var searcher = new System.Management.ManagementObjectSearcher(
+                @"root\Microsoft\Windows\Storage",
+                "SELECT DeviceId, MediaType, BusType, SpindleSpeed FROM MSFT_PhysicalDisk"))
             {
-                var parts = line.Split(',');
-                if (parts.Length >= 3)
+                foreach (System.Management.ManagementObject disk in searcher.Get())
                 {
-                    var deviceId = parts[0].Trim('"');
-                    var mediaType = parts[1].Trim('"');
-                    var busType = parts[2].Trim('"');
+                    var deviceId = disk["DeviceId"]?.ToString() ?? "";
+                    var mediaType = Convert.ToUInt16(disk["MediaType"] ?? (ushort)0);
+                    var busType = Convert.ToUInt16(disk["BusType"] ?? (ushort)0);
+                    var spindleSpeed = Convert.ToUInt32(disk["SpindleSpeed"] ?? 0u);
 
-                    var type = "Unknown";
-                    if (busType.Contains("NVMe", StringComparison.OrdinalIgnoreCase))
-                        type = "NVMe";
-                    else if (mediaType.Contains("SSD", StringComparison.OrdinalIgnoreCase))
-                        type = "SSD";
-                    else if (mediaType.Contains("HDD", StringComparison.OrdinalIgnoreCase))
-                        type = "HDD";
-                    else if (mediaType.Contains("Unspecified", StringComparison.OrdinalIgnoreCase))
-                        type = "SSD"; // Unspecified with 0 RPM is typically SSD/VM
+                    // BusType 17 = NVMe
+                    var type = busType == 17 ? "NVMe"
+                        : mediaType == 4 ? "SSD"           // 4 = SSD
+                        : mediaType == 3 ? "HDD"           // 3 = HDD
+                        : spindleSpeed == 0 ? "SSD"        // Unspecified + 0 RPM = SSD (VM/newer)
+                        : "Unknown";
 
                     diskTypes[deviceId] = type;
+                    disk.Dispose();
                 }
             }
-        }
 
-        // Step 2: Map disk number to drive letters via Get-Partition
-        var psi2 = new System.Diagnostics.ProcessStartInfo
-        {
-            FileName = "powershell",
-            Arguments = "-NoProfile -Command \"Get-Partition | Where-Object { $_.DriveLetter } | Select-Object DiskNumber, DriveLetter | ConvertTo-Csv -NoTypeInformation\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            CreateNoWindow = true
-        };
-        using var proc2 = System.Diagnostics.Process.Start(psi2);
-        if (proc2 is null) return result;
-        var csv2 = proc2.StandardOutput.ReadToEnd();
-        proc2.WaitForExit(10000);
-
-        foreach (var line in csv2.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (line.StartsWith('"') && !line.StartsWith("\"DiskNumber\"", StringComparison.OrdinalIgnoreCase))
+            // Step 2: MSFT_Partition links disk number to drive letter
+            using (var searcher = new System.Management.ManagementObjectSearcher(
+                @"root\Microsoft\Windows\Storage",
+                "SELECT DiskNumber, DriveLetter FROM MSFT_Partition WHERE DriveLetter > 0"))
             {
-                var parts = line.Split(',');
-                if (parts.Length >= 2)
+                foreach (System.Management.ManagementObject partition in searcher.Get())
                 {
-                    var diskNumber = parts[0].Trim('"');
-                    var driveLetter = parts[1].Trim('"');
-                    if (!string.IsNullOrEmpty(driveLetter) && diskTypes.TryGetValue(diskNumber, out var type))
+                    var diskNumber = partition["DiskNumber"]?.ToString() ?? "";
+                    var letterObj = partition["DriveLetter"];
+                    if (letterObj != null && diskTypes.TryGetValue(diskNumber, out var type))
                     {
-                        result[driveLetter] = type;
+                        // DriveLetter is a UInt16 char code (e.g. 67 = 'C')
+                        var letterChar = (char)Convert.ToUInt16(letterObj);
+                        result[letterChar.ToString()] = type;
                     }
+                    partition.Dispose();
                 }
             }
         }
+        catch { /* WMI query failed — caller uses fallback */ }
 
         return result;
     }
@@ -361,44 +339,24 @@ public static class PlatformDetector
 
     private static string DetectDiskType()
     {
-        // Try PowerShell Get-PhysicalDisk first (most reliable)
+        // v1.4.0: WMI MSFT_PhysicalDisk (native, no PowerShell)
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                @"root\Microsoft\Windows\Storage",
+                "SELECT MediaType, BusType, SpindleSpeed FROM MSFT_PhysicalDisk");
+            foreach (System.Management.ManagementObject disk in searcher.Get())
             {
-                FileName = "powershell",
-                Arguments = "-NoProfile -Command \"(Get-PhysicalDisk | Select -First 1).MediaType\"",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            };
-            using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc is not null)
-            {
-                var output = proc.StandardOutput.ReadToEnd().Trim();
-                proc.WaitForExit(5000);
-                if (output.Contains("SSD", StringComparison.OrdinalIgnoreCase)) return "SSD";
-                if (output.Contains("NVMe", StringComparison.OrdinalIgnoreCase)) return "NVMe";
-                if (output.Contains("HDD", StringComparison.OrdinalIgnoreCase)) return "HDD";
-                if (output.Contains("Unspecified", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Unspecified often means SSD in VMs or newer drives — check rotation
-                    var psi2 = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "powershell",
-                        Arguments = "-NoProfile -Command \"(Get-PhysicalDisk | Select -First 1).SpindleSpeed\"",
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        CreateNoWindow = true
-                    };
-                    using var proc2 = System.Diagnostics.Process.Start(psi2);
-                    if (proc2 is not null)
-                    {
-                        var rpm = proc2.StandardOutput.ReadToEnd().Trim();
-                        proc2.WaitForExit(5000);
-                        if (rpm == "0" || string.IsNullOrEmpty(rpm)) return "SSD";
-                    }
-                }
+                var mediaType = Convert.ToUInt16(disk["MediaType"] ?? (ushort)0);
+                var busType = Convert.ToUInt16(disk["BusType"] ?? (ushort)0);
+                var spindleSpeed = Convert.ToUInt32(disk["SpindleSpeed"] ?? 0u);
+                disk.Dispose();
+
+                if (busType == 17) return "NVMe";
+                if (mediaType == 4) return "SSD";
+                if (mediaType == 3) return "HDD";
+                if (spindleSpeed == 0) return "SSD"; // Unspecified + 0 RPM = SSD
+                return "Unknown";
             }
         }
         catch { /* fallback to registry */ }

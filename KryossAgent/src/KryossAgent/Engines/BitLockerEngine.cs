@@ -1,19 +1,19 @@
-using System.Text.RegularExpressions;
+using System.Management;
 using KryossAgent.Models;
 
 namespace KryossAgent.Engines;
 
 /// <summary>
-/// Reads BitLocker drive encryption state via a single batched
-/// <c>manage-bde.exe -status</c> invocation. The output is parsed into a
-/// per-drive dictionary and each control selects the right field.
+/// Reads BitLocker drive encryption state via WMI
+/// <c>Win32_EncryptableVolume</c> class (native, no Process.Start).
 ///
-/// AOT-safe: no WMI, no reflection, no dynamic code. Shells to the
-/// in-box system binary (System32\manage-bde.exe) once per engine run.
+/// v1.4.0: Replaced manage-bde.exe shell-out with direct WMI query.
 ///
 /// Supported <c>CheckType</c> values:
 ///   protection_status     -> "On" / "Off" / "Unknown"
 ///   encryption_method     -> e.g. "XTS-AES 256" or "None"
+///   conversion_status     -> "FullyEncrypted" / "FullyDecrypted" / etc.
+///   lock_status           -> "Unlocked" / "Locked" / "Unknown"
 ///   protector_types       -> comma-separated list ("TPM,RecoveryPassword")
 ///   encryption_percent    -> int 0-100
 ///   recovery_key_present  -> bool
@@ -29,12 +29,11 @@ public class BitLockerEngine : ICheckEngine
     {
         var results = new List<CheckResult>(controls.Count);
 
-        // Single batched manage-bde invocation for the whole engine run.
         Dictionary<string, DriveInfoBlock> drives;
         string? executionError;
         try
         {
-            drives = RunManageBdeStatus(out executionError);
+            drives = QueryWmiBitLocker(out executionError);
         }
         catch (Exception ex)
         {
@@ -59,7 +58,7 @@ public class BitLockerEngine : ICheckEngine
         if (executionError is not null)
         {
             result.Exists = null;
-            result.Value = $"ERROR: manage-bde failed: {executionError}";
+            result.Value = $"ERROR: BitLocker WMI query failed: {executionError}";
             return result;
         }
 
@@ -104,6 +103,14 @@ public class BitLockerEngine : ICheckEngine
                 result.Exists = true;
                 result.Value = info.EncryptionMethod ?? "None";
                 break;
+            case "conversion_status":
+                result.Exists = true;
+                result.Value = info.ConversionStatus ?? "Unknown";
+                break;
+            case "lock_status":
+                result.Exists = true;
+                result.Value = info.LockStatus ?? "Unknown";
+                break;
             case "protector_types":
                 result.Exists = true;
                 result.Value = string.Join(",", info.ProtectorTypes);
@@ -128,158 +135,181 @@ public class BitLockerEngine : ICheckEngine
 
     private static string NormalizeDrive(string drive)
     {
-        // Accept "C", "C:", "C:\\" — store as "C:".
         var d = drive.Trim().TrimEnd('\\');
         if (d.Length == 1) d += ":";
         return d.ToUpperInvariant();
     }
 
-    private static Dictionary<string, DriveInfoBlock> RunManageBdeStatus(out string? error)
+    /// <summary>
+    /// Query WMI Win32_EncryptableVolume for all BitLocker-capable volumes.
+    /// </summary>
+    private static Dictionary<string, DriveInfoBlock> QueryWmiBitLocker(out string? error)
     {
         error = null;
         var result = new Dictionary<string, DriveInfoBlock>(StringComparer.OrdinalIgnoreCase);
 
-        var systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.System);
-        var exePath = Path.Combine(systemRoot, "manage-bde.exe");
-        if (!File.Exists(exePath))
+        try
         {
-            error = "manage-bde.exe not found";
-            return result;
+            using var searcher = new ManagementObjectSearcher(
+                @"root\CIMV2\Security\MicrosoftVolumeEncryption",
+                "SELECT * FROM Win32_EncryptableVolume");
+
+            foreach (ManagementObject vol in searcher.Get())
+            {
+                try
+                {
+                    var driveLetter = vol["DriveLetter"]?.ToString();
+                    if (string.IsNullOrEmpty(driveLetter)) continue;
+
+                    var info = new DriveInfoBlock();
+
+                    // ProtectionStatus: 0=Off, 1=On, 2=Unknown
+                    var protectionStatus = GetUInt32(vol, "ProtectionStatus");
+                    info.ProtectionStatus = protectionStatus switch
+                    {
+                        0 => "Off",
+                        1 => "On",
+                        _ => "Unknown"
+                    };
+
+                    // ConversionStatus: 0=FullyDecrypted, 1=FullyEncrypted,
+                    // 2=EncryptionInProgress, 3=DecryptionInProgress,
+                    // 4=EncryptionPaused, 5=DecryptionPaused
+                    var conversionStatus = GetUInt32(vol, "ConversionStatus");
+                    info.ConversionStatus = conversionStatus switch
+                    {
+                        0 => "FullyDecrypted",
+                        1 => "FullyEncrypted",
+                        2 => "EncryptionInProgress",
+                        3 => "DecryptionInProgress",
+                        4 => "EncryptionPaused",
+                        5 => "DecryptionPaused",
+                        _ => "Unknown"
+                    };
+
+                    // EncryptionMethod: 0=None, 1=AES128Diffuser, 2=AES256Diffuser,
+                    // 3=AES128, 4=AES256, 5=HardwareEncryption, 6=XTS_AES128, 7=XTS_AES256
+                    var encryptionMethod = GetUInt32(vol, "EncryptionMethod");
+                    info.EncryptionMethod = encryptionMethod switch
+                    {
+                        0 => "None",
+                        1 => "AES 128 With Diffuser",
+                        2 => "AES 256 With Diffuser",
+                        3 => "AES 128",
+                        4 => "AES 256",
+                        5 => "Hardware Encryption",
+                        6 => "XTS-AES 128",
+                        7 => "XTS-AES 256",
+                        _ => "Unknown"
+                    };
+
+                    // EncryptionPercentage via GetConversionStatus method
+                    try
+                    {
+                        var outParams = vol.InvokeMethod("GetConversionStatus", null, null);
+                        if (outParams != null)
+                        {
+                            var pct = outParams["EncryptionPercentage"];
+                            if (pct != null && uint.TryParse(pct.ToString(), out var pctVal))
+                                info.EncryptionPercent = (int)pctVal;
+                        }
+                    }
+                    catch { /* method may not be available */ }
+
+                    // LockStatus via GetLockStatus method
+                    try
+                    {
+                        var outParams = vol.InvokeMethod("GetLockStatus", null, null);
+                        if (outParams != null)
+                        {
+                            var lockStatus = outParams["LockStatus"];
+                            if (lockStatus != null)
+                            {
+                                info.LockStatus = Convert.ToUInt32(lockStatus) switch
+                                {
+                                    0 => "Unlocked",
+                                    1 => "Locked",
+                                    _ => "Unknown"
+                                };
+                            }
+                        }
+                    }
+                    catch { info.LockStatus = "Unknown"; }
+
+                    // KeyProtectors via GetKeyProtectors method
+                    try
+                    {
+                        // Type 0 = all protectors
+                        var inParams = vol.GetMethodParameters("GetKeyProtectors");
+                        inParams["KeyProtectorType"] = (uint)0;
+                        var outParams = vol.InvokeMethod("GetKeyProtectors", inParams, null);
+                        if (outParams?["VolumeKeyProtectorID"] is string[] protectorIds)
+                        {
+                            foreach (var protectorId in protectorIds)
+                            {
+                                try
+                                {
+                                    var typeParams = vol.GetMethodParameters("GetKeyProtectorType");
+                                    typeParams["VolumeKeyProtectorID"] = protectorId;
+                                    var typeResult = vol.InvokeMethod("GetKeyProtectorType", typeParams, null);
+                                    if (typeResult != null)
+                                    {
+                                        var protectorType = Convert.ToUInt32(typeResult["KeyProtectorType"]);
+                                        var name = protectorType switch
+                                        {
+                                            0 => "Unknown",
+                                            1 => "TPM",
+                                            2 => "ExternalKey",
+                                            3 => "NumericalPassword",
+                                            4 => "TPMAndPIN",
+                                            5 => "TPMAndStartupKey",
+                                            6 => "TPMAndPINAndStartupKey",
+                                            7 => "PublicKey",
+                                            8 => "Passphrase",
+                                            9 => "TPMCertificate",
+                                            10 => "CryptoNextGeneration",
+                                            _ => $"Type{protectorType}"
+                                        };
+                                        info.ProtectorTypes.Add(name);
+                                    }
+                                }
+                                catch { /* skip individual protector */ }
+                            }
+                        }
+                    }
+                    catch { /* protector enumeration optional */ }
+
+                    var key = NormalizeDrive(driveLetter);
+                    result[key] = info;
+                }
+                catch { /* skip individual volume on error */ }
+            }
+        }
+        catch (ManagementException ex) when (ex.ErrorCode == ManagementStatus.InvalidNamespace)
+        {
+            error = "BitLocker WMI namespace not available (Win32_EncryptableVolume)";
+        }
+        catch (Exception ex)
+        {
+            error = $"WMI query failed: {ex.Message}";
         }
 
-        var run = ProcessHelper.RunCaptured(
-            exePath: exePath,
-            arguments: "-status",
-            timeoutSeconds: 30,
-            stdoutCapBytes: 32768,
-            stderrCapBytes: 1024);
-
-        if (!run.Started)
-        {
-            error = "failed to start manage-bde.exe";
-            return result;
-        }
-
-        if (run.TimedOut)
-        {
-            error = "manage-bde.exe timed out";
-            return result;
-        }
-
-        ParseStatusOutput(run.Stdout, result);
         return result;
     }
 
-    // Parses manage-bde -status output into per-drive blocks.
-    // Output shape (per drive):
-    //
-    //   Volume C: [OSDisk]
-    //   [OS Volume]
-    //
-    //       Size:                 237.93 GB
-    //       BitLocker Version:    2.0
-    //       Conversion Status:    Fully Encrypted
-    //       Percentage Encrypted: 100.0%
-    //       Encryption Method:    XTS-AES 256
-    //       Protection Status:    Protection On
-    //       Lock Status:          Unlocked
-    //       Identification Field: Unknown
-    //       Key Protectors:
-    //           TPM
-    //           Numerical Password
-    //
-    private static void ParseStatusOutput(string stdout, Dictionary<string, DriveInfoBlock> drives)
+    private static uint GetUInt32(ManagementObject obj, string propertyName)
     {
-        if (string.IsNullOrWhiteSpace(stdout)) return;
-
-        var lines = stdout.Split('\n');
-        DriveInfoBlock? current = null;
-        string? currentKey = null;
-        var inProtectors = false;
-
-        var volumeRegex = new Regex(@"Volume\s+([A-Za-z]):", RegexOptions.IgnoreCase);
-
-        foreach (var rawLine in lines)
-        {
-            var line = rawLine.TrimEnd('\r');
-            var trimmed = line.Trim();
-
-            var vm = volumeRegex.Match(trimmed);
-            if (vm.Success && trimmed.StartsWith("Volume", StringComparison.OrdinalIgnoreCase))
-            {
-                // Commit previous
-                if (current is not null && currentKey is not null)
-                    drives[currentKey] = current;
-
-                currentKey = vm.Groups[1].Value.ToUpperInvariant() + ":";
-                current = new DriveInfoBlock();
-                inProtectors = false;
-                continue;
-            }
-
-            if (current is null) continue;
-
-            if (trimmed.StartsWith("Key Protectors:", StringComparison.OrdinalIgnoreCase))
-            {
-                inProtectors = true;
-                continue;
-            }
-
-            if (inProtectors)
-            {
-                // Protector list ends on blank line or a new "Label:" line at the section level.
-                if (string.IsNullOrWhiteSpace(trimmed))
-                {
-                    inProtectors = false;
-                    continue;
-                }
-                // Heuristic: protector list items are indented and do NOT contain ':'.
-                if (!trimmed.Contains(':'))
-                {
-                    current.ProtectorTypes.Add(trimmed);
-                    continue;
-                }
-                inProtectors = false;
-                // fall through to key/value parsing
-            }
-
-            var colonIdx = trimmed.IndexOf(':');
-            if (colonIdx <= 0) continue;
-            var key = trimmed.Substring(0, colonIdx).Trim();
-            var val = trimmed.Substring(colonIdx + 1).Trim();
-
-            if (key.Equals("Protection Status", StringComparison.OrdinalIgnoreCase))
-            {
-                // "Protection On" / "Protection Off"
-                current.ProtectionStatus = val.Contains("On", StringComparison.OrdinalIgnoreCase) ? "On"
-                    : val.Contains("Off", StringComparison.OrdinalIgnoreCase) ? "Off"
-                    : "Unknown";
-            }
-            else if (key.Equals("Encryption Method", StringComparison.OrdinalIgnoreCase))
-            {
-                current.EncryptionMethod = val;
-            }
-            else if (key.Equals("Percentage Encrypted", StringComparison.OrdinalIgnoreCase))
-            {
-                // e.g. "100.0%" or "100%"
-                var numPart = val.Replace("%", "").Trim();
-                if (double.TryParse(numPart, System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out var pct))
-                {
-                    current.EncryptionPercent = (int)Math.Round(pct);
-                }
-            }
-        }
-
-        // Commit last
-        if (current is not null && currentKey is not null)
-            drives[currentKey] = current;
+        var val = obj[propertyName];
+        if (val == null) return uint.MaxValue;
+        return Convert.ToUInt32(val);
     }
 
     private sealed class DriveInfoBlock
     {
         public string? ProtectionStatus { get; set; }
         public string? EncryptionMethod { get; set; }
+        public string? ConversionStatus { get; set; }
+        public string? LockStatus { get; set; }
         public int EncryptionPercent { get; set; }
         public List<string> ProtectorTypes { get; } = new();
     }

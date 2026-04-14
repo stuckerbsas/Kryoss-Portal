@@ -34,8 +34,10 @@ public class ReportsFunction
         Guid runId)
     {
         var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
-        var reportType = query["type"] ?? "technical"; // technical, executive, presales
+        var reportType = query["type"] ?? "technical"; // technical, executive, presales, exec-onepager
         var frameworkCode = query["framework"]; // NIST, CIS, HIPAA, ISO27001, PCI-DSS
+        var lang = (query["lang"] ?? "en").ToLowerInvariant();
+        if (lang != "es") lang = "en";
 
         // HIGH-01: Verify the run belongs to the authenticated user's org/franchise
         if (!_user.IsAdmin)
@@ -57,7 +59,7 @@ public class ReportsFunction
 
         try
         {
-            var html = await _reports.GenerateHtmlReportAsync(runId, reportType, frameworkCode);
+            var html = await _reports.GenerateHtmlReportAsync(runId, reportType, frameworkCode, lang);
 
             await _actlog.LogAsync("INFO", "reports", "report.generated",
                 $"Generated {reportType} report for run {runId}",
@@ -88,6 +90,8 @@ public class ReportsFunction
         var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
         var reportType = query["type"] ?? "executive";
         var frameworkCode = query["framework"]; // NIST, CIS, HIPAA, ISO27001, PCI-DSS
+        var lang = (query["lang"] ?? "en").ToLowerInvariant();
+        if (lang != "es") lang = "en";
 
         // HIGH-01: Verify the user has access to this organization
         if (!_user.IsAdmin)
@@ -105,7 +109,7 @@ public class ReportsFunction
 
         try
         {
-            var html = await _reports.GenerateOrgReportAsync(orgId, reportType, frameworkCode);
+            var html = await _reports.GenerateOrgReportAsync(orgId, reportType, frameworkCode, lang);
 
             await _actlog.LogAsync("INFO", "reports", "org_report.generated",
                 $"Generated {reportType} org report for {orgId}",

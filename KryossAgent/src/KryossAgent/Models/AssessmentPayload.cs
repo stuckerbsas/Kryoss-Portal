@@ -225,6 +225,11 @@ public class EnrollmentResponse
 
     [JsonPropertyName("assessmentName")]
     public string? AssessmentName { get; set; }
+
+    // v1.5.1: When true, agent calls ProtocolAuditService.Configure() post-enroll
+    // to enable NTLM+SMB1 audit and resize event logs for 90-day retention.
+    [JsonPropertyName("protocolAuditEnabled")]
+    public bool ProtocolAuditEnabled { get; set; }
 }
 
 /// <summary>

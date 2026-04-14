@@ -77,6 +77,9 @@ public interface ICurrentUserService
     Guid? OrganizationId { get; }
     bool IsAdmin { get; }
     string? Email { get; }
+    string? DisplayName { get; }
+    string? Phone { get; }
+    string? JobTitle { get; }
     string? IpAddress { get; }
     string? SessionId { get; }
     string[] Permissions { get; }
@@ -89,6 +92,9 @@ public class CurrentUserService : ICurrentUserService
     public Guid? OrganizationId { get; set; }
     public bool IsAdmin { get; set; }
     public string? Email { get; set; }
+    public string? DisplayName { get; set; }
+    public string? Phone { get; set; }
+    public string? JobTitle { get; set; }
     public string? IpAddress { get; set; }
     public string? SessionId { get; set; }
     public string[] Permissions { get; set; } = [];

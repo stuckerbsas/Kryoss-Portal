@@ -22,34 +22,72 @@ public class M365CheckResult
 public interface IM365ScannerService
 {
     Task<List<M365CheckResult>> ScanAsync(string tenantId, string clientId, string clientSecret);
+    Task<List<M365CheckResult>> ScanAsync(string tenantId);
 }
 
 /// <summary>
-/// Connects to Microsoft Graph API using client credentials and runs ~30
+/// Connects to Microsoft Graph API using client credentials and runs ~50
 /// security checks against an M365 / Entra ID tenant.
 /// </summary>
 public class M365ScannerService : IM365ScannerService
 {
     private readonly ILogger<M365ScannerService> _log;
+    private readonly M365Config _config;
 
-    public M365ScannerService(ILogger<M365ScannerService> log)
+    public M365ScannerService(ILogger<M365ScannerService> log, M365Config config)
     {
         _log = log;
+        _config = config;
     }
 
+    /// <summary>
+    /// Scan using per-customer (legacy) credentials.
+    /// </summary>
     public async Task<List<M365CheckResult>> ScanAsync(string tenantId, string clientId, string clientSecret)
     {
         var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
         var graph = new GraphServiceClient(credential);
+        return await RunAllChecks(graph);
+    }
 
+    /// <summary>
+    /// Scan using shared (multi-tenant admin consent) credentials.
+    /// </summary>
+    public async Task<List<M365CheckResult>> ScanAsync(string tenantId)
+    {
+        var credential = new ClientSecretCredential(tenantId, _config.ClientId, _config.ClientSecret);
+        var graph = new GraphServiceClient(credential);
+        return await RunAllChecks(graph);
+    }
+
+    private async Task<List<M365CheckResult>> RunAllChecks(GraphServiceClient graph)
+    {
         var results = new List<M365CheckResult>();
 
+        // Existing checks (M365-001 to M365-030)
         results.AddRange(await CheckConditionalAccess(graph));
         results.AddRange(await CheckMfaStatus(graph));
         results.AddRange(await CheckSecurityDefaults(graph));
         results.AddRange(await CheckAdminRoles(graph));
         results.AddRange(await CheckGuestAccess(graph));
         results.AddRange(await CheckMailSecurity(graph));
+
+        // Tier 1 — Stale Accounts + Apps + Secure Score (M365-031 to M365-040)
+        results.AddRange(await CheckStaleAccounts(graph));
+        results.AddRange(await CheckAppRegistrations(graph));
+        results.AddRange(await CheckSecureScore(graph));
+        results.AddRange(await CheckNamedLocations(graph));
+        results.AddRange(await CheckPasswordPolicy(graph));
+
+        // Tier 2 — Risk + Intune (M365-041 to M365-046)
+        results.AddRange(await CheckRiskDetections(graph));
+        results.AddRange(await CheckIntuneCompliance(graph));
+
+        // Tier 3 — DLP + SharePoint + Alerts (M365-047 to M365-050)
+        results.AddRange(await CheckDlpPolicies(graph));
+        results.AddRange(await CheckSecurityAlerts(graph));
+        results.AddRange(await CheckSharePointSharing(graph));
+        results.AddRange(await CheckOrgConfig(graph));
 
         return results;
     }
@@ -686,43 +724,922 @@ public class M365ScannerService : IM365ScannerService
                 "Requires MailboxSettings.Read"));
         }
 
-        // M365-028: DKIM
-        results.Add(new M365CheckResult
+        // M365-028 to M365-030: DNS-based email security checks
+        // Get verified domains from Graph to know which domains to check
+        try
         {
-            CheckId = "M365-028",
-            Name = "DKIM configuration",
-            Category = "mail_security",
-            Severity = "high",
-            Status = "info",
-            Finding = "DKIM configuration requires Exchange Online Management module. Verify via Exchange admin center > Mail flow > DKIM.",
-            ActualValue = "N/A"
-        });
+            var domainsResponse = await graph.Domains.GetAsync();
+            var verifiedDomains = domainsResponse?.Value?
+                .Where(d => d.IsVerified == true && !string.IsNullOrEmpty(d.Id))
+                .Select(d => d.Id!)
+                .ToList() ?? [];
 
-        // M365-029: DMARC
-        results.Add(new M365CheckResult
-        {
-            CheckId = "M365-029",
-            Name = "DMARC policy",
-            Category = "mail_security",
-            Severity = "high",
-            Status = "info",
-            Finding = "DMARC policy is configured via DNS TXT records (_dmarc.domain.com). Verify externally or via DNS lookup.",
-            ActualValue = "N/A"
-        });
+            if (verifiedDomains.Count == 0)
+            {
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-028", Name = "SPF record", Category = "mail_security",
+                    Severity = "high", Status = "info",
+                    Finding = "No verified domains found to check DNS records",
+                    ActualValue = "N/A"
+                });
+            }
+            else
+            {
+                var spfResults = new List<string>();
+                var dmarcResults = new List<string>();
+                var dkimResults = new List<string>();
+                int spfPass = 0, spfFail = 0;
+                int dmarcPass = 0, dmarcFail = 0;
+                int dkimPass = 0, dkimFail = 0;
 
-        // M365-030: Anti-phishing policies
-        results.Add(new M365CheckResult
+                foreach (var domain in verifiedDomains.Take(10)) // cap at 10 domains
+                {
+                    // SPF check
+                    try
+                    {
+                        var spfRecords = await DnsLookupTxt(domain);
+                        var spf = spfRecords.FirstOrDefault(r => r.StartsWith("v=spf1", StringComparison.OrdinalIgnoreCase));
+                        if (spf != null)
+                        {
+                            spfPass++;
+                            var hasHardFail = spf.Contains("-all", StringComparison.OrdinalIgnoreCase);
+                            if (!hasHardFail) spfResults.Add($"{domain}: SPF exists but uses ~all (softfail) instead of -all (hardfail)");
+                        }
+                        else
+                        {
+                            spfFail++;
+                            spfResults.Add($"{domain}: No SPF record found");
+                        }
+                    }
+                    catch { spfResults.Add($"{domain}: DNS lookup failed"); spfFail++; }
+
+                    // DMARC check
+                    try
+                    {
+                        var dmarcRecords = await DnsLookupTxt($"_dmarc.{domain}");
+                        var dmarc = dmarcRecords.FirstOrDefault(r => r.StartsWith("v=DMARC1", StringComparison.OrdinalIgnoreCase));
+                        if (dmarc != null)
+                        {
+                            dmarcPass++;
+                            var hasReject = dmarc.Contains("p=reject", StringComparison.OrdinalIgnoreCase);
+                            var hasQuarantine = dmarc.Contains("p=quarantine", StringComparison.OrdinalIgnoreCase);
+                            if (!hasReject && !hasQuarantine)
+                                dmarcResults.Add($"{domain}: DMARC policy is p=none (monitoring only, not enforcing)");
+                        }
+                        else
+                        {
+                            dmarcFail++;
+                            dmarcResults.Add($"{domain}: No DMARC record found");
+                        }
+                    }
+                    catch { dmarcResults.Add($"{domain}: DNS lookup failed"); dmarcFail++; }
+
+                    // DKIM check (Microsoft 365 selectors)
+                    try
+                    {
+                        var selector1 = await DnsLookupCname($"selector1._domainkey.{domain}");
+                        var selector2 = await DnsLookupCname($"selector2._domainkey.{domain}");
+                        if (selector1 != null || selector2 != null)
+                            dkimPass++;
+                        else
+                        {
+                            dkimFail++;
+                            dkimResults.Add($"{domain}: No DKIM selectors (selector1/selector2) found");
+                        }
+                    }
+                    catch { dkimResults.Add($"{domain}: DNS lookup failed"); dkimFail++; }
+                }
+
+                // M365-028: SPF
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-028",
+                    Name = "SPF records configured",
+                    Category = "mail_security",
+                    Severity = "high",
+                    Status = spfFail == 0 ? "pass" : spfFail < verifiedDomains.Count ? "warn" : "fail",
+                    Finding = spfFail == 0
+                        ? $"SPF records found for all {spfPass} verified domains"
+                        : $"{spfFail}/{spfPass + spfFail} domains missing SPF. {string.Join("; ", spfResults.Take(3))}",
+                    ActualValue = $"{spfPass} pass, {spfFail} fail"
+                });
+
+                // M365-029: DMARC
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-029",
+                    Name = "DMARC policy configured",
+                    Category = "mail_security",
+                    Severity = "high",
+                    Status = dmarcFail == 0 ? "pass" : dmarcFail < verifiedDomains.Count ? "warn" : "fail",
+                    Finding = dmarcFail == 0
+                        ? $"DMARC records found for all {dmarcPass} verified domains. {(dmarcResults.Count > 0 ? string.Join("; ", dmarcResults.Take(2)) : "")}"
+                        : $"{dmarcFail}/{dmarcPass + dmarcFail} domains missing DMARC. {string.Join("; ", dmarcResults.Take(3))}",
+                    ActualValue = $"{dmarcPass} pass, {dmarcFail} fail"
+                });
+
+                // M365-030: DKIM
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-030",
+                    Name = "DKIM selectors configured",
+                    Category = "mail_security",
+                    Severity = "high",
+                    Status = dkimFail == 0 ? "pass" : dkimFail < verifiedDomains.Count ? "warn" : "fail",
+                    Finding = dkimFail == 0
+                        ? $"DKIM selectors found for all {dkimPass} verified domains"
+                        : $"{dkimFail}/{dkimPass + dkimFail} domains missing DKIM. {string.Join("; ", dkimResults.Take(3))}",
+                    ActualValue = $"{dkimPass} pass, {dkimFail} fail"
+                });
+            }
+        }
+        catch (Exception ex)
         {
-            CheckId = "M365-030",
-            Name = "Anti-phishing policies",
-            Category = "mail_security",
-            Severity = "high",
-            Status = "info",
-            Finding = "Anti-phishing policy configuration requires Exchange Online Protection API. Check Microsoft 365 Defender > Policies > Anti-phishing.",
-            ActualValue = "N/A"
-        });
+            _log.LogWarning(ex, "Failed to check DNS email security records");
+            results.Add(InsufficientPermissions("M365-028", "Email DNS security (SPF/DMARC/DKIM)", "mail_security",
+                "Requires Domain.Read.All or network access for DNS lookups"));
+        }
 
         return results;
+    }
+
+    // ── Stale Accounts (M365-031 to M365-032) ──
+
+    private async Task<List<M365CheckResult>> CheckStaleAccounts(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            var usersResponse = await graph.Users.GetAsync(config =>
+            {
+                config.QueryParameters.Select = new[] { "id", "displayName", "userPrincipalName", "signInActivity" };
+                config.QueryParameters.Filter = "userType eq 'Member'";
+                config.QueryParameters.Top = 999;
+            });
+            var users = usersResponse?.Value ?? [];
+            var totalUsers = users.Count;
+
+            var now = DateTimeOffset.UtcNow;
+            var stale30 = users.Where(u =>
+                u.SignInActivity?.LastSignInDateTime != null &&
+                u.SignInActivity.LastSignInDateTime < now.AddDays(-30)).ToList();
+            var stale90 = users.Where(u =>
+                u.SignInActivity?.LastSignInDateTime != null &&
+                u.SignInActivity.LastSignInDateTime < now.AddDays(-90)).ToList();
+
+            var stale30Pct = totalUsers > 0 ? (double)stale30.Count / totalUsers * 100 : 0;
+            var stale90Pct = totalUsers > 0 ? (double)stale90.Count / totalUsers * 100 : 0;
+
+            // M365-031: Stale users (30 days)
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-031",
+                Name = "Stale user accounts (30 days)",
+                Category = "stale_accounts",
+                Severity = "medium",
+                Status = stale30Pct > 10 ? "fail" : stale30Pct > 5 ? "warn" : "pass",
+                Finding = $"{stale30.Count}/{totalUsers} users ({stale30Pct:F1}%) have not signed in for 30+ days. " +
+                    $"Top stale: {string.Join(", ", stale30.Take(5).Select(u => u.DisplayName ?? u.UserPrincipalName))}",
+                ActualValue = $"{stale30Pct:F1}%"
+            });
+
+            // M365-032: Dormant users (90 days)
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-032",
+                Name = "Dormant user accounts (90 days)",
+                Category = "stale_accounts",
+                Severity = "high",
+                Status = stale90Pct > 10 ? "fail" : stale90Pct > 5 ? "warn" : "pass",
+                Finding = $"{stale90.Count}/{totalUsers} users ({stale90Pct:F1}%) have not signed in for 90+ days. " +
+                    $"Top dormant: {string.Join(", ", stale90.Take(5).Select(u => u.DisplayName ?? u.UserPrincipalName))}",
+                ActualValue = $"{stale90Pct:F1}%"
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check stale accounts");
+            results.Add(InsufficientPermissions("M365-031", "Stale user accounts", "stale_accounts",
+                "Requires AuditLog.Read.All and User.Read.All"));
+        }
+
+        return results;
+    }
+
+    // ── App Registrations (M365-033 to M365-036) ──
+
+    private async Task<List<M365CheckResult>> CheckAppRegistrations(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            var appsResponse = await graph.Applications.GetAsync();
+            var apps = appsResponse?.Value ?? [];
+
+            // M365-033: App registrations with expired secrets
+            var now = DateTimeOffset.UtcNow;
+            var appsWithExpiredSecrets = apps.Where(a =>
+                a.PasswordCredentials?.Any(pc => pc.EndDateTime < now) == true).ToList();
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-033",
+                Name = "App registrations with expired secrets",
+                Category = "app_registrations",
+                Severity = "medium",
+                Status = appsWithExpiredSecrets.Count > 0 ? "warn" : "pass",
+                Finding = appsWithExpiredSecrets.Count > 0
+                    ? $"{appsWithExpiredSecrets.Count} apps have expired secrets: {string.Join(", ", appsWithExpiredSecrets.Take(5).Select(a => a.DisplayName))}"
+                    : "No app registrations have expired secrets",
+                ActualValue = appsWithExpiredSecrets.Count.ToString()
+            });
+
+            // M365-034: App registrations with excessive permissions
+            var appsWithExcessivePerms = apps.Where(a =>
+                a.RequiredResourceAccess?.Sum(r => r.ResourceAccess?.Count(ra =>
+                    ra.Type == "Role") ?? 0) > 10).ToList();
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-034",
+                Name = "App registrations with excessive permissions",
+                Category = "app_registrations",
+                Severity = "medium",
+                Status = appsWithExcessivePerms.Count > 0 ? "warn" : "pass",
+                Finding = appsWithExcessivePerms.Count > 0
+                    ? $"{appsWithExcessivePerms.Count} apps have >10 application permissions: {string.Join(", ", appsWithExcessivePerms.Take(5).Select(a => a.DisplayName))}"
+                    : "No app registrations have excessive application permissions",
+                ActualValue = appsWithExcessivePerms.Count.ToString()
+            });
+
+            // M365-035: Enterprise apps with risky consent grants
+            try
+            {
+                var spResponse = await graph.ServicePrincipals.GetAsync();
+                var servicePrincipals = spResponse?.Value ?? [];
+
+                var riskyScopes = new[] { "Mail.Read", "Files.ReadWrite.All", "Mail.Send", "Mail.ReadWrite",
+                    "Files.Read.All", "User.ReadWrite.All", "Directory.ReadWrite.All" };
+
+                var riskyApps = new List<string>();
+                foreach (var sp in servicePrincipals.Take(100))
+                {
+                    try
+                    {
+                        var grants = await graph.ServicePrincipals[sp.Id].Oauth2PermissionGrants.GetAsync();
+                        var grantList = grants?.Value ?? [];
+                        var hasRiskyScope = grantList.Any(g =>
+                            riskyScopes.Any(rs => g.Scope?.Contains(rs, StringComparison.OrdinalIgnoreCase) == true));
+                        if (hasRiskyScope)
+                            riskyApps.Add(sp.DisplayName ?? sp.AppId ?? "unknown");
+                    }
+                    catch { /* individual SP read may fail */ }
+                }
+
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-035",
+                    Name = "Enterprise apps with risky consent grants",
+                    Category = "app_registrations",
+                    Severity = "high",
+                    Status = riskyApps.Count > 0 ? "fail" : "pass",
+                    Finding = riskyApps.Count > 0
+                        ? $"{riskyApps.Count} enterprise apps have risky OAuth consent grants (Mail.Read, Files.ReadWrite.All, etc.): {string.Join(", ", riskyApps.Take(5))}"
+                        : "No enterprise apps found with risky consent grants",
+                    ActualValue = riskyApps.Count.ToString()
+                });
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to check enterprise app consent grants");
+                results.Add(InsufficientPermissions("M365-035", "Enterprise apps risky consent grants", "app_registrations",
+                    "Requires Application.Read.All"));
+            }
+
+            // M365-036: Apps with no owner assigned
+            var appsWithNoOwner = new List<string>();
+            foreach (var app in apps.Take(100))
+            {
+                try
+                {
+                    var owners = await graph.Applications[app.Id].Owners.GetAsync();
+                    if (owners?.Value == null || owners.Value.Count == 0)
+                        appsWithNoOwner.Add(app.DisplayName ?? app.AppId ?? "unknown");
+                }
+                catch { /* owner read may fail */ }
+            }
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-036",
+                Name = "App registrations with no owner",
+                Category = "app_registrations",
+                Severity = "medium",
+                Status = appsWithNoOwner.Count > 0 ? "warn" : "pass",
+                Finding = appsWithNoOwner.Count > 0
+                    ? $"{appsWithNoOwner.Count} apps have no owner assigned: {string.Join(", ", appsWithNoOwner.Take(5))}"
+                    : "All app registrations have at least one owner assigned",
+                ActualValue = appsWithNoOwner.Count.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check app registrations");
+            results.Add(InsufficientPermissions("M365-033", "App registrations audit", "app_registrations",
+                "Requires Application.Read.All"));
+        }
+
+        return results;
+    }
+
+    // ── Secure Score (M365-037 to M365-038) ──
+
+    private async Task<List<M365CheckResult>> CheckSecureScore(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            var scoresResponse = await graph.Security.SecureScores.GetAsync(config =>
+            {
+                config.QueryParameters.Top = 1;
+                config.QueryParameters.Orderby = new[] { "createdDateTime desc" };
+            });
+            var latestScore = scoresResponse?.Value?.FirstOrDefault();
+
+            if (latestScore != null)
+            {
+                var currentScore = latestScore.CurrentScore ?? 0;
+                var maxScore = latestScore.MaxScore ?? 1;
+                var scorePct = maxScore > 0 ? (double)currentScore / maxScore * 100 : 0;
+
+                // M365-037: Microsoft Secure Score
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-037",
+                    Name = "Microsoft Secure Score",
+                    Category = "secure_score",
+                    Severity = "critical",
+                    Status = scorePct > 70 ? "pass" : scorePct > 40 ? "warn" : "fail",
+                    Finding = $"Secure Score: {currentScore}/{maxScore} ({scorePct:F1}%). " +
+                        (scorePct > 70 ? "Good security posture." : scorePct > 40 ? "Moderate security posture. Review improvement actions." : "Low security posture. Immediate attention needed."),
+                    ActualValue = $"{scorePct:F1}%"
+                });
+
+                // M365-038: Secure Score improvement actions
+                var controlScores = latestScore.ControlScores ?? [];
+                // ControlScore in Graph v5 has Score (double?) — zero or null means not implemented
+                var notImplemented = controlScores.Where(c =>
+                    c.Score == null || c.Score == 0).ToList();
+
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-038",
+                    Name = "Secure Score improvement actions pending",
+                    Category = "secure_score",
+                    Severity = "medium",
+                    Status = notImplemented.Count > 20 ? "warn" : "info",
+                    Finding = $"{notImplemented.Count} improvement actions not fully implemented out of {controlScores.Count} total. " +
+                        $"Top recommendations: {string.Join(", ", notImplemented.Take(5).Select(c => c.ControlName))}",
+                    ActualValue = notImplemented.Count.ToString()
+                });
+            }
+            else
+            {
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-037",
+                    Name = "Microsoft Secure Score",
+                    Category = "secure_score",
+                    Severity = "critical",
+                    Status = "info",
+                    Finding = "No Secure Score data available. This may require SecurityEvents.Read.All permission or the tenant may not have scored yet.",
+                    ActualValue = "N/A"
+                });
+
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-038",
+                    Name = "Secure Score improvement actions pending",
+                    Category = "secure_score",
+                    Severity = "medium",
+                    Status = "info",
+                    Finding = "No Secure Score data available to determine improvement actions.",
+                    ActualValue = "N/A"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check Secure Score");
+            results.Add(InsufficientPermissions("M365-037", "Microsoft Secure Score", "secure_score",
+                "Requires SecurityEvents.Read.All"));
+        }
+
+        return results;
+    }
+
+    // ── Named Locations (M365-039) ──
+
+    private async Task<List<M365CheckResult>> CheckNamedLocations(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            var locationsResponse = await graph.Identity.ConditionalAccess.NamedLocations.GetAsync();
+            var locations = locationsResponse?.Value ?? [];
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-039",
+                Name = "Named locations configured",
+                Category = "conditional_access",
+                Severity = "medium",
+                Status = locations.Count > 0 ? "pass" : "warn",
+                Finding = locations.Count > 0
+                    ? $"{locations.Count} named locations configured: {string.Join(", ", locations.Take(5).Select(l => l.DisplayName))}"
+                    : "No named locations configured. Named locations improve CA policy targeting (trusted IPs, countries).",
+                ActualValue = locations.Count.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check named locations");
+            results.Add(InsufficientPermissions("M365-039", "Named locations", "conditional_access",
+                "Requires Policy.Read.All"));
+        }
+
+        return results;
+    }
+
+    // ── Password Policy (M365-040) ──
+
+    private async Task<List<M365CheckResult>> CheckPasswordPolicy(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            var orgResponse = await graph.Organization.GetAsync();
+            var org = orgResponse?.Value?.FirstOrDefault();
+
+            string? passwordPolicies = null;
+            int? passwordValidityDays = null;
+
+            if (org != null)
+            {
+                passwordPolicies = org.AdditionalData?.ContainsKey("passwordPolicies") == true
+                    ? org.AdditionalData["passwordPolicies"]?.ToString()
+                    : null;
+            }
+
+            // Also try to read domain-level password validity
+            try
+            {
+                var domainsResponse = await graph.Domains.GetAsync();
+                var domains = domainsResponse?.Value ?? [];
+                var defaultDomain = domains.FirstOrDefault(d => d.IsDefault == true);
+                passwordValidityDays = defaultDomain?.PasswordValidityPeriodInDays;
+            }
+            catch { /* domain read may fail */ }
+
+            var expirationDisabled = passwordPolicies?.Contains("DisablePasswordExpiration", StringComparison.OrdinalIgnoreCase) == true;
+            var validityInfo = passwordValidityDays.HasValue
+                ? $"Password validity: {passwordValidityDays} days."
+                : "Password validity period not readable from domain settings.";
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-040",
+                Name = "Password expiration policy",
+                Category = "org_config",
+                Severity = "medium",
+                Status = expirationDisabled ? "info" : "pass",
+                Finding = expirationDisabled
+                    ? $"Password expiration is disabled org-wide. {validityInfo} NIST 800-63B recommends no periodic rotation if breach detection is in place."
+                    : $"Password expiration is enabled. {validityInfo}",
+                ActualValue = expirationDisabled ? "disabled" : $"{passwordValidityDays?.ToString() ?? "default"} days"
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check password policy");
+            results.Add(InsufficientPermissions("M365-040", "Password expiration policy", "org_config",
+                "Requires Organization.Read.All"));
+        }
+
+        return results;
+    }
+
+    // ── Risk Detections (M365-041 to M365-042) ──
+
+    private async Task<List<M365CheckResult>> CheckRiskDetections(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        // M365-041: High-risk sign-ins
+        try
+        {
+            var thirtyDaysAgo = DateTimeOffset.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ssZ");
+            var riskDetectionsResponse = await graph.IdentityProtection.RiskDetections.GetAsync(config =>
+            {
+                config.QueryParameters.Filter = $"riskLevel eq 'high' and detectedDateTime ge {thirtyDaysAgo}";
+                config.QueryParameters.Top = 100;
+            });
+            var highRiskDetections = riskDetectionsResponse?.Value ?? [];
+
+            var riskTypes = highRiskDetections
+                .GroupBy(r => r.RiskEventType ?? "unknown")
+                .OrderByDescending(g => g.Count())
+                .Take(5)
+                .Select(g => $"{g.Key} ({g.Count()})");
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-041",
+                Name = "High-risk sign-ins (last 30 days)",
+                Category = "identity_protection",
+                Severity = "critical",
+                Status = highRiskDetections.Count > 0 ? "fail" : "pass",
+                Finding = highRiskDetections.Count > 0
+                    ? $"{highRiskDetections.Count} high-risk sign-in detections in last 30 days. Top risk types: {string.Join(", ", riskTypes)}"
+                    : "No high-risk sign-in detections in last 30 days",
+                ActualValue = highRiskDetections.Count.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check risk detections");
+            results.Add(InsufficientPermissions("M365-041", "High-risk sign-ins", "identity_protection",
+                "Requires IdentityRiskEvent.Read.All (Entra ID P2)"));
+        }
+
+        // M365-042: Risky users
+        try
+        {
+            var riskyUsersResponse = await graph.IdentityProtection.RiskyUsers.GetAsync(config =>
+            {
+                config.QueryParameters.Filter = "riskLevel eq 'high'";
+                config.QueryParameters.Top = 100;
+            });
+            var riskyUsers = riskyUsersResponse?.Value ?? [];
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-042",
+                Name = "High-risk users",
+                Category = "identity_protection",
+                Severity = "critical",
+                Status = riskyUsers.Count > 0 ? "fail" : "pass",
+                Finding = riskyUsers.Count > 0
+                    ? $"{riskyUsers.Count} users flagged as high-risk: {string.Join(", ", riskyUsers.Take(5).Select(u => u.UserDisplayName ?? u.UserPrincipalName ?? "unknown"))}"
+                    : "No users currently flagged as high-risk",
+                ActualValue = riskyUsers.Count.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check risky users");
+            results.Add(InsufficientPermissions("M365-042", "High-risk users", "identity_protection",
+                "Requires IdentityRiskyUser.Read.All (Entra ID P2)"));
+        }
+
+        return results;
+    }
+
+    // ── Intune Compliance (M365-043 to M365-046) ──
+
+    private async Task<List<M365CheckResult>> CheckIntuneCompliance(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            // M365-043 and M365-044: Intune enrollment and compliance
+            var devicesResponse = await graph.DeviceManagement.ManagedDevices.GetAsync(config =>
+            {
+                config.QueryParameters.Top = 999;
+            });
+            var devices = devicesResponse?.Value ?? [];
+            var totalDevices = devices.Count;
+
+            var compliantDevices = devices.Where(d =>
+                d.ComplianceState == Microsoft.Graph.Models.ComplianceState.Compliant).ToList();
+            var nonCompliantDevices = devices.Where(d =>
+                d.ComplianceState != Microsoft.Graph.Models.ComplianceState.Compliant).ToList();
+
+            // M365-043: Intune enrollment rate
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-043",
+                Name = "Intune managed device count",
+                Category = "intune",
+                Severity = "medium",
+                Status = totalDevices > 0 ? "pass" : "warn",
+                Finding = totalDevices > 0
+                    ? $"{totalDevices} devices managed by Intune. {compliantDevices.Count} compliant, {nonCompliantDevices.Count} non-compliant."
+                    : "No devices enrolled in Intune. Consider enrolling devices for compliance management.",
+                ActualValue = totalDevices.ToString()
+            });
+
+            // M365-044: Non-compliant devices
+            var nonCompliantPct = totalDevices > 0 ? (double)nonCompliantDevices.Count / totalDevices * 100 : 0;
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-044",
+                Name = "Non-compliant Intune devices",
+                Category = "intune",
+                Severity = "high",
+                Status = nonCompliantDevices.Count > 0 ? "warn" : "pass",
+                Finding = nonCompliantDevices.Count > 0
+                    ? $"{nonCompliantDevices.Count}/{totalDevices} devices ({nonCompliantPct:F1}%) are non-compliant. " +
+                        $"Top non-compliant: {string.Join(", ", nonCompliantDevices.Take(5).Select(d => d.DeviceName ?? d.Id))}"
+                    : "All enrolled devices are compliant",
+                ActualValue = nonCompliantDevices.Count.ToString()
+            });
+
+            // M365-045: Compliance policies configured
+            try
+            {
+                var policiesResponse = await graph.DeviceManagement.DeviceCompliancePolicies.GetAsync();
+                var policies = policiesResponse?.Value ?? [];
+
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-045",
+                    Name = "Intune compliance policies configured",
+                    Category = "intune",
+                    Severity = "high",
+                    Status = policies.Count > 0 ? "pass" : "fail",
+                    Finding = policies.Count > 0
+                        ? $"{policies.Count} compliance policies configured: {string.Join(", ", policies.Take(5).Select(p => p.DisplayName))}"
+                        : "No compliance policies configured in Intune. Devices have no compliance requirements.",
+                    ActualValue = policies.Count.ToString()
+                });
+
+                // M365-046: Device encryption enforcement
+                var hasEncryptionPolicy = policies.Any(p =>
+                    p.DisplayName?.Contains("encrypt", StringComparison.OrdinalIgnoreCase) == true ||
+                    p.DisplayName?.Contains("bitlocker", StringComparison.OrdinalIgnoreCase) == true);
+
+                results.Add(new M365CheckResult
+                {
+                    CheckId = "M365-046",
+                    Name = "Device encryption enforcement policy",
+                    Category = "intune",
+                    Severity = "high",
+                    Status = hasEncryptionPolicy ? "pass" : "warn",
+                    Finding = hasEncryptionPolicy
+                        ? "A compliance policy enforcing device encryption was detected by name"
+                        : "No compliance policy explicitly requiring device encryption detected by name. Review compliance policy settings in Intune to verify BitLocker/FileVault requirements.",
+                    ActualValue = hasEncryptionPolicy.ToString()
+                });
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to check Intune compliance policies");
+                results.Add(InsufficientPermissions("M365-045", "Intune compliance policies", "intune",
+                    "Requires DeviceManagementConfiguration.Read.All"));
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check Intune compliance");
+            results.Add(InsufficientPermissions("M365-043", "Intune device compliance", "intune",
+                "Requires DeviceManagementManagedDevices.Read.All"));
+        }
+
+        return results;
+    }
+
+    // ── DLP Policies (M365-047) ──
+
+    private Task<List<M365CheckResult>> CheckDlpPolicies(GraphServiceClient graph)
+    {
+        // DLP/sensitivity labels endpoint availability varies by Graph SDK version and tenant license.
+        // The full DLP policy API requires Microsoft Purview Compliance Center — not accessible via Graph v5.
+        var results = new List<M365CheckResult>
+        {
+            new M365CheckResult
+            {
+                CheckId = "M365-047",
+                Name = "Data Loss Prevention / sensitivity labels",
+                Category = "dlp",
+                Severity = "high",
+                Status = "info",
+                Finding = "DLP and sensitivity label configuration requires Microsoft Purview Compliance Center. " +
+                    "The Graph API does not expose full DLP policy details. Check Compliance Center > Data Loss Prevention > Policies for DLP rules, " +
+                    "and Compliance Center > Information Protection > Labels for sensitivity labels.",
+                ActualValue = "N/A"
+            }
+        };
+
+        return Task.FromResult(results);
+    }
+
+    // ── Security Alerts (M365-048) ──
+
+    private async Task<List<M365CheckResult>> CheckSecurityAlerts(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            var thirtyDaysAgo = DateTimeOffset.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ssZ");
+            var alertsResponse = await graph.Security.Alerts_v2.GetAsync(config =>
+            {
+                config.QueryParameters.Filter = $"createdDateTime ge {thirtyDaysAgo}";
+                config.QueryParameters.Top = 200;
+            });
+            var alerts = alertsResponse?.Value ?? [];
+
+            var highSeverity = alerts.Where(a =>
+                a.Severity == Microsoft.Graph.Models.Security.AlertSeverity.High).ToList();
+            var mediumSeverity = alerts.Where(a =>
+                a.Severity == Microsoft.Graph.Models.Security.AlertSeverity.Medium).ToList();
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-048",
+                Name = "Active security alerts (last 30 days)",
+                Category = "security_alerts",
+                Severity = "critical",
+                Status = highSeverity.Count > 0 ? "fail" : mediumSeverity.Count > 0 ? "warn" : "pass",
+                Finding = $"{alerts.Count} security alerts in last 30 days ({highSeverity.Count} high/critical, {mediumSeverity.Count} medium). " +
+                    (highSeverity.Count > 0
+                        ? $"Top high-severity: {string.Join(", ", highSeverity.Take(3).Select(a => a.Title))}"
+                        : "No high-severity alerts."),
+                ActualValue = $"{highSeverity.Count} high, {mediumSeverity.Count} medium, {alerts.Count} total"
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check security alerts");
+            results.Add(InsufficientPermissions("M365-048", "Security alerts", "security_alerts",
+                "Requires SecurityAlert.Read.All permission. Add it to the app registration and grant admin consent."));
+        }
+
+        return results;
+    }
+
+    // ── SharePoint Sharing (M365-049) ──
+
+    private async Task<List<M365CheckResult>> CheckSharePointSharing(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            // Try to read the root SharePoint site to verify connectivity
+            var rootSite = await graph.Sites["root"].GetAsync();
+            var siteName = rootSite?.DisplayName ?? "unknown";
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-049",
+                Name = "SharePoint external sharing settings",
+                Category = "sharepoint",
+                Severity = "medium",
+                Status = "info",
+                Finding = $"SharePoint root site accessible: {siteName}. External sharing configuration requires SharePoint Admin API (not available via Graph). Check SharePoint admin center > Policies > Sharing for tenant-level sharing settings.",
+                ActualValue = siteName
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check SharePoint sharing");
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-049",
+                Name = "SharePoint external sharing settings",
+                Category = "sharepoint",
+                Severity = "medium",
+                Status = "info",
+                Finding = "SharePoint sharing settings could not be read via Graph API. This requires Sites.Read.All permission and SharePoint Admin API for tenant-level configuration. Check SharePoint admin center manually.",
+                ActualValue = "N/A"
+            });
+        }
+
+        return results;
+    }
+
+    // ── Org Config (M365-050) ──
+
+    private async Task<List<M365CheckResult>> CheckOrgConfig(GraphServiceClient graph)
+    {
+        var results = new List<M365CheckResult>();
+
+        try
+        {
+            var domainsResponse = await graph.Domains.GetAsync();
+            var domains = domainsResponse?.Value ?? [];
+
+            var verifiedDomains = domains.Where(d => d.IsVerified == true).ToList();
+            var unverifiedDomains = domains.Where(d => d.IsVerified != true).ToList();
+
+            results.Add(new M365CheckResult
+            {
+                CheckId = "M365-050",
+                Name = "Verified domains",
+                Category = "org_config",
+                Severity = "low",
+                Status = "info",
+                Finding = $"{verifiedDomains.Count} verified domains: {string.Join(", ", verifiedDomains.Take(10).Select(d => d.Id))}. " +
+                    (unverifiedDomains.Count > 0
+                        ? $"{unverifiedDomains.Count} unverified: {string.Join(", ", unverifiedDomains.Take(5).Select(d => d.Id))}"
+                        : "No unverified domains."),
+                ActualValue = $"{verifiedDomains.Count} verified, {unverifiedDomains.Count} unverified"
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to check org domains");
+            results.Add(InsufficientPermissions("M365-050", "Verified domains", "org_config",
+                "Requires Organization.Read.All or Domain.Read.All"));
+        }
+
+        return results;
+    }
+
+    // ── DNS Lookup Helpers ──
+
+    /// <summary>
+    /// Resolve TXT records for a domain using .NET's built-in DNS resolver.
+    /// Falls back to nslookup if the managed API isn't available.
+    /// </summary>
+    private static async Task<List<string>> DnsLookupTxt(string domain)
+    {
+        var results = new List<string>();
+        try
+        {
+            // Use Process to call nslookup for TXT records (most compatible approach)
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "nslookup",
+                Arguments = $"-type=TXT {domain}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            using var proc = System.Diagnostics.Process.Start(psi)!;
+            var output = await proc.StandardOutput.ReadToEndAsync();
+            proc.WaitForExit(10_000);
+
+            // Parse TXT records from nslookup output
+            foreach (var line in output.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Contains("text =", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.StartsWith("\""))
+                {
+                    var txt = trimmed
+                        .Replace("text =", "", StringComparison.OrdinalIgnoreCase)
+                        .Trim()
+                        .Trim('"');
+                    if (!string.IsNullOrWhiteSpace(txt))
+                        results.Add(txt);
+                }
+            }
+        }
+        catch { /* DNS lookup failed — caller handles empty list */ }
+        return results;
+    }
+
+    /// <summary>
+    /// Resolve CNAME record for a domain (used for DKIM selector verification).
+    /// </summary>
+    private static async Task<string?> DnsLookupCname(string domain)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "nslookup",
+                Arguments = $"-type=CNAME {domain}",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            using var proc = System.Diagnostics.Process.Start(psi)!;
+            var output = await proc.StandardOutput.ReadToEndAsync();
+            proc.WaitForExit(10_000);
+
+            foreach (var line in output.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Contains("canonical name", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains("alias", StringComparison.OrdinalIgnoreCase))
+                    return trimmed;
+            }
+        }
+        catch { /* DNS lookup failed */ }
+        return null;
     }
 
     // ── Helper ──

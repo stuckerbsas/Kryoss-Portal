@@ -540,19 +540,25 @@ export function M365Tab() {
         </Card>
       </div>
 
-      {/* Category breakdown */}
+      {/* Category breakdown — hide categories with zero actionable checks */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Category Breakdown</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {categories.map((cat) => (
-            <CategoryBar
-              key={cat}
-              category={cat}
-              findings={findings.filter((f) => f.category === cat)}
-            />
-          ))}
+          {categories
+            .filter((cat) => {
+              const catFindings = findings.filter((f) => f.category === cat);
+              // Hide categories where ALL findings are "info" (no actionable data)
+              return catFindings.some((f) => f.status !== 'info');
+            })
+            .map((cat) => (
+              <CategoryBar
+                key={cat}
+                category={cat}
+                findings={findings.filter((f) => f.category === cat)}
+              />
+            ))}
         </CardContent>
       </Card>
 

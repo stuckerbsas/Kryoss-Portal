@@ -84,6 +84,66 @@ public class ControlDef
     // Display message for progress
     [JsonPropertyName("display")]
     public string? Display { get; set; }
+
+    // ── v1.5.0 fields (NativeCommandEngine check_type routing) ──
+
+    // TLS handler: protocol ("TLS 1.2"), side ("Client"/"Server")
+    [JsonPropertyName("protocol")]
+    public string? Protocol { get; set; }
+
+    [JsonPropertyName("side")]
+    public string? Side { get; set; }
+
+    // User rights handler: LSA privilege name (SeDebugPrivilege, etc.)
+    [JsonPropertyName("privilege")]
+    public string? Privilege { get; set; }
+
+    // Expected SIDs for user right. Empty array = no one should hold this right.
+    // Entries may be SIDs ("*S-1-5-32-544") or account names ("Administrators").
+    [JsonPropertyName("expectedSidsOrAccounts")]
+    public string[]? ExpectedSidsOrAccounts { get; set; }
+
+    // AppLocker handler: rule collection (Any/Exe/Script/Msi/Dll)
+    [JsonPropertyName("collection")]
+    public string? Collection { get; set; }
+
+    // Generic comparison: expected value + operator (eq/gte/lte/exists/ne)
+    // Kept as JsonElement so the handler can interpret int/string/bool as needed.
+    [JsonPropertyName("expected")]
+    public System.Text.Json.JsonElement? Expected { get; set; }
+
+    [JsonPropertyName("operator")]
+    public string? Operator { get; set; }
+
+    // Regex pattern for command stdout matching (legacy executable checks)
+    [JsonPropertyName("matchPattern")]
+    public string? MatchPattern { get; set; }
+
+    // Label (human-readable check description) + notes (PowerShell hint for custom checks)
+    [JsonPropertyName("label")]
+    public string? Label { get; set; }
+
+    [JsonPropertyName("notes")]
+    public string? Notes { get; set; }
+
+    // ── v1.5.1: EventLogEngine event_count / event_top_sources fields ──
+
+    // Array of event IDs to filter (alternative to legacy ValueName)
+    [JsonPropertyName("eventIds")]
+    public int[]? EventIds { get; set; }
+
+    // Query window in days (default 1 if omitted)
+    [JsonPropertyName("days")]
+    public int? Days { get; set; }
+
+    // Top-N return for event_top_sources
+    [JsonPropertyName("topN")]
+    public int? TopN { get; set; }
+
+    // EventData field name to aggregate on (e.g. "UserName", "WorkstationName",
+    // "ClientName"). Used by event_top_sources.
+    [JsonPropertyName("payloadField")]
+    public string? PayloadField { get; set; }
 }
 
 /// <summary>

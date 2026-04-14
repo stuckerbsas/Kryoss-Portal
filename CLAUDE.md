@@ -227,6 +227,16 @@ full list. Key ones:
 | 2026-04-11 | 600+ commercial software detection list | Server-side normalization in `InventoryFunction` |
 | 2026-04-12 | Portal: Hardware + Software inventory tabs | Org-level inventory views with search, sort, export |
 | 2026-04-12 | Reports redesigned with Brand 2025 | New layout with framework score gauges, AD hygiene section, Montserrat font |
+| 2026-04-13 | HMAC error differentiation | Server returns specific errors: timestamp skew vs signature mismatch. Agent verbose HMAC logging. |
+| 2026-04-13 | Auto-provision Entra ID users as viewer | BearerAuthMiddleware creates user on first login instead of 403 |
+| 2026-04-13 | M365 Phase 4: admin consent flow | One-click "Connect M365" button → Microsoft admin consent → 50 checks. Multi-tenant app, no per-customer App Registration needed. |
+| 2026-04-13 | M365 50 security checks (was 30) | Added: stale accounts, app registrations, Secure Score, Identity Protection, Intune, DLP, security alerts, SharePoint, org config |
+| 2026-04-13 | Agent security refactor PLANNED (v1.3.0+) | Remove PsExec, deploy via GPO/NinjaOne/Intune, convert shell engines to native .NET P/Invoke. Plan: `docs/superpowers/plans/2026-04-13-agent-security-refactor.md` |
+| 2026-04-14 | Agent v1.3.0 + v1.4.0 DONE: zero Process.Start | PsExec deleted, NetworkScanner stripped to discovery+ports+hygiene, all 5 batch engines converted to native (WMI/P/Invoke), NativeCommandEngine replaces ShellEngine, PlatformDetector uses MSFT_PhysicalDisk WMI. `grep Process.Start` in agent/src returns ZERO matches. Deploy via GPO/NinjaOne/Intune scripts in `Scripts/Deploy/`. |
+| 2026-04-14 | Binary trimming: 67 MB → 11.9 MB (82% reduction) | `PublishTrimmed=true` partial mode + feature flags (`InvariantGlobalization`, `DebuggerSupport=false`, `BuiltInComInteropSupport=false`, `EnableCompressionInSingleFile`), TrimmerRootAssembly for WMI/DirectoryServices/EventLog/ServiceController, hand-written JSON writer in NativeCommandEngine (avoids `JsonSerializer.Serialize<T>` reflection). |
+| 2026-04-14 | Agent stateless cycle | Registry `HKLM\SOFTWARE\Kryoss\Agent` wiped after every successful upload (when offline queue empty). ACL relaxed from SYSTEM-only → Administrators+SYSTEM. Re-testing works without ACL workarounds. |
+| 2026-04-14 | v1.5.0: 52 legacy command controls now execute natively | Server `ControlsFunction` whitelist expanded + snake_case fallback. Agent `ControlDef` gained fields `CheckType, Protocol, Side, Privilege, ExpectedSidsOrAccounts, Collection, Expected, Operator, EventIds, Days, TopN, PayloadField, Notes, Label`. NativeCommandEngine routes by `CheckType`: TLS (16 SCHANNEL reads), UserRights (16 via P/Invoke LsaEnumerateAccountsWithUserRight in `UserRightsApi.cs`), AppLocker (5 SrpV2 registry), inline registry with `exists` operator (19), 5 custom (Xbox task, PS ModuleLogging wildcard, PS v2 disabled, DoH servers, Legacy JScript). |
+| 2026-04-14 | v1.5.1: Protocol Usage Audit (NTLM + SMBv1, 90-day retention) | Server-side toggle per org (`organizations.protocol_audit_enabled`, `PATCH /v2/organizations/{id}/protocol-audit`, `EnrollFunction` propagates the flag). Agent `ProtocolAuditService` (ONLY service that writes registry — audit opt-in scoped) configures `AuditReceivingNTLMTraffic=2`, `RestrictSendingNTLMTraffic=1`, `AuditSmb1Access=1` and resizes Security (500 MB), `Microsoft-Windows-NTLM/Operational` (300 MB), `Microsoft-Windows-SMBServer/Audit` (300 MB) via native `EventLogConfiguration` (no wevtutil). EventLogEngine gained `event_count` (array of EventIDs + days window) and `event_top_sources` (top N by EventData payload field, parsed via XmlReader). 12 new controls seeded in `sql/026_protocol_audit.sql`: AUDIT-001..004, NTLM-USE-001..004, SMB1-USE-001..002, SAFE-TO-DISABLE-NTLM/SMB1. Portal tab "Protocol Usage" under `/organizations/{slug}/protocol-usage` with confirmation dialog + 90-day retention progress bar. |
 
 ---
 
@@ -252,6 +262,29 @@ full list. Key ones:
 - **Software Inventory tab** — org-level view with 600+ commercial app detection, version tracking
 - **Download Agent button** — generates patched binary from portal
 - **Report redesign** — new report viewer with Brand 2025 styling
+
+### Session 2026-04-13
+
+**Bug fixes:**
+- HMAC: Server now returns `"HMAC timestamp skew"` vs `"Invalid HMAC signature"` (was generic for both). Agent `--verbose` prints signing components.
+- Scan order: Removed wasted `DetectHardware()` from enrollment (was called but never sent).
+- Auto-provision: New Entra ID users auto-created as `viewer` role instead of 403.
+
+**M365 Phase 4 (complete):**
+- **Admin consent flow** — one-click "Connect M365" button in portal. Multi-tenant Entra app, customer admin just approves permissions. No per-customer App Registration needed.
+- **Endpoints:** `GET /v2/m365/consent-url`, `GET /v2/m365/consent-callback` (browser redirect from Microsoft)
+- **50 security checks** (was 30): M365-001..050 across 15 categories
+- **21 Graph API permissions** (Application, read-only) across 4 tiers
+- **Config:** `M365ScannerClientId`, `M365ScannerClientSecret`, `PortalBaseUrl` env vars on func-kryoss
+- **SQL:** migration 025 adds `consent_granted_at`, `consent_granted_by` to `m365_tenants`
+- **Portal:** One-click button + collapsible manual fallback + 15 category labels + callback handling
+- **PowerShell:** `Scripts/M365/Register-KryossM365App.ps1` for enterprise per-tenant setup
+
+**Agent security refactor (PLANNED, not implemented):**
+- Plan at `docs/superpowers/plans/2026-04-13-agent-security-refactor.md`
+- v1.3.0: Remove PsExec, deploy via GPO/NinjaOne/Intune
+- v1.4.0: Convert 5 shell engines to native .NET P/Invoke (zero Process.Start)
+- v1.5.0: Audit 200 legacy `function` controls, eliminate ShellEngine
 
 ---
 

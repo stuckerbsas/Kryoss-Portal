@@ -58,6 +58,13 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
+        // Consent callback is a browser redirect from Microsoft — no Bearer token
+        if (path.Contains("/consent-callback", StringComparison.OrdinalIgnoreCase))
+        {
+            await next(context);
+            return;
+        }
+
         // Read EasyAuth header (set by Azure App Service / SWA authentication)
         var principalHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL", out var principalValues)
             ? principalValues.FirstOrDefault() : null;
@@ -185,16 +192,72 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
             }
             else
             {
-                logger.LogWarning("Unknown user OID: {Oid}", objectId);
-                var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Forbidden);
-                await resp.WriteAsJsonAsync(new { error = "User not registered in Kryoss" });
-                context.GetInvocationResult().Value = resp;
-                return;
+                // Auto-provision: any authenticated Entra ID user gets created
+                // with the 'viewer' role. Admins can upgrade via the portal later.
+                logger.LogInformation(
+                    "Auto-provisioning new user from Entra ID. OID: {Oid}, Email: {Email}",
+                    objectId, emailFromClaims ?? "(unknown)");
+
+                var viewerRole = await db.Roles
+                    .Include(r => r.RolePermissions)
+                        .ThenInclude(rp => rp.Permission)
+                    .FirstOrDefaultAsync(r => r.Code == "viewer");
+
+                if (viewerRole is null)
+                {
+                    // Fallback: try any role that exists
+                    viewerRole = await db.Roles
+                        .Include(r => r.RolePermissions)
+                            .ThenInclude(rp => rp.Permission)
+                        .OrderBy(r => r.Id)
+                        .FirstOrDefaultAsync();
+                }
+
+                if (viewerRole is null)
+                {
+                    logger.LogError("Auto-provision failed: no roles found in database");
+                    var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+                    await resp.WriteAsJsonAsync(new { error = "System not configured — no roles" });
+                    context.GetInvocationResult().Value = resp;
+                    return;
+                }
+
+                var firstFranchise = await db.Franchises.FirstOrDefaultAsync();
+
+                user = new User
+                {
+                    Id = Guid.NewGuid(),
+                    EntraOid = objectId,
+                    Email = emailFromClaims ?? $"{objectId}@auto",
+                    DisplayName = nameFromClaims ?? "New User",
+                    RoleId = viewerRole.Id,
+                    FranchiseId = firstFranchise?.Id,
+                    AuthSource = "entra",
+                    CreatedBy = Guid.Empty,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                db.Users.Add(user);
+                await db.SaveChangesAsync();
+
+                user.Role = viewerRole;
+
+                logger.LogInformation(
+                    "Auto-provisioned user {UserId} as {Role} (franchise: {FranchiseId})",
+                    user.Id, viewerRole.Code, user.FranchiseId);
             }
         }
 
         // Update last login
         user.LastLoginAt = DateTime.UtcNow;
+
+        // Keep display_name in sync with the latest JWT `name` claim (users can
+        // update their name in Entra ID without ever hitting our profile UI).
+        if (!string.IsNullOrWhiteSpace(nameFromClaims) && user.DisplayName != nameFromClaims)
+        {
+            user.DisplayName = nameFromClaims;
+        }
+
         await db.SaveChangesAsync();
 
         // Populate current user context
@@ -203,6 +266,9 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
         {
             currentUser.UserId = user.Id;
             currentUser.Email = user.Email;
+            currentUser.DisplayName = user.DisplayName;
+            currentUser.Phone = user.Phone;
+            currentUser.JobTitle = user.JobTitle;
             currentUser.FranchiseId = user.FranchiseId;
             currentUser.OrganizationId = user.OrganizationId;
             currentUser.IsAdmin = user.Role.Code == "super_admin";

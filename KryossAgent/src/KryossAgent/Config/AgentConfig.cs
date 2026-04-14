@@ -73,8 +73,13 @@ public class AgentConfig
 
     /// <summary>
     /// Save config to registry after enrollment.
-    /// C-1: After writing values, restrict the registry key ACL to SYSTEM-only
-    /// to prevent local credential theft by non-SYSTEM administrators.
+    ///
+    /// v1.3.0 change: ACL is now Administrators + SYSTEM (was SYSTEM-only).
+    /// Rationale: the stateless cycle wipes credentials after every successful
+    /// upload, so persistent on-disk storage is already short-lived. A local
+    /// administrator could read the process memory anyway, so SYSTEM-only was
+    /// theater. Keeping Administrators allows re-testing from an elevated
+    /// PowerShell. Non-admin users are still blocked.
     /// </summary>
     public void Save()
     {
@@ -89,13 +94,12 @@ public class AgentConfig
         if (AssessmentName is not null)
             key.SetValue("AssessmentName", AssessmentName);
 
-        // C-1: Restrict ACL to SYSTEM-only. This prevents local administrators
-        // and other processes from reading the API secret and impersonating
-        // this agent. Best-effort — non-critical if it fails (some systems
-        // may not support this operation).
+        // ACL: SYSTEM + Administrators full control, block everyone else.
         try
         {
             var security = new System.Security.AccessControl.RegistrySecurity();
+
+            // SYSTEM full control
             security.AddAccessRule(new System.Security.AccessControl.RegistryAccessRule(
                 new System.Security.Principal.SecurityIdentifier(
                     System.Security.Principal.WellKnownSidType.LocalSystemSid, null),
@@ -104,6 +108,17 @@ public class AgentConfig
                     System.Security.AccessControl.InheritanceFlags.ObjectInherit,
                 System.Security.AccessControl.PropagationFlags.None,
                 System.Security.AccessControl.AccessControlType.Allow));
+
+            // BUILTIN\Administrators full control
+            security.AddAccessRule(new System.Security.AccessControl.RegistryAccessRule(
+                new System.Security.Principal.SecurityIdentifier(
+                    System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null),
+                System.Security.AccessControl.RegistryRights.FullControl,
+                System.Security.AccessControl.InheritanceFlags.ContainerInherit |
+                    System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                System.Security.AccessControl.PropagationFlags.None,
+                System.Security.AccessControl.AccessControlType.Allow));
+
             security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
             key.SetAccessControl(security);
         }
@@ -111,7 +126,27 @@ public class AgentConfig
         {
             // Non-critical — best effort. Log if verbose.
             if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
-                Console.Error.WriteLine("[WARN] Failed to set SYSTEM-only ACL on registry key.");
+                Console.Error.WriteLine("[WARN] Failed to set ACL on registry key.");
+        }
+    }
+
+    /// <summary>
+    /// Wipes the registry key entirely. Called after a successful upload cycle
+    /// when no offline queue items remain — the agent has no reason to keep
+    /// credentials on disk between runs.
+    ///
+    /// Safe to call when the key doesn't exist.
+    /// </summary>
+    public static void Wipe()
+    {
+        try
+        {
+            Registry.LocalMachine.DeleteSubKeyTree(RegistryPath, throwOnMissingSubKey: false);
+        }
+        catch (Exception ex)
+        {
+            if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
+                Console.Error.WriteLine($"[WARN] Failed to wipe registry key: {ex.Message}");
         }
     }
 }

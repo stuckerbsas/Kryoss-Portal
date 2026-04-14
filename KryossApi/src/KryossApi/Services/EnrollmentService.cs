@@ -19,7 +19,8 @@ public record EnrollmentResult(
     string ApiSecret,
     string PublicKeyPem,
     int? AssessmentId,
-    string? AssessmentName
+    string? AssessmentName,
+    bool ProtocolAuditEnabled
 );
 
 public class EnrollmentService : IEnrollmentService
@@ -194,7 +195,8 @@ public class EnrollmentService : IEnrollmentService
             ApiSecret: org.ApiSecret!,
             PublicKeyPem: cryptoKey?.PublicKeyPem ?? "",
             AssessmentId: assessmentId,
-            AssessmentName: assessmentName
+            AssessmentName: assessmentName,
+            ProtocolAuditEnabled: org.ProtocolAuditEnabled
         );
     }
 

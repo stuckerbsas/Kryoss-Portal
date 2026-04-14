@@ -114,6 +114,9 @@ public class OrganizationsFunction
                     .Max(r => (DateTime?)r.StartedAt),
                 enrollmentCodeCount = _db.EnrollmentCodes
                     .Count(e => e.OrganizationId == o.Id),
+                o.ProtocolAuditEnabled,
+                o.ProtocolAuditEnabledAt,
+                o.ProtocolAuditEnabledBy,
                 o.CreatedAt,
                 o.ModifiedAt
             }).FirstOrDefaultAsync();
@@ -356,6 +359,88 @@ public class OrganizationsFunction
             enrollmentCodeCount,
             org.CreatedAt,
             org.ModifiedAt
+        });
+        return response;
+    }
+
+    /// <summary>
+    /// v1.5.1 — Toggle protocol audit mode for an organization.
+    /// PATCH /v2/organizations/{id}/protocol-audit
+    /// Body: { "enabled": true }
+    ///
+    /// When enabled=true, agents enrolled in this org configure NTLM+SMB1
+    /// audit on next run and resize event logs for 90-day retention.
+    /// Requires `organizations:update` permission.
+    /// </summary>
+    [Function("Organizations_ProtocolAudit")]
+    [RequirePermission("organizations:update")]
+    public async Task<HttpResponseData> ToggleProtocolAudit(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "v2/organizations/{id:guid}/protocol-audit")] HttpRequestData req,
+        Guid id)
+    {
+        var org = await _db.Organizations.FirstOrDefaultAsync(o => o.Id == id);
+        if (org is null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = "Organization not found" });
+            return notFound;
+        }
+
+        // RLS: non-admin can only toggle their franchise's org
+        if (!_user.IsAdmin && _user.FranchiseId.HasValue && org.FranchiseId != _user.FranchiseId.Value)
+        {
+            var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+            await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+            return forbidden;
+        }
+
+        // Parse body
+        bool enabled;
+        try
+        {
+            using var doc = await JsonDocument.ParseAsync(req.Body);
+            if (!doc.RootElement.TryGetProperty("enabled", out var enabledEl)
+                || enabledEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = "Body must contain boolean 'enabled'" });
+                return bad;
+            }
+            enabled = enabledEl.GetBoolean();
+        }
+        catch
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Invalid JSON body" });
+            return bad;
+        }
+
+        var wasEnabled = org.ProtocolAuditEnabled;
+        org.ProtocolAuditEnabled = enabled;
+        if (enabled && !wasEnabled)
+        {
+            org.ProtocolAuditEnabledAt = DateTime.UtcNow;
+            org.ProtocolAuditEnabledBy = _user.Email;
+        }
+        else if (!enabled)
+        {
+            // Keep timestamp+by for audit trail — we don't clear them
+        }
+
+        await _db.SaveChangesAsync();
+
+        await _actlog.LogAsync("SEC", "organizations",
+            enabled ? "organization.protocol_audit.enabled" : "organization.protocol_audit.disabled",
+            $"Protocol audit {(enabled ? "enabled" : "disabled")} for '{org.Name}'",
+            entityType: "Organization", entityId: org.Id.ToString());
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            id = org.Id,
+            protocolAuditEnabled = org.ProtocolAuditEnabled,
+            protocolAuditEnabledAt = org.ProtocolAuditEnabledAt,
+            protocolAuditEnabledBy = org.ProtocolAuditEnabledBy
         });
         return response;
     }

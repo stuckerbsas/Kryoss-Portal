@@ -1,3 +1,4 @@
+using System.Management;
 using Microsoft.Win32;
 using KryossAgent.Models;
 
@@ -5,14 +6,13 @@ namespace KryossAgent.Engines;
 
 /// <summary>
 /// Detects TPM presence, version, manufacturer, and ready state.
-/// AOT-safe: registry reads + a single batched shell-out to
-/// <c>tpmtool.exe getdeviceinformation</c>. Falls back gracefully
-/// if tpmtool is missing or fails.
+/// v1.4.0: Replaced tpmtool.exe shell-out with WMI Win32_Tpm query.
+/// Registry reads kept as-is for fallback detection.
 ///
 /// Supported <c>CheckType</c> values:
 ///   present       -> bool
 ///   version       -> string ("2.0" / "1.2" / "none")
-///   spec_version  -> string (full spec version reported by tpmtool)
+///   spec_version  -> string (full spec version)
 ///   manufacturer  -> string (INTC, IFX, STM, AMD, etc.)
 ///   ready_state   -> "Ready" / "NotReady" / "Unknown"
 ///   enabled       -> bool
@@ -25,7 +25,6 @@ public class TpmEngine : ICheckEngine
     {
         var results = new List<CheckResult>(controls.Count);
 
-        // Collect TPM info once for the whole batch.
         TpmInfo info;
         try
         {
@@ -49,8 +48,6 @@ public class TpmEngine : ICheckEngine
 
         if (info.Error is not null && !info.Present)
         {
-            // If collection itself failed but we can still answer "present=false",
-            // treat as unknown hardware rather than hard error.
             result.Exists = false;
             result.Value = info.Error;
             return result;
@@ -95,8 +92,7 @@ public class TpmEngine : ICheckEngine
     {
         var info = new TpmInfo();
 
-        // ─── Registry signals ──────────────────────────────────────────────
-        // TPM base service presence
+        // ---- Registry signals (fast, always available) ----
         try
         {
             using var svc = Registry.LocalMachine.OpenSubKey(
@@ -108,114 +104,131 @@ public class TpmEngine : ICheckEngine
         }
         catch { /* ignore */ }
 
-        // WBEM TPM provider keys (device instance) — best-effort, optional
+        // ---- WMI Win32_Tpm query (replaces tpmtool.exe) ----
         try
         {
-            using var wmi = Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Services\Tpm\Parameters");
-            // Some systems expose nothing here; that's fine.
-            _ = wmi;
-        }
-        catch { /* ignore */ }
+            using var searcher = new ManagementObjectSearcher(
+                @"root\CIMV2\Security\MicrosoftTpm",
+                "SELECT * FROM Win32_Tpm");
 
-        // ─── tpmtool.exe getdeviceinformation ─────────────────────────────
-        var tpmtoolOutput = TryRunTpmtool();
-        if (!string.IsNullOrWhiteSpace(tpmtoolOutput))
-        {
-            ParseTpmtoolOutput(tpmtoolOutput, info);
+            foreach (ManagementObject tpm in searcher.Get())
+            {
+                // IsEnabled_InitialValue
+                var isEnabled = GetBool(tpm, "IsEnabled_InitialValue");
+                if (isEnabled.HasValue)
+                {
+                    info.Enabled = isEnabled.Value;
+                    info.Present = true;
+                }
+
+                // IsActivated_InitialValue
+                var isActivated = GetBool(tpm, "IsActivated_InitialValue");
+
+                // SpecVersion: e.g. "2.0, 0, 1.38" or "1.2, 2.0, ..."
+                var specVersionRaw = tpm["SpecVersion"]?.ToString();
+                if (!string.IsNullOrEmpty(specVersionRaw))
+                {
+                    info.SpecVersion = specVersionRaw;
+
+                    // Extract major version (first segment before comma)
+                    var firstPart = specVersionRaw.Split(',')[0].Trim();
+                    info.Version = firstPart; // "2.0" or "1.2"
+                }
+
+                // ManufacturerVersion
+                var mfgVersion = tpm["ManufacturerVersion"]?.ToString();
+
+                // ManufacturerId — uint32, convert to 4-char ASCII manufacturer code
+                var mfgId = tpm["ManufacturerId"];
+                if (mfgId != null)
+                {
+                    try
+                    {
+                        var mfgUint = Convert.ToUInt32(mfgId);
+                        // TPM manufacturer IDs are 4 ASCII chars packed into uint32
+                        var chars = new char[4];
+                        chars[0] = (char)((mfgUint >> 24) & 0xFF);
+                        chars[1] = (char)((mfgUint >> 16) & 0xFF);
+                        chars[2] = (char)((mfgUint >> 8) & 0xFF);
+                        chars[3] = (char)(mfgUint & 0xFF);
+                        var mfgStr = new string(chars).Trim('\0').Trim();
+                        if (!string.IsNullOrEmpty(mfgStr))
+                            info.Manufacturer = mfgStr;
+                    }
+                    catch { /* fallback: no manufacturer */ }
+                }
+
+                // If ManufacturerId decode failed, try ManufacturerIdTxt if available
+                if (info.Manufacturer is null)
+                {
+                    var mfgTxt = tpm["ManufacturerIdTxt"]?.ToString();
+                    if (!string.IsNullOrEmpty(mfgTxt))
+                        info.Manufacturer = mfgTxt;
+                }
+
+                // Ready state: call IsReady_InitialValue or check IsActivated + IsEnabled
+                var readyForStorage = isEnabled == true && isActivated == true;
+
+                // Try calling IsReady method for more accurate state
+                try
+                {
+                    var outParams = tpm.InvokeMethod("IsReady", null, null);
+                    if (outParams != null)
+                    {
+                        var isReady = outParams["IsReady"];
+                        if (isReady != null)
+                            readyForStorage = Convert.ToBoolean(isReady);
+                    }
+                }
+                catch { /* method may not exist on all versions */ }
+
+                info.ReadyState = info.Present
+                    ? (readyForStorage ? "Ready" : "NotReady")
+                    : "Unknown";
+
+                break; // Only one TPM instance expected
+            }
         }
-        else if (!info.Enabled)
+        catch (ManagementException)
         {
-            // Neither registry nor tpmtool told us anything — probably no TPM.
+            // WMI namespace may not be available (e.g. no TPM hardware)
+            // Fall through to registry-only detection
+        }
+        catch (Exception ex)
+        {
+            info.Error = $"WMI query failed: {ex.Message}";
+        }
+
+        // If WMI didn't find a TPM and registry didn't either
+        if (!info.Present && !info.Enabled)
+        {
             info.Present = false;
-            info.Version = "none";
-            info.ReadyState = "Unknown";
+            info.Version ??= "none";
+            info.ReadyState ??= "Unknown";
+        }
+
+        // If registry said enabled but WMI didn't run, mark present
+        if (info.Enabled && !info.Present)
+        {
+            info.Present = true;
+            info.ReadyState ??= "Unknown";
         }
 
         return info;
     }
 
-    private static string? TryRunTpmtool()
+    private static bool? GetBool(ManagementObject obj, string propertyName)
     {
         try
         {
-            var systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.System);
-            var exe = Path.Combine(systemRoot, "tpmtool.exe");
-            if (!File.Exists(exe)) return null;
-
-            var run = ProcessHelper.RunCaptured(
-                exePath: exe,
-                arguments: "getdeviceinformation",
-                timeoutSeconds: 15,
-                stdoutCapBytes: 8192,
-                stderrCapBytes: 1024);
-
-            if (!run.Started || run.TimedOut) return null;
-            return run.Stdout;
+            var val = obj[propertyName];
+            if (val == null) return null;
+            return Convert.ToBoolean(val);
         }
         catch
         {
             return null;
         }
-    }
-
-    // Sample tpmtool output:
-    //   -TPM Present: True
-    //   -TPM Version: 2.0
-    //   -TPM Manufacturer ID: INTC
-    //   -TPM Manufacturer Full Name: Intel
-    //   -TPM Manufacturer Version: 403.1.0.0
-    //   -PPI Version: 1.3
-    //   -Is Initialized: True
-    //   -Ready For Storage: True
-    //   -Ready For Attestation: True
-    //   -Maintenance Task Complete: True
-    //   -TPM Spec Version: 1.38
-    private static void ParseTpmtoolOutput(string stdout, TpmInfo info)
-    {
-        var readyForStorage = false;
-        var readyForAttestation = false;
-
-        foreach (var rawLine in stdout.Split('\n'))
-        {
-            var line = rawLine.Trim().TrimStart('-').Trim();
-            var colonIdx = line.IndexOf(':');
-            if (colonIdx <= 0) continue;
-            var key = line.Substring(0, colonIdx).Trim();
-            var val = line.Substring(colonIdx + 1).Trim();
-
-            if (key.Equals("TPM Present", StringComparison.OrdinalIgnoreCase))
-            {
-                info.Present = val.Equals("True", StringComparison.OrdinalIgnoreCase);
-            }
-            else if (key.Equals("TPM Version", StringComparison.OrdinalIgnoreCase))
-            {
-                info.Version = val;
-            }
-            else if (key.Equals("TPM Spec Version", StringComparison.OrdinalIgnoreCase))
-            {
-                info.SpecVersion = val;
-            }
-            else if (key.Equals("TPM Manufacturer ID", StringComparison.OrdinalIgnoreCase))
-            {
-                info.Manufacturer = val;
-            }
-            else if (key.Equals("Ready For Storage", StringComparison.OrdinalIgnoreCase))
-            {
-                readyForStorage = val.Equals("True", StringComparison.OrdinalIgnoreCase);
-            }
-            else if (key.Equals("Ready For Attestation", StringComparison.OrdinalIgnoreCase))
-            {
-                readyForAttestation = val.Equals("True", StringComparison.OrdinalIgnoreCase);
-            }
-        }
-
-        info.ReadyState = info.Present
-            ? (readyForStorage && readyForAttestation ? "Ready" : "NotReady")
-            : "Unknown";
-
-        if (info.Present && !info.Enabled)
-            info.Enabled = true;
     }
 
     private sealed class TpmInfo

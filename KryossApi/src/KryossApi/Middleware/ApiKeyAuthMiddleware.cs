@@ -121,10 +121,18 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
                 return;
             }
 
-            if (!await ValidateHmac(httpReq, context, org.ApiSecret, signature, timestampStr, logger))
+            var hmacResult = await ValidateHmac(httpReq, context, org.ApiSecret, signature, timestampStr, logger);
+            if (hmacResult != HmacValidationResult.Valid)
             {
+                var errorMsg = hmacResult switch
+                {
+                    HmacValidationResult.TimestampMissing => "Missing or invalid X-Timestamp",
+                    HmacValidationResult.TimestampSkew => "HMAC timestamp skew — check agent clock sync",
+                    HmacValidationResult.SignatureMismatch => "Invalid HMAC signature",
+                    _ => "HMAC validation failed"
+                };
                 var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
-                await resp.WriteAsJsonAsync(new { error = "Invalid HMAC signature" });
+                await resp.WriteAsJsonAsync(new { error = errorMsg });
                 context.GetInvocationResult().Value = resp;
                 return;
             }
@@ -167,23 +175,24 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
     /// the raw bytes in FunctionContext.Items["RequestBodyBytes"] so downstream
     /// functions can deserialize without re-reading the (possibly consumed) stream.
     /// </summary>
-    private static async Task<bool> ValidateHmac(HttpRequestData req, FunctionContext context,
+    private static async Task<HmacValidationResult> ValidateHmac(HttpRequestData req, FunctionContext context,
         string secret, string signature, string? timestampStr, ILogger logger)
     {
         // Validate timestamp (anti-replay)
         if (!long.TryParse(timestampStr, out var timestamp))
         {
             logger.LogWarning("HMAC validation failed: missing or invalid X-Timestamp");
-            return false;
+            return HmacValidationResult.TimestampMissing;
         }
 
         var requestTime = DateTimeOffset.FromUnixTimeSeconds(timestamp);
         var skew = DateTimeOffset.UtcNow - requestTime;
         if (Math.Abs(skew.TotalMinutes) > MaxTimestampSkew.TotalMinutes)
         {
-            logger.LogWarning("HMAC validation failed: timestamp skew {Skew}min exceeds max {Max}min",
-                Math.Abs(skew.TotalMinutes), MaxTimestampSkew.TotalMinutes);
-            return false;
+            logger.LogWarning("HMAC validation failed: timestamp skew {Skew:F1}min exceeds max {Max}min (agent clock: {AgentTime:O}, server: {ServerTime:O})",
+                Math.Abs(skew.TotalMinutes), MaxTimestampSkew.TotalMinutes,
+                requestTime, DateTimeOffset.UtcNow);
+            return HmacValidationResult.TimestampSkew;
         }
 
         // Build signing string: timestamp + method + path + agentId + bodyHash
@@ -228,12 +237,20 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
 
         if (!isValid)
         {
-            // MED-03: Do not log partial signatures — they leak HMAC material.
-            // Only log request metadata for debugging.
-            logger.LogWarning("HMAC mismatch for {Method} {Path} (body {Len} bytes)",
-                method, path, bodyBytes.Length);
+            // Log signing string components (NOT the signatures themselves — MED-03)
+            // to help diagnose agent/server mismatches.
+            logger.LogWarning("HMAC mismatch for {Method} {Path} agentId={AgentId} body={Len}B ts={Ts}",
+                method, path, agentIdForHmac, bodyBytes.Length, timestampStr);
         }
 
-        return isValid;
+        return isValid ? HmacValidationResult.Valid : HmacValidationResult.SignatureMismatch;
     }
+}
+
+internal enum HmacValidationResult
+{
+    Valid,
+    TimestampMissing,
+    TimestampSkew,
+    SignatureMismatch
 }
