@@ -29,16 +29,19 @@ const FRAMEWORKS = [
   { value: 'PCI-DSS', label: 'PCI-DSS' },
 ] as const;
 
-// NOTE: 'exec-onepager' is an org-level report only. When targetType is 'run'
-// we filter it out of the dropdown so the UI never offers an invalid option.
+// NOTE: org-only report types are hidden when rendering against a single run.
 const REPORT_TYPES = [
-  { value: 'c-level',           label: 'C-Level',                orgOnly: true  },
-  { value: 'technical',         label: 'Technical',              orgOnly: false },
-  { value: 'executive',         label: 'Executive',              orgOnly: false },
-  { value: 'presales',          label: 'Presales (detailed)',    orgOnly: false },
-  { value: 'presales-opener',   label: 'Presales Opener',        orgOnly: true  },
-  { value: 'exec-onepager',     label: 'Executive One-Pager',    orgOnly: true  },
-  { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)', orgOnly: true  },
+  { value: 'c-level',           label: 'C-Level',              orgOnly: true  },
+  { value: 'technical',         label: 'Technical',             orgOnly: false },
+  { value: 'executive',         label: 'Executive',             orgOnly: false },
+  { value: 'preventas',         label: 'Preventas',             orgOnly: true  },
+  { value: 'exec-onepager',     label: 'Executive One-Pager',   orgOnly: true  },
+  { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)',orgOnly: true  },
+] as const;
+
+const TONES = [
+  { value: 'opener',   label: 'Opener (2 páginas)' },
+  { value: 'detailed', label: 'Detailed (6 páginas)' },
 ] as const;
 
 const LANGUAGES = [
@@ -52,6 +55,7 @@ function buildApiPath(
   reportType: string,
   framework: string,
   lang: string,
+  tone: string,
 ): string {
   const base =
     targetType === 'run'
@@ -61,6 +65,7 @@ function buildApiPath(
   params.set('type', reportType);
   if (framework !== 'all') params.set('framework', framework);
   if (lang !== 'en') params.set('lang', lang);
+  if (reportType === 'preventas') params.set('tone', tone);
   return `${base}?${params}`;
 }
 
@@ -96,6 +101,7 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
   const [framework, setFramework] = useState('all');
   const [reportType, setReportType] = useState('technical');
   const [lang, setLang] = useState<'en' | 'es'>('en');
+  const [tone, setTone] = useState<'opener' | 'detailed'>('opener');
   const [loading, setLoading] = useState(false);
 
   // Hide org-only report types when rendering against a run.
@@ -103,7 +109,7 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
     (rt) => !rt.orgOnly || targetType === 'org',
   );
 
-  const apiPath = buildApiPath(targetType, targetId, reportType, framework, lang);
+  const apiPath = buildApiPath(targetType, targetId, reportType, framework, lang, tone);
 
   const handleOpenTab = async () => {
     // Open window IMMEDIATELY on user click (before async fetch)
@@ -180,6 +186,19 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
             ))}
           </SelectContent>
         </Select>
+
+        {reportType === 'preventas' && (
+          <Select value={tone} onValueChange={(v) => setTone(v as 'opener' | 'detailed')}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Tone" />
+            </SelectTrigger>
+            <SelectContent>
+              {TONES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select value={lang} onValueChange={(v) => setLang(v as 'en' | 'es')}>
           <SelectTrigger className="w-[120px]">

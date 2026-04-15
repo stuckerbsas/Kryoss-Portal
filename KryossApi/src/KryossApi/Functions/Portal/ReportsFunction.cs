@@ -92,6 +92,8 @@ public class ReportsFunction
         var frameworkCode = query["framework"]; // NIST, CIS, HIPAA, ISO27001, PCI-DSS
         var lang = (query["lang"] ?? "en").ToLowerInvariant();
         if (lang != "es") lang = "en";
+        var tone = query["tone"]?.ToLowerInvariant();
+        if (tone != "opener" && tone != "detailed") tone = "opener";
 
         // HIGH-01: Verify the user has access to this organization
         if (!_user.IsAdmin)
@@ -109,7 +111,7 @@ public class ReportsFunction
 
         try
         {
-            var html = await _reports.GenerateOrgReportAsync(orgId, reportType, frameworkCode, lang);
+            var html = await _reports.GenerateOrgReportAsync(orgId, reportType, frameworkCode, lang, tone);
 
             await _actlog.LogAsync("INFO", "reports", "org_report.generated",
                 $"Generated {reportType} org report for {orgId}",

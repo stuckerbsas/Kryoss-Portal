@@ -8,7 +8,7 @@ namespace KryossApi.Services;
 public interface IReportService
 {
     Task<string> GenerateHtmlReportAsync(Guid runId, string reportType = "technical", string? frameworkCode = null, string lang = "en");
-    Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null, string lang = "en");
+    Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null, string lang = "en", string? tone = null);
 }
 
 /// <summary>
@@ -555,7 +555,7 @@ public class ReportService : IReportService
     // ORG-LEVEL CONSOLIDATED REPORT
     // ==========================================================================
 
-    public async Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null, string lang = "en")
+    public async Task<string> GenerateOrgReportAsync(Guid orgId, string reportType = "executive", string? frameworkCode = null, string lang = "en", string? tone = null)
     {
         var org = await _db.Organizations
             .Include(o => o.Franchise)
@@ -747,6 +747,9 @@ public class ReportService : IReportService
         return reportType switch
         {
             "technical" => BuildOrgTechnicalReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
+            "preventas" => tone == "detailed"
+                ? BuildOrgPresalesReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo)
+                : BuildOrgPresalesOpenerReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
             "presales" => BuildOrgPresalesReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo),
             "exec-onepager" => BuildOrgExecutiveOnePager(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
             "presales-opener" => BuildOrgPresalesOpenerReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
