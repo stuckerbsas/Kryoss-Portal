@@ -746,7 +746,7 @@ public class ReportService : IReportService
 
         return reportType switch
         {
-            "technical" => BuildOrgTechnicalReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo),
+            "technical" => BuildOrgTechnicalReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
             "presales" => BuildOrgPresalesReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo),
             "exec-onepager" => BuildOrgExecutiveOnePager(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
             "presales-opener" => BuildOrgPresalesOpenerReport(org, runs, allResults, branding, frameworkName, frameworkScores, hygieneScan, orgEnrichment, userInfo, lang),
@@ -1103,324 +1103,56 @@ public class ReportService : IReportService
     private static string BuildOrgTechnicalReport(Organization org, List<AssessmentRun> runs,
         List<OrgControlResult> allResults, ReportBranding brand, string? frameworkName,
         List<FrameworkScoreDto> frameworkScores, HygieneScanDto? hygiene, OrgEnrichment enrichment,
-        ReportUserInfo userInfo)
+        ReportUserInfo userInfo, string lang = "en")
     {
-        var reportTitle = frameworkName != null ? $"{frameworkName} Technical Assessment" : "Technical Assessment";
+        var es = lang == "es";
         var sb = new StringBuilder();
         var totalMachines = runs.Count;
-        decimal avgScore;
-        int totalPass, totalWarn, totalFail;
-        if (frameworkName != null && allResults.Count > 0)
-        {
-            totalPass = allResults.Count(r => r.Status == "pass");
-            totalWarn = allResults.Count(r => r.Status == "warn");
-            totalFail = allResults.Count(r => r.Status == "fail");
-            var total = totalPass + totalWarn + totalFail;
-            avgScore = total > 0 ? Math.Round((decimal)totalPass / total * 100, 1) : 0;
-        }
-        else
-        {
-            avgScore = Math.Round(runs.Average(r => r.GlobalScore ?? 0), 1);
-            totalPass = (int)runs.Sum(r => r.PassCount ?? 0);
-            totalWarn = (int)runs.Sum(r => r.WarnCount ?? 0);
-            totalFail = (int)runs.Sum(r => r.FailCount ?? 0);
-        }
-        var orgGrade = GetGrade(avgScore);
-        var scanDate = runs.Max(r => r.CompletedAt ?? r.StartedAt);
+        var reportTitle = frameworkName != null
+            ? $"{frameworkName} {(es ? "Evaluación Técnica" : "Technical Assessment")}"
+            : (es ? "Evaluación Técnica" : "Technical Assessment");
 
         AppendHtmlHead(sb, $"{reportTitle} - {org.Name}", brand, isOrgReport: true,
-            user: userInfo, detail: $"{totalMachines} devices · {org.Name}");
+            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} · {org.Name}");
 
-        // Cover
+        // ---- COVER ----
         sb.AppendLine("<div class='cover'>");
         AppendRibbonSvg(sb);
         sb.AppendLine("<div class='cover-content'>");
         if (brand.LogoUrl is not null)
             sb.AppendLine($"<img src='{HtmlEncode(brand.LogoUrl)}' class='logo' alt='{HtmlEncode(brand.CompanyName)}'>");
-        sb.AppendLine($"<p class='eyebrow'>{(frameworkName != null ? HtmlEncode(frameworkName.ToUpperInvariant()) + " " : "")}TECHNICAL ASSESSMENT</p>");
+        sb.AppendLine($"<p class='eyebrow'>{(es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL")}</p>");
         sb.AppendLine($"<h1>{HtmlEncode(reportTitle)}</h1>");
         sb.AppendLine($"<h2>{HtmlEncode(org.Name)}</h2>");
-        sb.AppendLine($"<p class='meta'>{scanDate:MMMM dd, yyyy} &mdash; {totalMachines} devices</p>");
-        sb.AppendLine($"<div class='grade-badge grade-{orgGrade.Replace("+", "plus")}'>{HtmlEncode(orgGrade)}</div>");
-        sb.AppendLine($"<p class='score'>{avgScore:F1}%</p>");
+        var scanDate = runs.Count > 0 ? runs.Max(r => r.CompletedAt ?? r.StartedAt) : DateTime.UtcNow;
+        sb.AppendLine($"<p class='meta'>{(es ? scanDate.ToString("dd 'de' MMMM 'de' yyyy") : scanDate.ToString("MMMM dd, yyyy"))} — {totalMachines} {(es ? "dispositivos" : "devices")}</p>");
         sb.AppendLine("</div></div>");
 
-        // Framework compliance page
-        if (frameworkScores.Count > 0)
-        {
-            sb.AppendLine("<div class='page'>");
-            AppendPageHeader(sb, "Framework Compliance", brand);
-            sb.AppendLine("<div class='pb'>");
-            AppendNormalizedFrameworkBars(sb, frameworkScores, runs.Count,
-                "P / F = average passing / failing controls per machine");
-            sb.AppendLine("</div></div>");
-        }
-
-        // Fleet Overview with hardware details
+        // ---- ASSET MATRIX (paginates internally) ----
         sb.AppendLine("<div class='page'>");
-        AppendPageHeader(sb, "Fleet Overview", brand);
+        AppendPageHeader(sb, es ? "Matriz de Activos" : "Asset Matrix", brand,
+            es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL");
         sb.AppendLine("<div class='pb'>");
-
-        // Hardware summary stats
-        var tpmCount = runs.Count(r => r.Machine.TpmPresent == true);
-        var secBootCount = runs.Count(r => r.Machine.SecureBoot == true);
-        var bitlockerCount = runs.Count(r => r.Machine.Bitlocker == true);
-        var domainJoined = runs.Count(r => r.Machine.DomainStatus != null && r.Machine.DomainStatus != "Workgroup");
-
-        sb.AppendLine("<h3>Hardware Security Summary</h3>");
-        sb.AppendLine("<div class='summary-grid'>");
-        sb.AppendLine($"<div class='stat {(tpmCount == totalMachines ? "pass-stat" : tpmCount > 0 ? "warn-stat" : "fail-stat")}'><span class='stat-value'>{tpmCount}/{totalMachines}</span><span class='stat-label'>TPM Present</span></div>");
-        sb.AppendLine($"<div class='stat {(secBootCount == totalMachines ? "pass-stat" : secBootCount > 0 ? "warn-stat" : "fail-stat")}'><span class='stat-value'>{secBootCount}/{totalMachines}</span><span class='stat-label'>Secure Boot</span></div>");
-        sb.AppendLine($"<div class='stat {(bitlockerCount == totalMachines ? "pass-stat" : bitlockerCount > 0 ? "warn-stat" : "fail-stat")}'><span class='stat-value'>{bitlockerCount}/{totalMachines}</span><span class='stat-label'>BitLocker</span></div>");
-        sb.AppendLine($"<div class='stat'><span class='stat-value'>{domainJoined}/{totalMachines}</span><span class='stat-label'>Domain Joined</span></div>");
-        sb.AppendLine("</div>");
-
-        sb.AppendLine("<table class='fleet-table'>");
-        sb.AppendLine("<tr><th>Hostname</th><th>OS</th><th>CPU</th><th>RAM</th><th>TPM</th><th>BitLocker</th><th>Score</th><th>Grade</th></tr>");
-        foreach (var run in runs.OrderByDescending(r => r.GlobalScore))
-        {
-            var rowClass = (run.GlobalScore ?? 0) >= 80 ? "pass" : (run.GlobalScore ?? 0) >= 60 ? "warn" : "fail";
-            sb.AppendLine($"<tr class='{rowClass}'>");
-            sb.AppendLine($"<td class='hostname'>{HtmlEncode(run.Machine.Hostname)}</td>");
-            sb.AppendLine($"<td>{HtmlEncode(run.Machine.OsName ?? "N/A")}</td>");
-            sb.AppendLine($"<td>{HtmlEncode(TruncateCpu(run.Machine.CpuName))}</td>");
-            sb.AppendLine($"<td>{run.Machine.RamGb ?? 0} GB</td>");
-            sb.AppendLine($"<td>{(run.Machine.TpmPresent == true ? "Yes" : "No")}</td>");
-            sb.AppendLine($"<td>{(run.Machine.Bitlocker == true ? "Yes" : "No")}</td>");
-            sb.AppendLine($"<td><strong>{run.GlobalScore:F1}%</strong></td>");
-            sb.AppendLine($"<td><span class='grade-mini grade-{run.Grade?.Replace("+", "plus")}'>{HtmlEncode(run.Grade ?? "N/A")}</span></td>");
-            sb.AppendLine("</tr>");
-        }
-        sb.AppendLine("</table>");
+        AppendAssetMatrix(sb, runs, brand, lang);
         sb.AppendLine("</div></div>");
 
-        // Disk inventory page
-        if (enrichment.Disks.Count > 0)
-        {
-            sb.AppendLine("<div class='page'>");
-            AppendPageHeader(sb, "Disk Inventory", brand);
-            sb.AppendLine("<div class='pb'>");
+        // ---- TOP 10 CRITICAL FINDINGS ----
+        sb.AppendLine("<div class='page'>");
+        AppendPageHeader(sb, es ? "Hallazgos Críticos" : "Critical Findings", brand,
+            es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL");
+        sb.AppendLine("<div class='pb'>");
+        AppendTop10CriticalFindings(sb, allResults, lang);
+        sb.AppendLine("</div></div>");
 
-            // Group disks by machine
-            var disksByMachine = enrichment.Disks.GroupBy(d => d.MachineId).ToList();
-            var machineNameMap = runs.ToDictionary(r => r.MachineId, r => r.Machine.Hostname);
+        // ---- THE 6 IRONS HARDENING AUDIT ----
+        sb.AppendLine("<div class='page'>");
+        AppendPageHeader(sb, es ? "Auditoría de Hardening" : "Hardening Audit", brand,
+            es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL");
+        sb.AppendLine("<div class='pb'>");
+        AppendSixIronsHardeningAudit(sb, runs, allResults, hygiene, lang);
+        sb.AppendLine("</div></div>");
 
-            sb.AppendLine("<table class='results-table'>");
-            sb.AppendLine("<tr><th>Machine</th><th>Drive</th><th>Type</th><th>Size</th><th>Free</th><th>FS</th><th>Usage</th></tr>");
-            foreach (var group in disksByMachine)
-            {
-                var hostname = machineNameMap.GetValueOrDefault(group.Key, "Unknown");
-                foreach (var d in group)
-                {
-                    var usedPct = d.TotalGb > 0 ? Math.Round((1.0 - (double)(d.FreeGb ?? 0) / d.TotalGb.Value) * 100) : 0;
-                    var rowClass = usedPct > 90 ? "fail" : usedPct > 75 ? "warn" : "pass";
-                    sb.AppendLine($"<tr class='{rowClass}'>");
-                    sb.AppendLine($"<td class='hostname'>{HtmlEncode(hostname)}</td>");
-                    sb.AppendLine($"<td>{HtmlEncode(d.DriveLetter)}</td>");
-                    sb.AppendLine($"<td>{HtmlEncode(d.DiskType ?? "N/A")}</td>");
-                    sb.AppendLine($"<td class='num'>{d.TotalGb ?? 0} GB</td>");
-                    sb.AppendLine($"<td class='num'>{d.FreeGb ?? 0:F1} GB</td>");
-                    sb.AppendLine($"<td>{HtmlEncode(d.FileSystem ?? "N/A")}</td>");
-                    sb.AppendLine($"<td class='num'><strong>{usedPct:F0}%</strong></td>");
-                    sb.AppendLine("</tr>");
-                }
-            }
-            sb.AppendLine("</table>");
-            sb.AppendLine("</div></div>");
-        }
-
-        // Port scan page
-        if (enrichment.Ports.Count > 0)
-        {
-            sb.AppendLine("<div class='page'>");
-            AppendPageHeader(sb, "Network Port Scan", brand);
-            sb.AppendLine("<div class='pb'>");
-
-            var riskyPorts = enrichment.Ports.Where(p => p.Risk != null).ToList();
-            var machinesWithRiskyPorts = riskyPorts.Select(p => p.MachineId).Distinct().Count();
-
-            sb.AppendLine("<div class='summary-grid'>");
-            sb.AppendLine($"<div class='stat'><span class='stat-value'>{enrichment.Ports.Count}</span><span class='stat-label'>Total Open Ports</span></div>");
-            sb.AppendLine($"<div class='stat {(riskyPorts.Count > 0 ? "fail-stat" : "pass-stat")}'><span class='stat-value'>{riskyPorts.Count}</span><span class='stat-label'>Risky Ports</span></div>");
-            sb.AppendLine($"<div class='stat'><span class='stat-value'>{machinesWithRiskyPorts}</span><span class='stat-label'>Devices with Risky Ports</span></div>");
-            sb.AppendLine("</div>");
-
-            if (riskyPorts.Count > 0)
-            {
-                sb.AppendLine("<h3>Risky Ports by Machine</h3>");
-                var machineNameMap = runs.ToDictionary(r => r.MachineId, r => r.Machine.Hostname);
-                sb.AppendLine("<table class='results-table'>");
-                sb.AppendLine("<tr><th>Machine</th><th>Port</th><th>Protocol</th><th>Service</th><th>Risk</th></tr>");
-                foreach (var p in riskyPorts.Take(50))
-                {
-                    var hostname = machineNameMap.GetValueOrDefault(p.MachineId, "Unknown");
-                    sb.AppendLine("<tr class='fail'>");
-                    sb.AppendLine($"<td class='hostname'>{HtmlEncode(hostname)}</td>");
-                    sb.AppendLine($"<td>{p.Port}</td>");
-                    sb.AppendLine($"<td>{HtmlEncode(p.Protocol)}</td>");
-                    sb.AppendLine($"<td>{HtmlEncode(p.Service ?? "Unknown")}</td>");
-                    sb.AppendLine($"<td><span class='severity high'>{HtmlEncode(p.Risk ?? "Risky")}</span></td>");
-                    sb.AppendLine("</tr>");
-                }
-                sb.AppendLine("</table>");
-                if (riskyPorts.Count > 50)
-                    sb.AppendLine($"<p class='cat-summary'>Showing 50 of {riskyPorts.Count} risky ports.</p>");
-            }
-
-            sb.AppendLine("</div></div>");
-        }
-
-        // Threat detections page
-        if (enrichment.Threats.Count > 0)
-        {
-            sb.AppendLine("<div class='page'>");
-            AppendPageHeader(sb, "Threat Detections", brand);
-            sb.AppendLine("<div class='pb'>");
-
-            var threatCats = enrichment.Threats
-                .GroupBy(t => t.Category)
-                .Select(g => new { Category = g.Key, Count = g.Count(), MachineCount = g.Select(x => x.MachineId).Distinct().Count() })
-                .OrderByDescending(x => x.Count)
-                .ToList();
-
-            sb.AppendLine($"<div class='insight-box fail-box'><p>Detected <strong>{enrichment.Threats.Count}</strong> threat signatures across <strong>{threatCats.Count}</strong> categories.</p></div>");
-
-            sb.AppendLine("<h3>Threats by Category</h3>");
-            sb.AppendLine("<table class='results-table'>");
-            sb.AppendLine("<tr><th>Category</th><th>Signatures</th><th>Devices</th></tr>");
-            foreach (var tc in threatCats)
-            {
-                sb.AppendLine("<tr class='fail'>");
-                sb.AppendLine($"<td>{HtmlEncode(tc.Category)}</td>");
-                sb.AppendLine($"<td class='num'>{tc.Count}</td>");
-                sb.AppendLine($"<td class='num'>{tc.MachineCount}</td>");
-                sb.AppendLine("</tr>");
-            }
-            sb.AppendLine("</table>");
-
-            // Detailed threat list
-            var machineNameMap2 = runs.ToDictionary(r => r.MachineId, r => r.Machine.Hostname);
-            sb.AppendLine("<h3>Detailed Findings</h3>");
-            sb.AppendLine("<table class='results-table'>");
-            sb.AppendLine("<tr><th>Machine</th><th>Threat</th><th>Category</th><th>Severity</th><th>Vector</th></tr>");
-            foreach (var t in enrichment.Threats.Take(50))
-            {
-                var hostname = machineNameMap2.GetValueOrDefault(t.MachineId, "Unknown");
-                sb.AppendLine("<tr class='fail'>");
-                sb.AppendLine($"<td class='hostname'>{HtmlEncode(hostname)}</td>");
-                sb.AppendLine($"<td>{HtmlEncode(t.ThreatName)}</td>");
-                sb.AppendLine($"<td>{HtmlEncode(t.Category)}</td>");
-                sb.AppendLine($"<td><span class='severity {HtmlEncode(t.Severity)}'>{HtmlEncode(t.Severity)}</span></td>");
-                sb.AppendLine($"<td>{HtmlEncode(t.Vector)}</td>");
-                sb.AppendLine("</tr>");
-            }
-            sb.AppendLine("</table>");
-            if (enrichment.Threats.Count > 50)
-                sb.AppendLine($"<p class='cat-summary'>Showing 50 of {enrichment.Threats.Count} threats.</p>");
-
-            sb.AppendLine("</div></div>");
-        }
-
-        // AD Hygiene page
-        if (hygiene != null)
-        {
-            sb.AppendLine("<div class='page'>");
-            AppendPageHeader(sb, "Active Directory Hygiene", brand);
-            sb.AppendLine("<div class='pb'>");
-            AppendHygieneSummary(sb, hygiene);
-
-            // Detailed findings table
-            if (hygiene.Findings.Count > 0)
-            {
-                sb.AppendLine("<h3>Detailed Findings</h3>");
-                sb.AppendLine("<table class='results-table'>");
-                sb.AppendLine("<tr><th>Name</th><th>Type</th><th>Status</th><th>Days Inactive</th><th>Detail</th></tr>");
-                foreach (var f in hygiene.Findings.Take(50))
-                {
-                    var rowClass = f.DaysInactive > 365 ? "fail" : f.DaysInactive > 90 ? "warn" : "pass";
-                    sb.AppendLine($"<tr class='{rowClass}'>");
-                    sb.AppendLine($"<td>{HtmlEncode(f.Name)}</td>");
-                    sb.AppendLine($"<td>{HtmlEncode(f.ObjectType)}</td>");
-                    sb.AppendLine($"<td><span class='severity {(f.DaysInactive > 365 ? "critical" : f.DaysInactive > 90 ? "medium" : "low")}'>{HtmlEncode(f.Status)}</span></td>");
-                    sb.AppendLine($"<td class='num'>{f.DaysInactive}</td>");
-                    sb.AppendLine($"<td>{HtmlEncode(f.Detail ?? "\u2014")}</td>");
-                    sb.AppendLine("</tr>");
-                }
-                sb.AppendLine("</table>");
-                if (hygiene.Findings.Count > 50)
-                    sb.AppendLine($"<p class='cat-summary'>Showing 50 of {hygiene.Findings.Count} findings.</p>");
-            }
-            sb.AppendLine("</div></div>");
-        }
-
-        // Control details by category
-        var controlSummary = allResults
-            .GroupBy(r => new { r.ControlId, r.Name, r.Category, r.Severity })
-            .Select(g => new
-            {
-                g.Key.ControlId,
-                g.Key.Name,
-                g.Key.Category,
-                g.Key.Severity,
-                PassCount = g.Count(x => x.Status == "pass"),
-                WarnCount = g.Count(x => x.Status == "warn"),
-                FailCount = g.Count(x => x.Status == "fail"),
-                Remediation = g.Where(x => x.Status == "fail").Select(x => x.Remediation).FirstOrDefault()
-            })
-            .OrderBy(x => x.Category)
-            .ThenBy(x => x.ControlId)
-            .ToList();
-
-        var categories = controlSummary.GroupBy(c => c.Category).OrderBy(g => g.Key);
-        foreach (var cat in categories)
-        {
-            sb.AppendLine("<div class='page'>");
-            AppendPageHeader(sb, cat.Key, brand);
-            sb.AppendLine("<div class='pb'>");
-
-            var catPass = cat.Sum(c => c.PassCount);
-            var catWarn = cat.Sum(c => c.WarnCount);
-            var catFail = cat.Sum(c => c.FailCount);
-            var catTotal = catPass + catWarn + catFail;
-            var catPct = catTotal > 0 ? Math.Round((double)catPass / catTotal * 100) : 0;
-
-            sb.AppendLine($"<div class='cat-header'>");
-            sb.AppendLine($"<span class='cat-summary'>Category compliance: <strong>{catPct}%</strong> ({catPass}/{catTotal} checks passed across {totalMachines} devices)</span>");
-            sb.AppendLine($"<div class='cat-bar'>");
-            if (catPass > 0) sb.AppendLine($"<div class='cat-bar-pass' style='width:{(double)catPass / catTotal * 100}%'></div>");
-            if (catWarn > 0) sb.AppendLine($"<div class='cat-bar-warn' style='width:{(double)catWarn / catTotal * 100}%'></div>");
-            if (catFail > 0) sb.AppendLine($"<div class='cat-bar-fail' style='width:{(double)catFail / catTotal * 100}%'></div>");
-            sb.AppendLine("</div></div>");
-
-            sb.AppendLine("<table class='results-table'>");
-            sb.AppendLine("<tr><th>ID</th><th>Control</th><th>Severity</th><th>Pass</th><th>Warn</th><th>Fail</th></tr>");
-
-            foreach (var ctrl in cat)
-            {
-                var dominant = ctrl.FailCount > 0 ? "fail" : ctrl.WarnCount > 0 ? "warn" : "pass";
-                sb.AppendLine($"<tr class='{dominant}'>");
-                sb.AppendLine($"<td>{HtmlEncode(ctrl.ControlId)}</td>");
-                sb.AppendLine($"<td>{HtmlEncode(ctrl.Name)}</td>");
-                sb.AppendLine($"<td><span class='severity {ctrl.Severity}'>{HtmlEncode(ctrl.Severity)}</span></td>");
-                sb.AppendLine($"<td class='num pass-cell'>{ctrl.PassCount}</td>");
-                sb.AppendLine($"<td class='num warn-cell'>{ctrl.WarnCount}</td>");
-                sb.AppendLine($"<td class='num fail-cell'>{ctrl.FailCount}</td>");
-                sb.AppendLine("</tr>");
-
-                if (ctrl.FailCount > 0 && ctrl.Remediation is not null)
-                {
-                    sb.AppendLine($"<tr class='remediation-row'><td colspan='6'>");
-                    sb.AppendLine($"<strong>Remediation:</strong> {HtmlEncode(ctrl.Remediation)}");
-                    sb.AppendLine("</td></tr>");
-                }
-            }
-            sb.AppendLine("</table></div></div>");
-        }
-
-        // Running footer on every .page is emitted by CSS in AppendHtmlHead,
-        // so no dedicated signoff page is needed here.
         sb.AppendLine("</body></html>");
-
         return sb.ToString();
     }
 
@@ -3696,6 +3428,218 @@ public class ReportService : IReportService
         sb.AppendLine("</table>");
         if (threats.Count > 20)
             sb.AppendLine($"<p class='cat-summary'>Showing 20 of {threats.Count} threats.</p>");
+    }
+
+    // ── Technical Level helpers ──────────────────────────────────────────
+
+    /// <summary>
+    /// Renders the Technical Level Block 1 Asset Matrix: one row per machine,
+    /// ordered worst-to-best by individual score. Paginates every ~25 rows.
+    /// </summary>
+    private static void AppendAssetMatrix(StringBuilder sb, List<AssessmentRun> runs, ReportBranding brand, string lang)
+    {
+        var es = lang == "es";
+
+        var sorted = runs
+            .OrderBy(r => r.GlobalScore ?? 100m)
+            .ThenBy(r => r.Machine.Hostname)
+            .ToList();
+
+        const int perPage = 25;
+        var total = sorted.Count;
+        for (int offset = 0; offset < total; offset += perPage)
+        {
+            if (offset > 0)
+            {
+                sb.AppendLine("</div></div>");
+                sb.AppendLine("<div class='page'>");
+                AppendPageHeader(sb, es ? "Matriz de Activos (continuación)" : "Asset Matrix (continued)", brand,
+                    es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL");
+                sb.AppendLine("<div class='pb'>");
+            }
+            sb.AppendLine("<table class='results-table' style='font-size:10px'>");
+            sb.AppendLine($"<tr><th style='width:28%'>{HtmlEncode(es ? "Hostname" : "Hostname")}</th><th style='width:20%'>{HtmlEncode(es ? "SO" : "OS Status")}</th><th style='width:14%' class='num'>{HtmlEncode(es ? "Críticos" : "Critical")}</th><th style='width:18%'>{HtmlEncode(es ? "Heartbeat" : "Heartbeat")}</th><th style='width:20%' class='num'>{HtmlEncode(es ? "Score" : "Score")}</th></tr>");
+
+            foreach (var r in sorted.Skip(offset).Take(perPage))
+            {
+                var m = r.Machine;
+                var osLabel = m.OsName ?? "—";
+                var osClass = (m.OsName?.Contains("2008") == true || m.OsName?.Contains("2003") == true ||
+                               m.OsName?.Contains("Windows 7") == true || m.OsName?.Contains("Vista") == true)
+                    ? "fail" : "";
+                var heartbeat = m.LastSeenAt.HasValue
+                    ? DescribeHeartbeat(DateTime.UtcNow - m.LastSeenAt.Value, es)
+                    : (es ? "nunca" : "never");
+                var heartbeatDays = m.LastSeenAt.HasValue
+                    ? (DateTime.UtcNow - m.LastSeenAt.Value).TotalDays
+                    : 999;
+                var hbClass = heartbeatDays > 7 ? "fail" : heartbeatDays > 3 ? "warn" : "";
+                var score = r.GlobalScore ?? 0;
+                var scoreClass = score < 60 ? "fail" : score < 85 ? "warn" : "pass";
+
+                sb.AppendLine($"<tr class='{scoreClass}'>");
+                sb.AppendLine($"<td style='font-family:monospace;font-weight:600'>{HtmlEncode(m.Hostname)}</td>");
+                sb.AppendLine($"<td class='{osClass}'>{HtmlEncode(osLabel)}</td>");
+                sb.AppendLine($"<td class='num'>{(r.FailCount ?? 0)}</td>");
+                sb.AppendLine($"<td class='{hbClass}'>{HtmlEncode(heartbeat)}</td>");
+                sb.AppendLine($"<td class='num'><strong>{score:0.#}</strong></td>");
+                sb.AppendLine("</tr>");
+            }
+            sb.AppendLine("</table>");
+        }
+    }
+
+    private static string DescribeHeartbeat(TimeSpan ago, bool es)
+    {
+        if (ago.TotalHours < 1) return es ? "hace minutos" : "minutes ago";
+        if (ago.TotalHours < 24) return es ? $"hace {(int)ago.TotalHours}h" : $"{(int)ago.TotalHours}h ago";
+        var days = (int)ago.TotalDays;
+        return es ? $"hace {days} días" : $"{days} days ago";
+    }
+
+    /// <summary>
+    /// Renders the Technical Level Block 2 Top 10 Critical Findings across the fleet.
+    /// </summary>
+    private static void AppendTop10CriticalFindings(StringBuilder sb, List<OrgControlResult> allResults, string lang)
+    {
+        var es = lang == "es";
+
+        var top = allResults
+            .Where(r => r.Status == "fail" && (r.Severity == "critical" || r.Severity == "high"))
+            .GroupBy(r => r.ControlId)
+            .Select(g => new
+            {
+                ControlId = g.Key,
+                Name = g.First().Name,
+                Severity = g.First().Severity,
+                Remediation = g.First().Remediation,
+                MachineCount = g.Select(x => x.RunId).Distinct().Count()
+            })
+            .OrderByDescending(x => x.Severity == "critical" ? 1 : 0)
+            .ThenByDescending(x => x.MachineCount)
+            .Take(10)
+            .ToList();
+
+        sb.AppendLine($"<h3>{HtmlEncode(es ? "Top 10 Hallazgos Críticos" : "Top 10 Critical Findings")}</h3>");
+
+        if (top.Count == 0)
+        {
+            sb.AppendLine($"<p style='color:#64748B;font-size:11px'>{HtmlEncode(es ? "No se detectaron hallazgos críticos o altos en este período." : "No critical or high-severity findings detected in this period.")}</p>");
+            return;
+        }
+
+        sb.AppendLine("<table class='results-table' style='font-size:10px'>");
+        sb.AppendLine($"<tr><th style='width:6%'>#</th><th style='width:32%'>{HtmlEncode(es ? "Hallazgo" : "Finding")}</th><th style='width:10%'>{HtmlEncode(es ? "Sev" : "Sev")}</th><th style='width:10%' class='num'>{HtmlEncode(es ? "Equipos" : "Hosts")}</th><th>{HtmlEncode(es ? "Remediación" : "Fix")}</th></tr>");
+        int n = 1;
+        foreach (var t in top)
+        {
+            var sev = t.Severity == "critical"
+                ? (es ? "CRÍTICO" : "CRITICAL")
+                : (es ? "ALTO"    : "HIGH");
+            var sevCls = t.Severity == "critical" ? "critical" : "high";
+            sb.AppendLine("<tr class='fail'>");
+            sb.AppendLine($"<td class='num'>{n++}</td>");
+            sb.AppendLine($"<td><strong>{HtmlEncode(t.Name)}</strong></td>");
+            sb.AppendLine($"<td><span class='severity {sevCls}'>{HtmlEncode(sev)}</span></td>");
+            sb.AppendLine($"<td class='num'>{t.MachineCount}</td>");
+            sb.AppendLine($"<td style='font-size:9px'>{HtmlEncode(t.Remediation ?? (es ? "(sin remediación documentada)" : "(no remediation documented)"))}</td>");
+            sb.AppendLine("</tr>");
+        }
+        sb.AppendLine("</table>");
+    }
+
+    /// <summary>
+    /// Renders the Technical Level Block 3 "Los 6 de Hierro" — 6 thematic
+    /// sub-lists of hygiene failures. Each shows affected hostnames, or a
+    /// green "all compliant" message if empty.
+    /// </summary>
+    private static void AppendSixIronsHardeningAudit(StringBuilder sb, List<AssessmentRun> runs,
+        List<OrgControlResult> allResults, HygieneScanDto? hygiene, string lang)
+    {
+        var es = lang == "es";
+
+        sb.AppendLine($"<h3>{HtmlEncode(es ? "Los 6 de Hierro — Auditoría de Hardening" : "The 6 Irons — Hardening Audit")}</h3>");
+
+        // 1. Cifrado — machines without BitLocker
+        var noBitlocker = runs.Where(r => r.Machine.Bitlocker != true).Select(r => r.Machine.Hostname).ToList();
+        AppendIronSection(sb, "🔒", es ? "Cifrado — sin BitLocker" : "Encryption — without BitLocker",
+            noBitlocker, es);
+
+        // 2. Protocolos — SMBv1 / NTLMv1 enabled
+        var runLookup = runs.ToDictionary(r => r.Id, r => r.Machine.Hostname);
+        var legacyProto = allResults
+            .Where(r => r.Status == "fail" && (
+                r.Name.Contains("SMBv1", StringComparison.OrdinalIgnoreCase) ||
+                r.Name.Contains("SMB1",  StringComparison.OrdinalIgnoreCase) ||
+                r.Name.Contains("NTLMv1", StringComparison.OrdinalIgnoreCase)))
+            .Select(r => runLookup.GetValueOrDefault(r.RunId, "unknown"))
+            .Distinct()
+            .ToList();
+        AppendIronSection(sb, "📡", es ? "Protocolos — SMBv1 / NTLMv1 habilitado" : "Protocols — SMBv1 / NTLMv1 enabled",
+            legacyProto, es);
+
+        // 3. Hardware — no TPM or TPM disabled
+        var noTpm = runs.Where(r => r.Machine.TpmPresent != true).Select(r => r.Machine.Hostname).ToList();
+        AppendIronSection(sb, "💾", es ? "Hardware — sin TPM o deshabilitado" : "Hardware — no TPM or disabled",
+            noTpm, es);
+
+        // 4. Identidad — no LAPS deployed
+        var noLapsHosts = hygiene?.Findings
+            .Where(f => f.Status == "NoLAPS")
+            .Select(f => f.Name)
+            .ToList() ?? new List<string>();
+        AppendIronSection(sb, "🔑", es ? "Identidad — sin LAPS" : "Identity — no LAPS",
+            noLapsHosts, es);
+
+        // 5. Higiene — Password Never Expires accounts (count, not hostnames)
+        var pwdNever = hygiene?.PwdNeverExpire ?? 0;
+        if (pwdNever == 0)
+        {
+            AppendIronCompliant(sb, "🧹", es ? "Higiene — contraseñas con expiración" : "Hygiene — password expiration");
+        }
+        else
+        {
+            sb.AppendLine("<div style='background:#FEF2F2;border:1px solid #FECACA;border-left:4px solid #991B1B;border-radius:4px;padding:10px 16px;margin-bottom:10px'>");
+            sb.AppendLine($"<div style='font-size:11px;font-weight:700;color:#1E293B'>🧹 {HtmlEncode(es ? "Higiene — cuentas con Password Never Expires" : "Hygiene — Password Never Expires accounts")}</div>");
+            sb.AppendLine($"<div style='font-size:10px;color:#7F1D1D;margin-top:4px'>{pwdNever} {HtmlEncode(es ? "cuentas" : "accounts")}</div>");
+            sb.AppendLine("</div>");
+        }
+
+        // 6. Endpoint — Defender disabled (detected via Defender-related control failures)
+        var noDefender = allResults
+            .Where(r => r.Status == "fail" && (
+                r.Name.Contains("Defender", StringComparison.OrdinalIgnoreCase) ||
+                r.Name.Contains("Antivirus", StringComparison.OrdinalIgnoreCase) ||
+                r.Name.Contains("Real-Time Protection", StringComparison.OrdinalIgnoreCase) ||
+                r.Name.Contains("AntiSpyware", StringComparison.OrdinalIgnoreCase)))
+            .Select(r => runLookup.GetValueOrDefault(r.RunId, "unknown"))
+            .Distinct()
+            .ToList();
+        AppendIronSection(sb, "🛡️", es ? "Endpoint — Defender deshabilitado" : "Endpoint — Defender disabled",
+            noDefender, es);
+    }
+
+    private static void AppendIronSection(StringBuilder sb, string icon, string title, List<string> hostnames, bool es)
+    {
+        if (hostnames.Count == 0)
+        {
+            AppendIronCompliant(sb, icon, title);
+            return;
+        }
+        sb.AppendLine("<div style='background:#FEF2F2;border:1px solid #FECACA;border-left:4px solid #991B1B;border-radius:4px;padding:10px 16px;margin-bottom:10px'>");
+        sb.AppendLine($"<div style='font-size:11px;font-weight:700;color:#1E293B;margin-bottom:6px'>{icon} {HtmlEncode(title)} — {hostnames.Count} {HtmlEncode(es ? "equipos" : "machines")}</div>");
+        sb.AppendLine($"<div style='font-size:9px;font-family:monospace;color:#7F1D1D;line-height:1.6'>{HtmlEncode(string.Join(" · ", hostnames.Take(40)))}");
+        if (hostnames.Count > 40)
+            sb.AppendLine($"<em> … {hostnames.Count - 40} {HtmlEncode(es ? "más" : "more")}</em>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div>");
+    }
+
+    private static void AppendIronCompliant(StringBuilder sb, string icon, string title)
+    {
+        sb.AppendLine("<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-left:4px solid #15803D;border-radius:4px;padding:8px 14px;margin-bottom:10px;font-size:10px;color:#166534'>");
+        sb.AppendLine($"<strong>{icon} {HtmlEncode(title)}</strong> — ✅ Todos los equipos cumplen");
+        sb.AppendLine("</div>");
     }
 
     private static void AppendDataDrivenRecommendations(StringBuilder sb, List<AssessmentRun> runs,
