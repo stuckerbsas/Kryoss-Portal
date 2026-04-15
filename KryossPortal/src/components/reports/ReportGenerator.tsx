@@ -32,10 +32,13 @@ const FRAMEWORKS = [
 // NOTE: 'exec-onepager' is an org-level report only. When targetType is 'run'
 // we filter it out of the dropdown so the UI never offers an invalid option.
 const REPORT_TYPES = [
-  { value: 'technical',     label: 'Technical',          orgOnly: false },
-  { value: 'executive',     label: 'Executive',          orgOnly: false },
-  { value: 'presales',      label: 'Presales',           orgOnly: false },
-  { value: 'exec-onepager', label: 'Executive One-Pager', orgOnly: true  },
+  { value: 'c-level',           label: 'C-Level',                orgOnly: true  },
+  { value: 'technical',         label: 'Technical',              orgOnly: false },
+  { value: 'executive',         label: 'Executive',              orgOnly: false },
+  { value: 'presales',          label: 'Presales (detailed)',    orgOnly: false },
+  { value: 'presales-opener',   label: 'Presales Opener',        orgOnly: true  },
+  { value: 'exec-onepager',     label: 'Executive One-Pager',    orgOnly: true  },
+  { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)', orgOnly: true  },
 ] as const;
 
 const LANGUAGES = [

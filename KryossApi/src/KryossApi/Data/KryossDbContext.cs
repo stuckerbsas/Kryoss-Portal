@@ -16,6 +16,7 @@ public class KryossDbContext : DbContext
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Actlog> Actlog => Set<Actlog>();
+    public DbSet<ExecutiveCta> ExecutiveCtas => Set<ExecutiveCta>();
 
     // Core
     public DbSet<Franchise> Franchises => Set<Franchise>();
@@ -107,6 +108,16 @@ public class KryossDbContext : DbContext
             e.ToTable("users");
             e.HasKey(x => x.Id);
             e.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        mb.Entity<ExecutiveCta>(e =>
+        {
+            e.ToTable("executive_ctas");
+            e.HasKey(x => x.Id);
+            e.HasQueryFilter(x => x.DeletedAt == null);
+            e.HasOne(x => x.Organization)
+             .WithMany()
+             .HasForeignKey(x => x.OrganizationId);
         });
 
         mb.Entity<Actlog>(e =>
