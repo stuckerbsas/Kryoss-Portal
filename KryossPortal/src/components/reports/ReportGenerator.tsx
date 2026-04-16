@@ -29,12 +29,13 @@ const FRAMEWORKS = [
 ] as const;
 
 const REPORT_TYPES = [
-  { value: 'c-level',           label: 'C-Level'              },
-  { value: 'technical',         label: 'Technical'             },
-  { value: 'executive',         label: 'Executive'             },
-  { value: 'preventas',         label: 'Preventas'             },
-  { value: 'exec-onepager',     label: 'Executive One-Pager'   },
-  { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)'},
+  { value: 'c-level',           label: 'C-Level'                          },
+  { value: 'technical',         label: 'Technical'                         },
+  { value: 'executive',         label: 'Executive'                         },
+  { value: 'preventas',         label: 'Preventas'                         },
+  { value: 'exec-onepager',     label: 'Executive One-Pager'               },
+  { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)'            },
+  { value: 'm365',              label: 'M365 Security & Copilot Readiness' },
 ] as const;
 
 const TONES = [

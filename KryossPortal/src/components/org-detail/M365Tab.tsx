@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CopilotReadinessTab } from './CopilotReadinessTab';
 import {
   Cloud,
   RefreshCw,
@@ -483,171 +485,184 @@ export function M365Tab() {
         </div>
       )}
 
-      {/* KPI cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Checks
-            </CardTitle>
-            <Shield className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summary.totalChecks}</div>
-          </CardContent>
-        </Card>
+      <Tabs defaultValue="security-checks">
+        <TabsList>
+          <TabsTrigger value="security-checks">Security Checks</TabsTrigger>
+          <TabsTrigger value="copilot-readiness">Copilot Readiness</TabsTrigger>
+        </TabsList>
 
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Passed
-            </CardTitle>
-            <ShieldCheck className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {summary.passed}
-            </div>
-          </CardContent>
-        </Card>
+        <TabsContent value="security-checks" className="space-y-6 mt-4">
+          {/* KPI cards */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total Checks
+                </CardTitle>
+                <Shield className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summary.totalChecks}</div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Failed
-            </CardTitle>
-            <ShieldX className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {summary.failed}
-            </div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Passed
+                </CardTitle>
+                <ShieldCheck className="h-4 w-4 text-green-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  {summary.passed}
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Warnings
-            </CardTitle>
-            <ShieldAlert className="h-4 w-4 text-amber-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
-              {summary.warned}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Failed
+                </CardTitle>
+                <ShieldX className="h-4 w-4 text-red-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">
+                  {summary.failed}
+                </div>
+              </CardContent>
+            </Card>
 
-      {/* Category breakdown — hide categories with zero actionable checks */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Category Breakdown</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {categories
-            .filter((cat) => {
-              const catFindings = findings.filter((f) => f.category === cat);
-              // Hide categories where ALL findings are "info" (no actionable data)
-              return catFindings.some((f) => f.status !== 'info');
-            })
-            .map((cat) => (
-              <CategoryBar
-                key={cat}
-                category={cat}
-                findings={findings.filter((f) => f.category === cat)}
-              />
-            ))}
-        </CardContent>
-      </Card>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3">
-        <select
-          className="rounded-md border px-3 py-1.5 text-sm"
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-        >
-          <option value="all">All Categories</option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>
-              {categoryLabels[cat] ?? cat}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className="rounded-md border px-3 py-1.5 text-sm"
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-        >
-          <option value="all">All Statuses</option>
-          <option value="pass">Pass</option>
-          <option value="fail">Fail</option>
-          <option value="warn">Warn</option>
-          <option value="info">Info</option>
-        </select>
-
-        <span className="text-sm text-muted-foreground">
-          {filteredFindings.length} of {findings.length} findings
-        </span>
-      </div>
-
-      {/* Findings table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="max-h-[600px] overflow-y-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Check ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="w-36">Category</TableHead>
-                  <TableHead className="w-24">Severity</TableHead>
-                  <TableHead className="w-20">Status</TableHead>
-                  <TableHead>Finding</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredFindings.map((f, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono text-xs">
-                      {f.checkId}
-                    </TableCell>
-                    <TableCell className="text-sm font-medium">
-                      <div className="flex items-center gap-2">
-                        {statusIcon(f.status)}
-                        {f.name}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {categoryLabels[f.category] ?? f.category}
-                    </TableCell>
-                    <TableCell>{severityBadge(f.severity)}</TableCell>
-                    <TableCell>{statusBadge(f.status)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-sm">
-                      <div className="truncate" title={f.finding ?? undefined}>
-                        {f.finding ?? '--'}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filteredFindings.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center text-muted-foreground py-8"
-                    >
-                      No findings match the selected filters
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Warnings
+                </CardTitle>
+                <ShieldAlert className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-amber-600">
+                  {summary.warned}
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Category breakdown — hide categories with zero actionable checks */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Category Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {categories
+                .filter((cat) => {
+                  const catFindings = findings.filter((f) => f.category === cat);
+                  // Hide categories where ALL findings are "info" (no actionable data)
+                  return catFindings.some((f) => f.status !== 'info');
+                })
+                .map((cat) => (
+                  <CategoryBar
+                    key={cat}
+                    category={cat}
+                    findings={findings.filter((f) => f.category === cat)}
+                  />
+                ))}
+            </CardContent>
+          </Card>
+
+          {/* Filters */}
+          <div className="flex items-center gap-3">
+            <select
+              className="rounded-md border px-3 py-1.5 text-sm"
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+            >
+              <option value="all">All Categories</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {categoryLabels[cat] ?? cat}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="rounded-md border px-3 py-1.5 text-sm"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="all">All Statuses</option>
+              <option value="pass">Pass</option>
+              <option value="fail">Fail</option>
+              <option value="warn">Warn</option>
+              <option value="info">Info</option>
+            </select>
+
+            <span className="text-sm text-muted-foreground">
+              {filteredFindings.length} of {findings.length} findings
+            </span>
+          </div>
+
+          {/* Findings table */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="max-h-[600px] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-24">Check ID</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="w-36">Category</TableHead>
+                      <TableHead className="w-24">Severity</TableHead>
+                      <TableHead className="w-20">Status</TableHead>
+                      <TableHead>Finding</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredFindings.map((f, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-mono text-xs">
+                          {f.checkId}
+                        </TableCell>
+                        <TableCell className="text-sm font-medium">
+                          <div className="flex items-center gap-2">
+                            {statusIcon(f.status)}
+                            {f.name}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {categoryLabels[f.category] ?? f.category}
+                        </TableCell>
+                        <TableCell>{severityBadge(f.severity)}</TableCell>
+                        <TableCell>{statusBadge(f.status)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-sm">
+                          <div className="truncate" title={f.finding ?? undefined}>
+                            {f.finding ?? '--'}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredFindings.length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="text-center text-muted-foreground py-8"
+                        >
+                          No findings match the selected filters
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="copilot-readiness" className="mt-4">
+          <CopilotReadinessTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
