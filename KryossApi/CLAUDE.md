@@ -40,8 +40,8 @@
 | GET | `/v2/dashboard/fleet` | `DashboardFunction.Fleet` | KPIs, grade distribution, aggregated frameworkScores per fleet |
 | GET | `/v2/dashboard/machine/{id}` | `DashboardFunction.Machine` | Per-machine dashboard |
 | GET/POST | `/v2/assessment-profiles` | `AssessmentProfilesFunction` | Assessment templates |
-| GET | `/v2/reports/{runId}?type=technical\|executive\|presales` | `ReportsFunction.Generate` | Per-run HTML report (Brand 2025) |
-| GET | `/v2/reports/org/{orgId}?type=...` | `ReportsFunction.GenerateOrg` | Org-wide report (Brand 2025) |
+| GET | `/v2/reports/{runId}` | `ReportsFunction.Generate` | **DEPRECATED** — returns HTTP 410 since 2026-04-15 |
+| GET | `/v2/reports/org/{orgId}?type=c-level\|technical\|executive\|preventas&tone=opener\|detailed&framework=...&lang=en\|es` | `ReportsFunction.GenerateOrg` | Org-wide HTML report (4-type baseline, Brand 2025, Big 4 light) |
 | GET | `/v2/inventory/hardware?organizationId=X` | `InventoryFunction.Hardware` | Org-level hardware inventory (all machines) |
 | GET | `/v2/inventory/software?organizationId=X` | `InventoryFunction.Software` | Org-level software inventory (600+ commercial app detection) |
 | GET | `/v2/hygiene?organizationId=X` | `HygieneFunction.Get` | AD hygiene findings for portal |

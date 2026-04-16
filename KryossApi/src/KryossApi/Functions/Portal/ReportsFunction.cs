@@ -28,54 +28,25 @@ public class ReportsFunction
         _user = user;
     }
 
+    /// <summary>
+    /// DEPRECATED since 2026-04-15. Per-run reports are replaced by org-level reports.
+    /// Returns HTTP 410 Gone with a migration message.
+    /// </summary>
     [Function("Reports_Generate")]
     public async Task<HttpResponseData> Generate(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/reports/{runId:guid}")] HttpRequestData req,
         Guid runId)
     {
-        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
-        var reportType = query["type"] ?? "technical"; // technical, executive, presales, exec-onepager
-        var frameworkCode = query["framework"]; // NIST, CIS, HIPAA, ISO27001, PCI-DSS
-        var lang = (query["lang"] ?? "en").ToLowerInvariant();
-        if (lang != "es") lang = "en";
-
-        // HIGH-01: Verify the run belongs to the authenticated user's org/franchise
-        if (!_user.IsAdmin)
+        _ = runId;
+        var response = req.CreateResponse(HttpStatusCode.Gone);
+        await response.WriteAsJsonAsync(new
         {
-            var runOrgId = await _db.AssessmentRuns
-                .Where(r => r.Id == runId)
-                .Join(_db.Machines, r => r.MachineId, m => m.Id, (r, m) => m.OrganizationId)
-                .FirstOrDefaultAsync();
-            var hasAccess = (_user.OrganizationId.HasValue && runOrgId == _user.OrganizationId.Value)
-                || (_user.FranchiseId.HasValue && await _db.Organizations
-                    .AnyAsync(o => o.Id == runOrgId && o.FranchiseId == _user.FranchiseId.Value));
-            if (!hasAccess)
-            {
-                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
-                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
-                return forbidden;
-            }
-        }
-
-        try
-        {
-            var html = await _reports.GenerateHtmlReportAsync(runId, reportType, frameworkCode, lang);
-
-            await _actlog.LogAsync("INFO", "reports", "report.generated",
-                $"Generated {reportType} report for run {runId}",
-                entityType: "AssessmentRun", entityId: runId.ToString());
-
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "text/html; charset=utf-8");
-            await response.WriteStringAsync(html);
-            return response;
-        }
-        catch (InvalidOperationException ex)
-        {
-            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
-            await notFound.WriteAsJsonAsync(new { error = ex.Message });
-            return notFound;
-        }
+            error = "Per-run reports have been deprecated",
+            message = "Report scope is now always organization-level. Use GET /v2/reports/org/{orgId}?type=technical to generate org-wide Technical reports. For single-machine troubleshooting, use the portal's machine detail view.",
+            status = 410,
+            deprecatedSince = "2026-04-15"
+        });
+        return response;
     }
 
     /// <summary>

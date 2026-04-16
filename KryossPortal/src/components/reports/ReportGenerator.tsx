@@ -16,8 +16,7 @@ import { msalInstance } from '@/auth/msalInstance';
 import { loginRequest } from '@/auth/msalConfig';
 
 interface ReportGeneratorProps {
-  targetType: 'run' | 'org';
-  targetId: string;
+  targetId: string; // organization ID (per-run reports deprecated 2026-04-15)
 }
 
 const FRAMEWORKS = [
@@ -29,14 +28,13 @@ const FRAMEWORKS = [
   { value: 'PCI-DSS', label: 'PCI-DSS' },
 ] as const;
 
-// NOTE: org-only report types are hidden when rendering against a single run.
 const REPORT_TYPES = [
-  { value: 'c-level',           label: 'C-Level',              orgOnly: true  },
-  { value: 'technical',         label: 'Technical',             orgOnly: false },
-  { value: 'executive',         label: 'Executive',             orgOnly: false },
-  { value: 'preventas',         label: 'Preventas',             orgOnly: true  },
-  { value: 'exec-onepager',     label: 'Executive One-Pager',   orgOnly: true  },
-  { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)',orgOnly: true  },
+  { value: 'c-level',           label: 'C-Level'              },
+  { value: 'technical',         label: 'Technical'             },
+  { value: 'executive',         label: 'Executive'             },
+  { value: 'preventas',         label: 'Preventas'             },
+  { value: 'exec-onepager',     label: 'Executive One-Pager'   },
+  { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)'},
 ] as const;
 
 const TONES = [
@@ -50,23 +48,18 @@ const LANGUAGES = [
 ] as const;
 
 function buildApiPath(
-  targetType: 'run' | 'org',
-  targetId: string,
+  orgId: string,
   reportType: string,
   framework: string,
   lang: string,
   tone: string,
 ): string {
-  const base =
-    targetType === 'run'
-      ? `/v2/reports/${targetId}`
-      : `/v2/reports/org/${targetId}`;
   const params = new URLSearchParams();
   params.set('type', reportType);
   if (framework !== 'all') params.set('framework', framework);
   if (lang !== 'en') params.set('lang', lang);
   if (reportType === 'preventas') params.set('tone', tone);
-  return `${base}?${params}`;
+  return `/v2/reports/org/${orgId}?${params}`;
 }
 
 async function fetchReport(apiPath: string): Promise<string> {
@@ -97,19 +90,14 @@ async function fetchReport(apiPath: string): Promise<string> {
   return res.text();
 }
 
-export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) {
+export function ReportGenerator({ targetId }: ReportGeneratorProps) {
   const [framework, setFramework] = useState('all');
   const [reportType, setReportType] = useState('technical');
   const [lang, setLang] = useState<'en' | 'es'>('en');
   const [tone, setTone] = useState<'opener' | 'detailed'>('opener');
   const [loading, setLoading] = useState(false);
 
-  // Hide org-only report types when rendering against a run.
-  const availableReportTypes = REPORT_TYPES.filter(
-    (rt) => !rt.orgOnly || targetType === 'org',
-  );
-
-  const apiPath = buildApiPath(targetType, targetId, reportType, framework, lang, tone);
+  const apiPath = buildApiPath(targetId, reportType, framework, lang, tone);
 
   const handleOpenTab = async () => {
     // Open window IMMEDIATELY on user click (before async fetch)
@@ -179,7 +167,7 @@ export function ReportGenerator({ targetType, targetId }: ReportGeneratorProps) 
             <SelectValue placeholder="Report Type" />
           </SelectTrigger>
           <SelectContent>
-            {availableReportTypes.map((rt) => (
+            {REPORT_TYPES.map((rt) => (
               <SelectItem key={rt.value} value={rt.value}>
                 {rt.label}
               </SelectItem>

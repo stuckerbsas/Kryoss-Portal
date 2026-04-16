@@ -26,7 +26,6 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { ReportGenerator } from '@/components/reports/ReportGenerator';
 
 const PAGE_SIZE = 50;
 
@@ -277,9 +276,6 @@ export function RunDetail() {
           </div>
         </div>
       )}
-
-      {/* Report Generator */}
-      {runId && <ReportGenerator targetType="run" targetId={runId} />}
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3">

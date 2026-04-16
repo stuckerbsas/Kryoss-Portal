@@ -1,7 +1,7 @@
 # Reports — 4-Type Baseline Consolidation
 
 **Date:** 2026-04-15
-**Status:** Design approved via brainstorm, ready for implementation planning
+**Status:** Implemented 2026-04-15 (Phases 1–4). Monthly Progress rebuild deferred pending NinjaOne integration.
 **Supersedes:** The current 8-variant report catalog (see "Current state" below)
 
 ---

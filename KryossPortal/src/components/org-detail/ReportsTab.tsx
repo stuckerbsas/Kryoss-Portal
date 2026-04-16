@@ -13,7 +13,7 @@ export function ReportsTab() {
           Select a framework and report type to generate a branded HTML report for this organization.
         </p>
       </div>
-      <ReportGenerator targetType="org" targetId={orgId} />
+      <ReportGenerator targetId={orgId} />
     </div>
   );
 }
