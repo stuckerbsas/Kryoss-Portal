@@ -2,6 +2,7 @@ using KryossApi.Data;
 using KryossApi.Infrastructure;
 using KryossApi.Middleware;
 using KryossApi.Services;
+using KryossApi.Services.CopilotReadiness;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +60,7 @@ builder.Services.AddScoped<ICryptoService, CryptoService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<ExternalScanService>();
 builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
+builder.Services.AddScoped<ICopilotReadinessService, CopilotReadinessService>();
 
 // ── M365 multi-tenant admin consent config ──
 builder.Services.AddSingleton(new M365Config
