@@ -1,10 +1,123 @@
 # Cloud Assessment Platform — Master Plan
 
-> **Context:** Extending Copilot Readiness Assessment (shipped 2026-04-16) into a full Microsoft Cloud Assessment platform. Each phase ships independently, no big refactor. Each phase = new pipeline + new tab + new report section + SQL migration.
+> **Context:** New parallel feature alongside Copilot Readiness Assessment (shipped 2026-04-16). Cloud Assessment covers full Microsoft Cloud scope (M365, Azure, Entra, Power BI, Intune, Compliance Manager, etc). Copilot Readiness stays intact as specialized slice — no rename, no refactor.
 
-**Status:** Copilot Readiness feature complete and deployed. 6 pipelines (Entra, Defender, M365, Purview, Power Platform, SharePoint Deep), 169 service plan checks, bilingual report, portal dashboard.
+**Status:** Copilot Readiness complete and deployed. 6 pipelines (Entra, Defender, M365, Purview, Power Platform, SharePoint Deep), 169 service plan checks, bilingual report, portal dashboard.
 
-**Architecture strategy:** Option 2 (incremental). Keep `CopilotReadinessService` as specialized slice. Add new area-specific pipelines independently. Each ships without blocking others.
+**Architecture strategy:** Option 3 (parallel feature).
+- Copilot Readiness: existing tables (`copilot_readiness_*`), existing service, existing tab. Untouched.
+- Cloud Assessment: NEW tables (`cloud_assessment_*`), NEW service (`CloudAssessmentService`), NEW top-level portal tab.
+- Some pipeline code reuse possible (Entra/Defender/Purview pipelines could be shared via abstraction), but NOT required — duplication OK initially.
+- Customer can run BOTH independently: Copilot Readiness for pre-Copilot-deploy gate, Cloud Assessment for ongoing MSP health check.
+
+---
+
+## Cloud Assessment — Architecture
+
+### New DB schema (`cloud_assessment_*` tables)
+
+```
+cloud_assessment_scans (parent — one scan covers multiple areas)
+├── id UNIQUEIDENTIFIER PK
+├── organization_id FK
+├── tenant_id FK (m365_tenants)
+├── azure_subscription_ids NVARCHAR(MAX) — JSON array of connected subs
+├── status (running|completed|partial|failed)
+├── overall_score DECIMAL(3,2)
+├── area_scores NVARCHAR(MAX) — JSON: {identity:3.5, endpoint:4.2, data:2.8, azure:3.0, ...}
+├── verdict NVARCHAR(20)
+├── pipeline_status NVARCHAR(MAX)
+├── started_at, completed_at, created_at
+
+cloud_assessment_findings
+├── id BIGINT PK
+├── scan_id FK
+├── area NVARCHAR(30) — identity|endpoint|data|productivity|azure|powerbi|compliance|cost
+├── service NVARCHAR(30) — entra|intune|defender|purview|m365|azure|powerbi|etc
+├── feature NVARCHAR(200)
+├── status, priority, observation, recommendation, link_text, link_url
+
+cloud_assessment_metrics
+├── scan_id, area, metric_key, metric_value
+
+cloud_assessment_azure_subscriptions
+├── organization_id, subscription_id, display_name, state, connected_at, consent_state
+
+cloud_assessment_licenses (new, separate from adoption)
+├── scan_id, sku_part_number, friendly_name, purchased, assigned, available
+
+cloud_assessment_adoption
+├── scan_id, area, service_name, licensed_count, active_30d, adoption_rate
+
+cloud_assessment_wasted_licenses
+├── scan_id, user_principal, display_name, sku, last_sign_in, days_inactive, estimated_cost_year
+
+cloud_assessment_finding_status (state carries across scans)
+├── organization_id, area, service, feature, status, owner_user_id, notes, updated_at
+```
+
+### New backend namespace
+
+```
+Services/CloudAssessment/
+├── ICloudAssessmentService.cs
+├── CloudAssessmentService.cs (orchestrator — parallel pipelines)
+├── CloudScoringEngine.cs (multi-area scoring, flexible weights)
+├── CloudAssessmentReportBuilder.cs (new report type "cloud-assessment")
+├── Pipelines/
+│   ├── IdentityPipeline.cs (Entra deep — can share code with CopilotReadiness/EntraPipeline)
+│   ├── EndpointPipeline.cs (Intune + Defender for Endpoint)
+│   ├── DataPipeline.cs (Purview + labels + DLP)
+│   ├── ProductivityPipeline.cs (M365 usage + adoption)
+│   ├── AzurePipeline.cs (NEW — ARM)
+│   ├── PowerBiPipeline.cs (NEW)
+│   └── ComplianceManagerPipeline.cs (NEW)
+├── Recommendations/
+│   └── (per-area recommendation engines)
+└── Models/
+    └── (area-specific DTOs)
+```
+
+### New functions
+
+```
+Functions/Portal/CloudAssessmentFunction.cs
+├── POST /v2/cloud-assessment/scan
+├── GET  /v2/cloud-assessment?organizationId={id}
+├── GET  /v2/cloud-assessment/{scanId}
+├── GET  /v2/cloud-assessment/history?organizationId={id}
+├── GET  /v2/cloud-assessment/compare?scanAId=X&scanBId=Y
+├── GET  /v2/cloud-assessment/licenses?organizationId={id}
+├── PATCH /v2/cloud-assessment/findings/status
+├── POST /v2/cloud-assessment/azure/connect (start Azure sub consent flow)
+└── GET  /v2/cloud-assessment/azure/subscriptions?organizationId={id}
+
+Functions/Timer/CloudAssessmentTimerFunction.cs
+├── Weekly scan (CRON 0 0 3 * * 0 — offset 1hr from Copilot Readiness timer)
+└── Reaper (CRON 0 */5 * * * *)
+```
+
+### New portal
+
+Top-level left-menu item: **"Cloud Assessment"** (separate from M365 tab which keeps Copilot Readiness sub-tab).
+
+```
+Cloud Assessment page
+├── Overview (area scores radar chart + overall verdict + timeline)
+├── Identity & Access (Entra deep)
+├── Endpoint Security (Intune + Defender endpoint)
+├── Data Protection (Purview + labels + DLP)
+├── Productivity (M365 adoption)
+├── Azure Infrastructure (subs + resources + security center)
+├── Power BI Governance
+├── Compliance (framework mapping)
+├── Licenses & Cost
+└── Remediation Tracker
+```
+
+### New report type
+
+Report dropdown entry: `cloud-assessment` → full Cloud Assessment report (separate from `m365` Copilot Readiness report).
 
 ---
 
@@ -287,27 +400,54 @@
 
 ---
 
-## Rename Consideration
+## No Rename — Parallel Architecture
 
-Phase 1-4 keep `copilot_readiness_*` table names (existing infra).
+Copilot Readiness stays as-is forever. Cloud Assessment is separate product with separate tables, separate service, separate tab, separate report type.
 
-For Phase 5+ expanding beyond Copilot:
-- Option A: New `cloud_assessment_*` tables parallel to existing
-- Option B: Rename `copilot_readiness_*` → `cloud_assessment_*` (migration) + keep Copilot slice as a "dimension"
-- **Decision:** Defer rename until Phase 5. Start Phase 5 with new table names (`cloud_assessment_azure_*`, `cloud_assessment_findings` as superset). Gradually migrate.
+### Code reuse strategy
+
+Some pipelines share logic (Entra, Defender, Purview, M365). Approach:
+1. Start with duplication — copy EntraPipeline.cs → IdentityPipeline.cs, adapt for `cloud_assessment_findings` schema
+2. Once 2+ pipelines duplicated, extract shared abstraction (e.g. `BasePipeline<TInsights>` or static helpers)
+3. Refactor only after clear pattern emerges — don't pre-optimize
 
 ---
 
-## Overall Execution Strategy
+## Overall Execution Strategy — Cloud Assessment (parallel feature)
 
-**User priority (2026-04-16):** Phase 3 first — timeline & drift tracking enables sales demo to future Copilot buyers ("your readiness improved X% in Y weeks"). Fresh compelling visual for buyer pitches.
+**Decision (2026-04-16):** Option 3 — new parallel feature. Copilot Readiness stays intact. Cloud Assessment built from scratch alongside.
 
-1. **Phase 3 first** (timeline + drift = sales demo for Copilot prospects)
-2. **Phase 1** (licenses & adoption detail)
-3. **Phase 2** (wasted licenses $ savings)
-4. **Phase 4** (remediation tracker)
-5. **Phase 5** Azure — major, separate session
-6. **Phase 6-10** on demand
+### Build order
+
+**Foundation first (1-2 sessions):**
+
+- **Phase CA-0: Scaffold** — new DB schema, entities, service skeleton, orchestrator shell, first API endpoint (POST scan returning 202), portal placeholder tab. No pipelines yet, just bones. Ships immediately.
+
+**MVP scope (3-5 sessions):**
+
+- **Phase CA-1: Identity Pipeline** — port/reuse Entra logic from CopilotReadiness/EntraPipeline, adapt for new `cloud_assessment_findings` schema. Identity area score + findings.
+- **Phase CA-2: Endpoint Pipeline** — Intune deep (compliance policies, config profiles, app protection, Autopilot) + Defender for Endpoint (reuse from CopilotReadiness). Endpoint score + findings.
+- **Phase CA-3: Data Pipeline** — Purview + labels + DLP (reuse + expand). Data score + findings.
+- **Phase CA-4: Productivity Pipeline** — M365 usage + adoption detail + licenses + wasted licenses (merge Phase 1 + 2 of original plan). Productivity + licenses.
+- **Phase CA-5: Overview + Timeline** — overview page with area radar chart, timeline of scans, compare mode (merge Phase 3 of original plan).
+
+**High-value expansion (2-3 sessions each):**
+
+- **Phase CA-6: Azure Pipeline** — subscriptions + resources + Security Center + public exposure. NEW consent flow (ARM role assignment). Major feature.
+- **Phase CA-7: Remediation Tracker** — cross-scan state persistence, status workflow (merge Phase 4 of original plan).
+- **Phase CA-8: Compliance Manager + Framework Mapping** — framework scores, control mapping.
+
+**Lower priority:**
+
+- **Phase CA-9: Power BI Pipeline**
+- **Phase CA-10: Mail Flow & Email Security** (can be merged into Identity or Data)
+- **Phase CA-11: Benchmarks**
+
+### Sales demo path
+
+To show prospect: run Cloud Assessment once → show Overview page with all area scores + wasted licenses $ savings + top findings. Compelling single-screen MSP pitch.
+
+To show progress: Phase CA-5 timeline chart — "score went from X to Y after we fixed Z".
 
 ## Execution via subagent-driven development
 
@@ -333,4 +473,19 @@ Read this file + CLAUDE.md + existing specs:
 Then pick Phase 1. Brainstorm if scope unclear, else go direct to implementation plan.
 
 **Recommended start command in new session:**
-> "Implement Phase 1 (Licenses & Adoption Detail) from `docs/superpowers/plans/2026-04-16-cloud-assessment-platform.md`. Use subagent-driven development."
+> "Implement Phase CA-0 (Cloud Assessment Scaffold) from `docs/superpowers/plans/2026-04-16-cloud-assessment-platform.md`. This is a NEW parallel feature alongside Copilot Readiness — do NOT modify existing Copilot Readiness code. Use subagent-driven development. After Phase CA-0 foundation ships, continue with CA-1, CA-2, etc in order."
+
+### Reference files to read in new session
+
+- `CLAUDE.md` (master)
+- `KryossApi/CLAUDE.md` (backend map)
+- `docs/superpowers/specs/2026-04-16-copilot-readiness-assessment-design.md` (pattern reference)
+- `docs/superpowers/plans/2026-04-16-copilot-readiness-assessment.md` (previous plan — patterns to reuse)
+- This file (`2026-04-16-cloud-assessment-platform.md`)
+
+### Key files for code pattern reuse
+
+- `KryossApi/src/KryossApi/Services/CopilotReadiness/CopilotReadinessService.cs` — orchestrator pattern (background Task + scope factory)
+- `KryossApi/src/KryossApi/Services/CopilotReadiness/Pipelines/EntraPipeline.cs` — pipeline pattern
+- `KryossApi/src/KryossApi/Functions/Portal/CopilotReadinessFunction.cs` — endpoint pattern (auth + org access check + actlog + try/catch)
+- `KryossApi/src/KryossApi/Data/KryossDbContext.cs` — EF config pattern with `HasColumnName` snake_case mappings
