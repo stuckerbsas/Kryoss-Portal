@@ -64,6 +64,13 @@ public class KryossDbContext : DbContext
     public DbSet<M365Tenant> M365Tenants => Set<M365Tenant>();
     public DbSet<M365Finding> M365Findings => Set<M365Finding>();
 
+    // Copilot Readiness (Phase 5)
+    public DbSet<CopilotReadinessScan> CopilotReadinessScans => Set<CopilotReadinessScan>();
+    public DbSet<CopilotReadinessMetric> CopilotReadinessMetrics => Set<CopilotReadinessMetric>();
+    public DbSet<CopilotReadinessFinding> CopilotReadinessFindings => Set<CopilotReadinessFinding>();
+    public DbSet<CopilotReadinessSharepoint> CopilotReadinessSharepoint => Set<CopilotReadinessSharepoint>();
+    public DbSet<CopilotReadinessExternalUser> CopilotReadinessExternalUsers => Set<CopilotReadinessExternalUser>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // ── Auth ──
@@ -336,6 +343,47 @@ public class KryossDbContext : DbContext
         mb.Entity<M365Finding>(e =>
         {
             e.ToTable("m365_findings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+        });
+
+        // ── Copilot Readiness (Phase 5) ──
+        mb.Entity<CopilotReadinessScan>(e =>
+        {
+            e.ToTable("copilot_readiness_scans");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Metrics).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Findings).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.SharepointSites).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.ExternalUsers).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<CopilotReadinessMetric>(e =>
+        {
+            e.ToTable("copilot_readiness_metrics");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+        });
+
+        mb.Entity<CopilotReadinessFinding>(e =>
+        {
+            e.ToTable("copilot_readiness_findings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+        });
+
+        mb.Entity<CopilotReadinessSharepoint>(e =>
+        {
+            e.ToTable("copilot_readiness_sharepoint");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+        });
+
+        mb.Entity<CopilotReadinessExternalUser>(e =>
+        {
+            e.ToTable("copilot_readiness_external_users");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
         });
