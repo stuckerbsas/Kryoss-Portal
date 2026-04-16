@@ -38,8 +38,8 @@ const REPORT_TYPES = [
 ] as const;
 
 const TONES = [
-  { value: 'opener',   label: 'Opener (2 páginas)' },
-  { value: 'detailed', label: 'Detailed (6 páginas)' },
+  { value: 'opener',   label: 'Opener (2 pages)' },
+  { value: 'detailed', label: 'Detailed (6 pages)' },
 ] as const;
 
 const LANGUAGES = [
