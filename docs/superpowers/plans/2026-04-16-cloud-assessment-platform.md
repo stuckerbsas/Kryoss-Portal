@@ -300,11 +300,14 @@ For Phase 5+ expanding beyond Copilot:
 
 ## Overall Execution Strategy
 
-1. **Phase 1 first** (data ready, high value, low risk)
-2. **Phase 2** parallel or next (sales tool)
-3. **Phase 3 + 4** sequential (tracking + workflow)
-4. **Phase 5** major — separate new session, 2-3 subsessions
-5. **Phase 6-10** on demand, prioritize by client asks
+**User priority (2026-04-16):** Phase 3 first — timeline & drift tracking enables sales demo to future Copilot buyers ("your readiness improved X% in Y weeks"). Fresh compelling visual for buyer pitches.
+
+1. **Phase 3 first** (timeline + drift = sales demo for Copilot prospects)
+2. **Phase 1** (licenses & adoption detail)
+3. **Phase 2** (wasted licenses $ savings)
+4. **Phase 4** (remediation tracker)
+5. **Phase 5** Azure — major, separate session
+6. **Phase 6-10** on demand
 
 ## Execution via subagent-driven development
 
