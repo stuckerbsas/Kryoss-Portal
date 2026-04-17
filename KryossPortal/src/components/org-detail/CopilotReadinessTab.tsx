@@ -35,7 +35,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { API_BASE } from '@/auth/msalConfig';
+import { API_BASE, loginRequest } from '@/auth/msalConfig';
+import { msalInstance } from '@/auth/msalInstance';
 
 // ── Helpers ──
 
@@ -259,10 +260,57 @@ export function CopilotReadinessTab() {
     });
   };
 
-  const handleExportReport = () => {
+  const handleExportReport = async () => {
     if (!orgId) return;
-    const url = `${API_BASE}/v2/reports/org/${orgId}?type=m365&lang=es`;
-    window.open(url, '_blank');
+
+    // Open blank tab synchronously on click (browsers block window.open
+    // after async delays, same pattern as ReportGenerator.tsx).
+    const newWindow = window.open('about:blank', '_blank');
+    if (newWindow) {
+      newWindow.document.write('<html><head><title>Generating report...</title></head><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#666"><p>Generating report, please wait...</p></body></html>');
+    }
+
+    try {
+      // Acquire MSAL Bearer token — same flow as ReportGenerator.
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length === 0) throw new Error('Not authenticated');
+
+      let token: string;
+      try {
+        const res = await msalInstance.acquireTokenSilent({
+          ...loginRequest,
+          account: accounts[0],
+        });
+        token = res.accessToken;
+      } catch {
+        const res = await msalInstance.acquireTokenPopup(loginRequest);
+        token = res.accessToken;
+      }
+
+      const res = await fetch(`${API_BASE}/v2/reports/org/${orgId}?type=m365&lang=es`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`HTTP ${res.status}: ${body}`);
+      }
+
+      const html = await res.text();
+      if (newWindow) {
+        newWindow.document.open();
+        newWindow.document.write(html);
+        newWindow.document.close();
+      }
+      toast.success('Report opened');
+    } catch (err: any) {
+      if (newWindow) {
+        newWindow.document.open();
+        newWindow.document.write(`<html><body style="font-family:sans-serif;padding:40px;color:#C0392B"><h2>Report generation failed</h2><p>${err.message}</p></body></html>`);
+        newWindow.document.close();
+      }
+      toast.error(`Failed to generate report: ${err.message}`);
+    }
   };
 
   // ── Loading state ──
