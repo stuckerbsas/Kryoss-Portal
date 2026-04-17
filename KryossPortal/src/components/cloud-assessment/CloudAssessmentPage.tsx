@@ -1,4 +1,10 @@
-import { useCloudAssessment, useCloudAssessmentDetail, type CloudAssessmentFinding } from '@/api/cloudAssessment';
+import { useState } from 'react';
+import {
+  useCloudAssessment,
+  useCloudAssessmentDetail,
+  useAzureSubscriptions,
+  type CloudAssessmentFinding,
+} from '@/api/cloudAssessment';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -6,6 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ExternalLink } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
+import { ConnectAzureCard } from './ConnectAzureCard';
+import { AzureSubscriptionsList } from './AzureSubscriptionsList';
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -101,6 +109,35 @@ function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | unde
   );
 }
 
+function AzureTab({ orgId }: { orgId: string }) {
+  const { data: subs, isLoading } = useAzureSubscriptions(orgId);
+  const [showConnect, setShowConnect] = useState(false);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          Loading…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const hasSubs = subs && subs.length > 0;
+
+  if (!hasSubs || showConnect) {
+    return <ConnectAzureCard orgId={orgId} onConnected={() => setShowConnect(false)} />;
+  }
+
+  return (
+    <AzureSubscriptionsList
+      orgId={orgId}
+      subscriptions={subs!}
+      onConnectAnother={() => setShowConnect(true)}
+    />
+  );
+}
+
 export function CloudAssessmentPage() {
   const { orgId } = useOrgParam();
   const { data: summary } = useCloudAssessment(orgId);
@@ -117,12 +154,14 @@ export function CloudAssessmentPage() {
         <TabsTrigger value="endpoint">Endpoint</TabsTrigger>
         <TabsTrigger value="data">Data</TabsTrigger>
         <TabsTrigger value="productivity">Productivity</TabsTrigger>
+        <TabsTrigger value="azure">Azure</TabsTrigger>
       </TabsList>
       <TabsContent value="overview"><OverviewTab orgId={orgId} /></TabsContent>
       <TabsContent value="identity"><AreaFindingsTab area="identity" scanId={latestScanId} /></TabsContent>
       <TabsContent value="endpoint"><AreaFindingsTab area="endpoint" scanId={latestScanId} /></TabsContent>
       <TabsContent value="data"><AreaFindingsTab area="data" scanId={latestScanId} /></TabsContent>
       <TabsContent value="productivity"><AreaFindingsTab area="productivity" scanId={latestScanId} /></TabsContent>
+      <TabsContent value="azure"><AzureTab orgId={orgId} /></TabsContent>
     </Tabs>
   );
 }

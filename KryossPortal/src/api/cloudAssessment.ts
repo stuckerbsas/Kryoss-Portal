@@ -184,3 +184,85 @@ export function useCloudAssessmentScan() {
     },
   });
 }
+
+// ── Azure consent types (CA-6 Task A3) ──
+
+export interface AzureSubscription {
+  id: number;
+  subscriptionId: string;
+  displayName: string | null;
+  state: string | null;
+  tenantId: string | null;
+  consentState: string | null;
+  connectedAt: string | null;
+  lastVerifiedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface AzureConnectInstructions {
+  appId: string;
+  servicePrincipalObjectId: string | null;
+  azCliCommand: string;
+  portalUrl: string;
+  spnResolutionNote: string;
+}
+
+export interface AzureVerifyResult {
+  connected: boolean;
+  subscriptions?: Array<{ subscriptionId: string; displayName: string | null; state: string | null }>;
+  subscriptionCount?: number;
+  missingRoles?: string[];
+  message?: string;
+  error?: string;
+}
+
+// ── Azure consent hooks ──
+
+export function useAzureSubscriptions(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['azure-subscriptions', organizationId],
+    queryFn: () =>
+      apiFetch<AzureSubscription[]>(
+        `/v2/cloud-assessment/azure/subscriptions?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+export function useAzureConnect() {
+  return useMutation({
+    mutationFn: ({ organizationId, tenantId }: { organizationId: string; tenantId: string }) =>
+      apiFetch<AzureConnectInstructions>('/v2/cloud-assessment/azure/connect', {
+        method: 'POST',
+        body: JSON.stringify({ organizationId, tenantId }),
+      }),
+  });
+}
+
+export function useAzureVerify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ organizationId, tenantId }: { organizationId: string; tenantId: string }) =>
+      apiFetch<AzureVerifyResult>('/v2/cloud-assessment/azure/verify', {
+        method: 'POST',
+        body: JSON.stringify({ organizationId, tenantId }),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['azure-subscriptions', variables.organizationId] });
+    },
+  });
+}
+
+export function useAzureDisconnect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ organizationId, subscriptionId }: { organizationId: string; subscriptionId: string }) =>
+      apiFetch<void>(
+        `/v2/cloud-assessment/azure/subscriptions/${subscriptionId}?organizationId=${organizationId}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['azure-subscriptions', variables.organizationId] });
+    },
+  });
+}
