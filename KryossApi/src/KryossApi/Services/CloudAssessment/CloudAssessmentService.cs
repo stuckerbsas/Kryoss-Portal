@@ -570,12 +570,12 @@ public class CloudAssessmentService : ICloudAssessmentService
         // Purview licensing (10% weight) — count how many of the six *_licensed flags are false.
         string[] purviewLicenseKeys =
         {
-            "information_protection_licensed",
+            "aip_p1_licensed",
+            "aip_p2_licensed",
             "dlp_licensed",
             "insider_risk_licensed",
-            "records_management_licensed",
             "ediscovery_licensed",
-            "communication_compliance_licensed"
+            "advanced_audit_licensed"
         };
         var falseLicenseCount = 0;
         foreach (var key in purviewLicenseKeys)
