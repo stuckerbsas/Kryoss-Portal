@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using KryossApi.Services.CloudAssessment.Recommendations;
 using KryossApi.Services.CopilotReadiness.Pipelines;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
@@ -70,7 +71,7 @@ public static class EndpointPipeline
 
             await Task.WhenAll(tasks);
 
-            // TODO CA-2 Task 2: result.Findings.AddRange(EndpointRecommendations.Generate(insights));
+            result.Findings.AddRange(EndpointRecommendations.Generate(ins));
 
             // Metrics (string-valued, snake_case).
             var m = result.Metrics;
