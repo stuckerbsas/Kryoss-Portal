@@ -86,7 +86,9 @@ export function AzureSubscriptionsList({
   const disconnect = useAzureDisconnect();
   const verify = useAzureVerify();
 
-  // Pick a tenantId for "Re-verify all" — prefer the first non-null tenant.
+  // Per server schema (CA-6 A1), all subscriptions for an org share a tenantId
+  // because consent is granted at tenant scope. Picking any non-null tenant re-verifies
+  // all subs. If multi-tenant connections are ever added, this needs per-tenant iteration.
   const firstTenantId = subscriptions.find((s) => !!s.tenantId)?.tenantId ?? null;
 
   const handleReVerifyAll = () => {
@@ -98,12 +100,14 @@ export function AzureSubscriptionsList({
       { organizationId: orgId, tenantId: firstTenantId },
       {
         onSuccess: (data) => {
-          if (data.connected && data.subscriptions) {
+          if (data.connected && data.subscriptions && data.subscriptions.length > 0) {
             toast.success(`Re-verified. Found ${data.subscriptions.length} subscription(s).`);
+          } else if (data.connected) {
+            toast.warning(data.message ?? 'Consent granted, but no subscriptions visible yet. Assign Reader role first.');
           } else if (data.error) {
             toast.error(`Re-verify error: ${data.error}`);
           } else {
-            toast.warning(data.message ?? 'No subscriptions visible after re-verify.');
+            toast.error(data.message ?? 'Re-verify failed for an unknown reason.');
           }
         },
         onError: (err: Error) => {

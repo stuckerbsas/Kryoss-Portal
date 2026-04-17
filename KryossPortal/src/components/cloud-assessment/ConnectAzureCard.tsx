@@ -90,14 +90,16 @@ export function ConnectAzureCard({
           if (data.connected && data.subscriptions && data.subscriptions.length > 0) {
             toast.success(`Found ${data.subscriptions.length} subscription(s).`);
             onConnected?.();
-          } else if (!data.connected && data.error) {
-            toast.error(`Verification error: ${data.error}`);
-          } else {
+          } else if (data.connected) {
             const missing = data.missingRoles && data.missingRoles.length > 0
               ? ` Missing roles: ${data.missingRoles.join(', ')}.`
               : '';
-            const msg = data.message ?? 'No subscriptions visible to the service principal yet.';
+            const msg = data.message ?? 'Consent granted, but no subscriptions visible yet. Assign Reader role first.';
             toast.warning(`${msg}${missing}`);
+          } else if (data.error) {
+            toast.error(`Verification error: ${data.error}`);
+          } else {
+            toast.error(data.message ?? 'Verification failed for an unknown reason.');
           }
         },
         onError: (err: Error) => {
@@ -198,6 +200,7 @@ export function ConnectAzureCard({
                     variant="ghost"
                     size="sm"
                     onClick={handleCopy}
+                    aria-label={copied ? 'Copied to clipboard' : 'Copy command'}
                     className="absolute top-2 right-2 h-7 px-2"
                   >
                     {copied ? (
