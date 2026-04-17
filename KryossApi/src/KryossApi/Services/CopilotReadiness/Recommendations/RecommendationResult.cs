@@ -107,4 +107,26 @@ public class RecommendationResult
             LinkText = linkText,
             LinkUrl = linkUrl
         };
+
+    /// <summary>
+    /// Informational finding that is neither a success nor an action item —
+    /// e.g. "5 subscriptions scanned, multi-region footprint detected" or
+    /// "empty subscription". Used by pipelines that want to emit context
+    /// without implying PASS/WARN/FAIL.
+    /// </summary>
+    public static RecommendationResult Insight(
+        string service, string feature,
+        string? observation = null, string? recommendation = null,
+        string? linkText = null, string? linkUrl = null) =>
+        new()
+        {
+            Service = service,
+            Feature = feature,
+            Status = "insight",
+            Priority = "informational",
+            Observation = observation,
+            Recommendation = recommendation,
+            LinkText = linkText,
+            LinkUrl = linkUrl
+        };
 }
