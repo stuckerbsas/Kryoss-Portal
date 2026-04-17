@@ -64,6 +64,8 @@ public class CloudAssessmentAzureSubscription
     public string? TenantId { get; set; }
     public string? ConsentState { get; set; }
     public DateTime? ConnectedAt { get; set; }
+    public DateTime? LastVerifiedAt { get; set; }
+    public string? ErrorMessage { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public Organization Organization { get; set; } = null!;

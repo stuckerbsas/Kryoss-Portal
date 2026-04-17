@@ -494,6 +494,8 @@ public class KryossDbContext : DbContext
             e.Property(x => x.TenantId).HasColumnName("tenant_id");
             e.Property(x => x.ConsentState).HasColumnName("consent_state");
             e.Property(x => x.ConnectedAt).HasColumnName("connected_at");
+            e.Property(x => x.LastVerifiedAt).HasColumnName("last_verified_at");
+            e.Property(x => x.ErrorMessage).HasColumnName("error_message");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasIndex(x => new { x.OrganizationId, x.SubscriptionId }).IsUnique();
