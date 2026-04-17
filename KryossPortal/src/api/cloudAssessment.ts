@@ -384,13 +384,12 @@ export function useSetFindingStatus() {
 export function useDismissSuggestion() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ suggestionId }: { suggestionId: number }) =>
+    mutationFn: ({ suggestionId, organizationId: _orgId }: { suggestionId: number; organizationId: string }) =>
       apiFetch<void>(`/v2/cloud-assessment/suggestions/${suggestionId}/dismiss`, {
         method: 'POST',
       }),
-    onSuccess: (_data, _variables, context) => {
-      // context is not available here; invalidate all suggestions queries
-      qc.invalidateQueries({ queryKey: ['cloud-assessment-suggestions'] });
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['cloud-assessment-suggestions', variables.organizationId] });
     },
   });
 }
