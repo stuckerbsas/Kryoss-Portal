@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using KryossApi.Services.CloudAssessment.Recommendations;
 using KryossApi.Services.CopilotReadiness.Pipelines;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
@@ -66,8 +67,7 @@ public static class DataPipeline
 
             await Task.WhenAll(tasks);
 
-            // TODO CA-3 Task 2: wire DataRecommendations.Generate(ins) here.
-            // result.Findings.AddRange(DataRecommendations.Generate(ins));
+            result.Findings.AddRange(DataRecommendations.Generate(ins));
 
             // Metrics (string-valued, snake_case).
             var m = result.Metrics;
