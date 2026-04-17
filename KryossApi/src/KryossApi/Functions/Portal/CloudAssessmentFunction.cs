@@ -261,6 +261,9 @@ public class CloudAssessmentFunction
             return bad;
         }
 
+        var accessDenied = await RequireOrgAccess(req, orgId.Value);
+        if (accessDenied is not null) return accessDenied;
+
         var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
         var area = query["area"];
         var statusFilter = query["status"];
@@ -288,6 +291,9 @@ public class CloudAssessmentFunction
             await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
             return bad;
         }
+
+        var accessDenied = await RequireOrgAccess(req, body.OrganizationId);
+        if (accessDenied is not null) return accessDenied;
 
         try
         {
@@ -330,6 +336,9 @@ public class CloudAssessmentFunction
             return bad;
         }
 
+        var accessDenied = await RequireOrgAccess(req, orgId.Value);
+        if (accessDenied is not null) return accessDenied;
+
         var suggestions = await _statusService.GetActiveSuggestionsAsync(orgId.Value);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -353,6 +362,18 @@ public class CloudAssessmentFunction
             await bad.WriteAsJsonAsync(new { error = "Invalid suggestionId" });
             return bad;
         }
+
+        // Load suggestion to verify org access before acting on it
+        var suggestion = await _db.CloudAssessmentSuggestions.FirstOrDefaultAsync(s => s.Id == id);
+        if (suggestion is null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = "Suggestion not found" });
+            return notFound;
+        }
+
+        var accessDenied = await RequireOrgAccess(req, suggestion.OrganizationId);
+        if (accessDenied is not null) return accessDenied;
 
         try
         {
@@ -387,6 +408,9 @@ public class CloudAssessmentFunction
             return bad;
         }
 
+        var accessDenied = await RequireOrgAccess(req, orgId.Value);
+        if (accessDenied is not null) return accessDenied;
+
         var stats = await _statusService.GetStatsAsync(orgId.Value);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -405,6 +429,29 @@ public class CloudAssessmentFunction
             return parsed;
         if (_user.OrganizationId.HasValue)
             return _user.OrganizationId.Value;
+        return null;
+    }
+
+    /// <summary>
+    /// Verifies the caller has access to the specified org (franchise-member or direct owner).
+    /// Returns a 403 response if access is denied, null if access is granted.
+    /// Admins bypass the check.
+    /// </summary>
+    private async Task<HttpResponseData?> RequireOrgAccess(HttpRequestData req, Guid orgId)
+    {
+        if (_user.IsAdmin) return null;
+
+        var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+            await _db.Organizations.AnyAsync(o => o.Id == orgId && o.FranchiseId == _user.FranchiseId.Value);
+        var orgBelongsToUser = _user.OrganizationId.HasValue && orgId == _user.OrganizationId.Value;
+
+        if (!orgBelongsToFranchise && !orgBelongsToUser)
+        {
+            var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+            await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+            return forbidden;
+        }
+
         return null;
     }
 }
