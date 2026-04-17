@@ -182,8 +182,13 @@ public class CloudAssessmentService : ICloudAssessmentService
                 ["productivity"] = productivityResult.Status
             });
 
-            // Overall = average of four areas.
-            var overallScore = Math.Round((identityScore + endpointScore + dataScore + productivityScore) / 4m, 2);
+            // Overall = weighted average. Identity 30%, Data 30%, Endpoint 25%, Productivity 15%.
+            var overallScore = Math.Round(
+                (identityScore * 0.30m) +
+                (dataScore * 0.30m) +
+                (endpointScore * 0.25m) +
+                (productivityScore * 0.15m),
+                2);
             var verdict = VerdictFromScore(overallScore);
 
             // Update scan row.
@@ -442,23 +447,160 @@ public class CloudAssessmentService : ICloudAssessmentService
 
     // ── GetScanHistoryAsync ─────────────────────────────────────────
 
-    public async Task<List<object>> GetScanHistoryAsync(Guid organizationId)
+    public async Task<List<object>> GetScanHistoryAsync(Guid organizationId, int limit = 20)
     {
+        if (limit < 1) limit = 1;
+        if (limit > 200) limit = 200;
+
         var history = await _db.CloudAssessmentScans
             .Where(s => s.OrganizationId == organizationId)
             .OrderByDescending(s => s.CreatedAt)
-            .Take(10)
-            .Select(s => (object)new
+            .Take(limit)
+            .Select(s => new
             {
                 s.Id,
                 s.OverallScore,
+                AreaScores = s.AreaScores,
                 s.Verdict,
                 s.Status,
-                s.CreatedAt
+                s.CreatedAt,
+                s.CompletedAt
             })
             .ToListAsync();
 
-        return history;
+        // Parse AreaScores JSON per row outside of SQL (EF can't parse JSON columns).
+        return history
+            .Select(h => (object)new
+            {
+                h.Id,
+                h.OverallScore,
+                AreaScores = ParseJsonDict(h.AreaScores),
+                h.Verdict,
+                h.Status,
+                h.CreatedAt,
+                h.CompletedAt
+            })
+            .ToList();
+    }
+
+    // ── CompareScansAsync ────────────────────────────────────────────
+
+    public async Task<object?> CompareScansAsync(Guid scanAId, Guid scanBId)
+    {
+        var scanA = await _db.CloudAssessmentScans
+            .Where(s => s.Id == scanAId)
+            .Select(s => new
+            {
+                s.Id,
+                s.OrganizationId,
+                s.OverallScore,
+                s.AreaScores,
+                s.Verdict,
+                s.CreatedAt,
+                s.CompletedAt
+            })
+            .FirstOrDefaultAsync();
+
+        var scanB = await _db.CloudAssessmentScans
+            .Where(s => s.Id == scanBId)
+            .Select(s => new
+            {
+                s.Id,
+                s.OrganizationId,
+                s.OverallScore,
+                s.AreaScores,
+                s.Verdict,
+                s.CreatedAt,
+                s.CompletedAt
+            })
+            .FirstOrDefaultAsync();
+
+        if (scanA is null || scanB is null) return null;
+
+        // Findings from both scans (minimal fields for matching + display).
+        var findingsA = await _db.CloudAssessmentFindings
+            .Where(f => f.ScanId == scanAId)
+            .Select(f => new { f.Area, f.Service, f.Feature, f.Status, f.Priority, f.Observation, f.Recommendation })
+            .ToListAsync();
+
+        var findingsB = await _db.CloudAssessmentFindings
+            .Where(f => f.ScanId == scanBId)
+            .Select(f => new { f.Area, f.Service, f.Feature, f.Status, f.Priority, f.Observation, f.Recommendation })
+            .ToListAsync();
+
+        // Match by composite key (area|service|feature).
+        string Key(string area, string service, string feature) =>
+            $"{area?.ToLowerInvariant()}|{service?.ToLowerInvariant()}|{feature?.ToLowerInvariant()}";
+
+        var keysA = findingsA.Select(f => Key(f.Area, f.Service, f.Feature)).ToHashSet();
+        var keysB = findingsB.Select(f => Key(f.Area, f.Service, f.Feature)).ToHashSet();
+
+        // Resolved = in A, not in B (fixed / removed between A and B).
+        var resolvedFindings = findingsA
+            .Where(f => !keysB.Contains(Key(f.Area, f.Service, f.Feature)))
+            .Select(f => new { f.Area, f.Service, f.Feature, f.Status, f.Priority, f.Observation, f.Recommendation })
+            .ToList();
+
+        // New = in B, not in A (regression or newly detected).
+        var newFindings = findingsB
+            .Where(f => !keysA.Contains(Key(f.Area, f.Service, f.Feature)))
+            .Select(f => new { f.Area, f.Service, f.Feature, f.Status, f.Priority, f.Observation, f.Recommendation })
+            .ToList();
+
+        var unchangedCount = keysA.Intersect(keysB).Count();
+
+        // Deltas (B - A). Positive = improvement when higher scores are better.
+        var areaScoresA = ParseScoreDict(scanA.AreaScores);
+        var areaScoresB = ParseScoreDict(scanB.AreaScores);
+
+        var deltas = new Dictionary<string, decimal>();
+        foreach (var key in new[] { "identity", "endpoint", "data", "productivity" })
+        {
+            var a = areaScoresA.TryGetValue(key, out var av) ? av : 0m;
+            var b = areaScoresB.TryGetValue(key, out var bv) ? bv : 0m;
+            deltas[key] = Math.Round(b - a, 2);
+        }
+        deltas["overall"] = Math.Round((scanB.OverallScore ?? 0m) - (scanA.OverallScore ?? 0m), 2);
+
+        return new
+        {
+            ScanA = new
+            {
+                scanA.Id,
+                scanA.CreatedAt,
+                scanA.CompletedAt,
+                AreaScores = areaScoresA,
+                scanA.OverallScore,
+                scanA.Verdict
+            },
+            ScanB = new
+            {
+                scanB.Id,
+                scanB.CreatedAt,
+                scanB.CompletedAt,
+                AreaScores = areaScoresB,
+                scanB.OverallScore,
+                scanB.Verdict
+            },
+            Deltas = deltas,
+            ResolvedFindings = resolvedFindings,
+            NewFindings = newFindings,
+            UnchangedCount = unchangedCount
+        };
+    }
+
+    private static Dictionary<string, decimal> ParseScoreDict(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, decimal>();
+        try
+        {
+            var raw = JsonSerializer.Deserialize<Dictionary<string, decimal>>(json);
+            return raw ?? new Dictionary<string, decimal>();
+        }
+        catch
+        {
+            return new Dictionary<string, decimal>();
+        }
     }
 
     // ── Scoring ─────────────────────────────────────────────────────

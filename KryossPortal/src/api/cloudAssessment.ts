@@ -3,6 +3,8 @@ import { apiFetch } from './client';
 
 // ── Types ──
 
+export type CloudAssessmentAreaKey = 'identity' | 'endpoint' | 'data' | 'productivity';
+
 export interface CloudAssessmentScan {
   id: string;
   status: 'running' | 'completed' | 'partial' | 'failed';
@@ -46,7 +48,7 @@ export interface CloudAssessmentScanDetail extends CloudAssessmentScan {
     assigned: number;
     available: number;
   }>;
-  adoptions: Array<{
+  adoption: Array<{
     area: string;
     serviceName: string;
     licensedCount: number;
@@ -63,12 +65,47 @@ export interface CloudAssessmentScanDetail extends CloudAssessmentScan {
   }>;
 }
 
-export interface CloudAssessmentScanSummary {
+export interface CloudAssessmentHistoryEntry {
   id: string;
   overallScore: number | null;
+  areaScores: Record<string, number> | null;
   verdict: string | null;
   status: string;
   createdAt: string;
+  completedAt: string | null;
+}
+
+export interface CloudAssessmentCompareFinding {
+  area: string;
+  service: string;
+  feature: string;
+  status: string;
+  priority: string;
+  observation: string | null;
+  recommendation: string | null;
+}
+
+export interface CloudAssessmentCompare {
+  scanA: {
+    id: string;
+    createdAt: string;
+    completedAt: string | null;
+    areaScores: Record<string, number>;
+    overallScore: number | null;
+    verdict: string | null;
+  };
+  scanB: {
+    id: string;
+    createdAt: string;
+    completedAt: string | null;
+    areaScores: Record<string, number>;
+    overallScore: number | null;
+    verdict: string | null;
+  };
+  deltas: Record<string, number>; // keys: identity, endpoint, data, productivity, overall
+  resolvedFindings: CloudAssessmentCompareFinding[];
+  newFindings: CloudAssessmentCompareFinding[];
+  unchangedCount: number;
 }
 
 // ── Hooks ──
@@ -97,27 +134,53 @@ export function useCloudAssessmentDetail(scanId: string | undefined) {
   });
 }
 
-export function useCloudAssessmentHistory(organizationId: string | undefined) {
+export function useCloudAssessmentHistory(
+  organizationId: string | undefined,
+  limit: number = 20,
+) {
   return useQuery({
-    queryKey: ['cloud-assessment-history', organizationId],
+    queryKey: ['cloud-assessment-history', organizationId, limit],
     queryFn: () =>
-      apiFetch<CloudAssessmentScanSummary[]>(
-        `/v2/cloud-assessment/history?organizationId=${organizationId}`,
+      apiFetch<CloudAssessmentHistoryEntry[]>(
+        `/v2/cloud-assessment/history?organizationId=${organizationId}&limit=${limit}`,
       ),
     enabled: !!organizationId,
+  });
+}
+
+export function useCloudAssessmentCompare(
+  scanAId: string | undefined,
+  scanBId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ['cloud-assessment-compare', scanAId, scanBId],
+    queryFn: () =>
+      apiFetch<CloudAssessmentCompare>(
+        `/v2/cloud-assessment/compare?scanAId=${scanAId}&scanBId=${scanBId}`,
+      ),
+    enabled: !!scanAId && !!scanBId && scanAId !== scanBId,
   });
 }
 
 export function useCloudAssessmentScan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ organizationId, tenantId }: { organizationId: string; tenantId?: string }) =>
+    mutationFn: ({
+      organizationId,
+      tenantId,
+    }: {
+      organizationId: string;
+      tenantId?: string;
+    }) =>
       apiFetch<{ scanId: string; status: string }>('/v2/cloud-assessment/scan', {
         method: 'POST',
         body: JSON.stringify({ organizationId, ...(tenantId ? { tenantId } : {}) }),
       }),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['cloud-assessment', variables.organizationId] });
+      qc.invalidateQueries({
+        queryKey: ['cloud-assessment-history', variables.organizationId],
+      });
     },
   });
 }
