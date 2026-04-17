@@ -34,44 +34,67 @@ public class CopilotReadinessFunction
     public async Task<HttpResponseData> Scan(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/copilot-readiness/scan")] HttpRequestData req)
     {
-        var body = await req.ReadFromJsonAsync<CopilotReadinessScanRequest>();
-        if (body is null || body.OrganizationId == Guid.Empty)
+        try
         {
-            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
-            return bad;
-        }
-
-        // Verify org access
-        if (!_user.IsAdmin)
-        {
-            var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
-                await _db.Organizations.AnyAsync(o => o.Id == body.OrganizationId && o.FranchiseId == _user.FranchiseId.Value);
-            var orgBelongsToUser = _user.OrganizationId.HasValue && body.OrganizationId == _user.OrganizationId.Value;
-            if (!orgBelongsToFranchise && !orgBelongsToUser)
+            var body = await req.ReadFromJsonAsync<CopilotReadinessScanRequest>();
+            if (body is null || body.OrganizationId == Guid.Empty)
             {
-                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
-                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
-                return forbidden;
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
+                return bad;
             }
+
+            // Verify org access
+            if (!_user.IsAdmin)
+            {
+                var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+                    await _db.Organizations.AnyAsync(o => o.Id == body.OrganizationId && o.FranchiseId == _user.FranchiseId.Value);
+                var orgBelongsToUser = _user.OrganizationId.HasValue && body.OrganizationId == _user.OrganizationId.Value;
+                if (!orgBelongsToFranchise && !orgBelongsToUser)
+                {
+                    var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                    await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                    return forbidden;
+                }
+            }
+
+            // Check M365 tenant is connected
+            var tenant = await _db.M365Tenants
+                .FirstOrDefaultAsync(t => t.OrganizationId == body.OrganizationId && t.Status == "active");
+
+            if (tenant is null)
+            {
+                var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+                await notFound.WriteAsJsonAsync(new { error = "No active M365 tenant connected to this organization. Connect M365 first." });
+                return notFound;
+            }
+
+            // Actlog entry at scan request — proves function was hit
+            _db.Actlog.Add(new Data.Entities.Actlog
+            {
+                Timestamp = DateTime.UtcNow,
+                Severity = "info",
+                Module = "copilot-readiness",
+                Action = "scan.requested",
+                EntityType = "Organization",
+                EntityId = body.OrganizationId.ToString(),
+                Message = $"Copilot Readiness scan requested for org {body.OrganizationId}, tenant {tenant.Id}"
+            });
+            await _db.SaveChangesAsync();
+
+            var scanId = await _service.StartScanAsync(body.OrganizationId, tenant.Id, tenant.TenantId);
+
+            var response = req.CreateResponse(HttpStatusCode.Accepted);
+            await response.WriteAsJsonAsync(new { scanId, status = "running" });
+            return response;
         }
-
-        // Check M365 tenant is connected
-        var tenant = await _db.M365Tenants
-            .FirstOrDefaultAsync(t => t.OrganizationId == body.OrganizationId && t.Status == "active");
-
-        if (tenant is null)
+        catch (Exception ex)
         {
-            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
-            await notFound.WriteAsJsonAsync(new { error = "No active M365 tenant connected to this organization. Connect M365 first." });
-            return notFound;
+            // TEMPORARY: return actual error for debugging
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteAsJsonAsync(new { error = ex.Message, stack = ex.StackTrace, inner = ex.InnerException?.Message });
+            return err;
         }
-
-        var scanId = await _service.StartScanAsync(body.OrganizationId, tenant.Id, tenant.TenantId);
-
-        var response = req.CreateResponse(HttpStatusCode.Accepted);
-        await response.WriteAsJsonAsync(new { scanId, status = "running" });
-        return response;
     }
 
     /// <summary>
@@ -83,22 +106,32 @@ public class CopilotReadinessFunction
     public async Task<HttpResponseData> Get(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/copilot-readiness")] HttpRequestData req)
     {
-        var orgId = ResolveOrgId(req);
-        if (orgId is null)
+        try
         {
-            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
-            return bad;
+            var orgId = ResolveOrgId(req);
+            if (orgId is null)
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+                return bad;
+            }
+
+            var result = await _service.GetLatestScanAsync(orgId.Value);
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            if (result is null)
+                await response.WriteAsJsonAsync(new { scanned = false });
+            else
+                await response.WriteAsJsonAsync(result);
+            return response;
         }
-
-        var result = await _service.GetLatestScanAsync(orgId.Value);
-
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        if (result is null)
-            await response.WriteAsJsonAsync(new { scanned = false });
-        else
-            await response.WriteAsJsonAsync(result);
-        return response;
+        catch (Exception ex)
+        {
+            // TEMPORARY: return actual error for debugging
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteAsJsonAsync(new { error = ex.Message, stack = ex.StackTrace, inner = ex.InnerException?.Message });
+            return err;
+        }
     }
 
     /// <summary>

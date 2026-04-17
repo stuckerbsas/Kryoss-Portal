@@ -26,6 +26,46 @@ public class CopilotReadinessTimerFunction
         _log = log;
     }
 
+    /// <summary>
+    /// Stuck-scan reaper. Runs every 5 min. Marks scans stuck in "running" > 15 min as failed.
+    /// Handles cases where Task.Run background worker died silently (worker recycle, OOM, etc.).
+    /// </summary>
+    [Function("CopilotReadiness_ReapStuckScans")]
+    public async Task ReapStuck(
+        [TimerTrigger("0 */5 * * * *")] TimerInfo timer)
+    {
+        var cutoff = DateTime.UtcNow.AddMinutes(-15);
+        var stuck = await _db.CopilotReadinessScans
+            .Where(s => s.Status == "running" && s.StartedAt < cutoff)
+            .ToListAsync();
+
+        if (stuck.Count == 0) return;
+
+        foreach (var scan in stuck)
+        {
+            scan.Status = "failed";
+            scan.CompletedAt = DateTime.UtcNow;
+            scan.PipelineStatus = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                error = "Scan timed out — background worker likely died (worker recycle or unhandled exception)"
+            });
+
+            _db.Actlog.Add(new Data.Entities.Actlog
+            {
+                Timestamp = DateTime.UtcNow,
+                Severity = "error",
+                Module = "copilot-readiness",
+                Action = "scan.reaped",
+                EntityType = "CopilotReadinessScan",
+                EntityId = scan.Id.ToString(),
+                Message = "Scan marked failed by reaper — stuck in running > 15 min"
+            });
+        }
+
+        await _db.SaveChangesAsync();
+        _log.LogWarning("Reaped {Count} stuck Copilot Readiness scans", stuck.Count);
+    }
+
     [Function("CopilotReadiness_WeeklyScan")]
     public async Task Run(
         [TimerTrigger("0 0 2 * * 0")] TimerInfo timer)
