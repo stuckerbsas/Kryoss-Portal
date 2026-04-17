@@ -131,6 +131,10 @@ public static class DataPipeline
 
             return result;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             log.LogError(ex, "Data pipeline top-level failure");
@@ -553,10 +557,11 @@ public static class DataPipeline
     {
         try
         {
+            var thirtyDaysAgoIso = DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-ddTHH:mm:ssZ");
             var resp = await graph.Security.Alerts_v2.GetAsync(rc =>
             {
                 rc.QueryParameters.Filter =
-                    "serviceSource eq 'microsoftDefenderForCloudApps' or serviceSource eq 'office365'";
+                    $"(serviceSource eq 'microsoftDefenderForCloudApps' or serviceSource eq 'office365') and createdDateTime ge {thirtyDaysAgoIso}";
                 rc.QueryParameters.Top = 50;
             }, cancellationToken: ct);
 
@@ -571,8 +576,8 @@ public static class DataPipeline
             });
 
             ins.DlpAlertsLast30d = count;
-            // Task 3 may split incidents from alerts; for now they mirror.
-            ins.DlpIncidentCount = count;
+            // DlpIncidentCount: Graph Security doesn't distinguish alerts from incidents at /alerts_v2. Kept at 0 until Defender incidents API (/incidents) is wired in a later task.
+            ins.DlpIncidentCount = 0;
         }
         catch (ODataError ex) when (ex.ResponseStatusCode == 403)
         {
@@ -617,7 +622,7 @@ public static class DataPipeline
             {
                 var line = await reader.ReadLineAsync(ct);
                 if (string.IsNullOrWhiteSpace(line)) continue;
-                var fields = line.Split(',');
+                var fields = SplitCsvLine(line);
 
                 var storage = GetLongField(fields, cols, "Storage Used (Byte)");
                 storageBytes += storage;
@@ -658,24 +663,60 @@ public static class DataPipeline
     }
 
     // ================================================================
-    // CSV parsing helpers (BOM-aware, no quoted-field support needed
-    // for Graph reports output)
+    // CSV parsing helpers (BOM-aware, quote-aware — OneDrive usage CSV
+    // may contain quoted commas like "Smith, John" in display names)
     // ================================================================
     private static Dictionary<string, int> ParseCsvHeader(string header)
     {
         header = header.TrimStart('\uFEFF');
         var cols = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var fields = header.Split(',');
+        var fields = SplitCsvLine(header);
         for (int i = 0; i < fields.Length; i++)
-            cols[fields[i].Trim('"', ' ')] = i;
+            cols[fields[i]] = i;
         return cols;
+    }
+
+    /// <summary>
+    /// Minimal quote-aware CSV line splitter. Treats <c>"</c> as a toggle for
+    /// in-quote state and only splits on <c>,</c> when not in-quote. Trims
+    /// leading/trailing quotes and spaces from each field. Returns a
+    /// single empty field for null/empty input.
+    /// </summary>
+    private static string[] SplitCsvLine(string? line)
+    {
+        if (string.IsNullOrEmpty(line)) return new[] { string.Empty };
+
+        var result = new List<string>();
+        var sb = new System.Text.StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+                sb.Append(c);
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(sb.ToString().Trim().Trim('"').Trim());
+                sb.Clear();
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        result.Add(sb.ToString().Trim().Trim('"').Trim());
+        return result.ToArray();
     }
 
     private static long GetLongField(string[] fields, Dictionary<string, int> cols, string name)
     {
         if (!cols.TryGetValue(name, out var idx) || idx >= fields.Length)
             return 0;
-        return long.TryParse(fields[idx].Trim('"', ' '), NumberStyles.Integer,
+        return long.TryParse(fields[idx], NumberStyles.Integer,
             CultureInfo.InvariantCulture, out var v) ? v : 0;
     }
 
@@ -683,6 +724,6 @@ public static class DataPipeline
     {
         if (!cols.TryGetValue(name, out var idx) || idx >= fields.Length)
             return string.Empty;
-        return fields[idx].Trim('"', ' ');
+        return fields[idx];
     }
 }
