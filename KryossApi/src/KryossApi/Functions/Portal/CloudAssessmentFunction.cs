@@ -345,7 +345,6 @@ public class CloudAssessmentFunction
     [RequirePermission("assessment:write")]
     public async Task<HttpResponseData> DismissSuggestion(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/cloud-assessment/suggestions/{suggestionId}/dismiss")] HttpRequestData req,
-        FunctionContext context,
         string suggestionId)
     {
         if (!long.TryParse(suggestionId, out var id))
