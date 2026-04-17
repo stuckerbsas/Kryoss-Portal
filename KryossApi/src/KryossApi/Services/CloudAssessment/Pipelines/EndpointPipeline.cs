@@ -407,11 +407,11 @@ public static class EndpointPipeline
     {
         try
         {
-            var resp = await http.GetAsync("/api/machines", ct);
+            using var resp = await http.GetAsync("/api/machines", ct);
             if (!HandleDefenderResponse(resp, "machines", ins, log)) return;
 
-            using var doc = await JsonDocument.ParseAsync(
-                await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (!doc.RootElement.TryGetProperty("value", out var items)) return;
 
             ins.DefenderEndpointAvailable = true;
@@ -419,17 +419,19 @@ public static class EndpointPipeline
 
             foreach (var m in items.EnumerateArray())
             {
-                var risk = m.TryGetProperty("riskScore", out var r) ? r.GetString() ?? "" : "";
+                var risk = m.TryGetProperty("riskScore", out var r)
+                    ? r.GetString()?.ToLowerInvariant() ?? "" : "";
                 switch (risk)
                 {
-                    case "High": ins.MachinesHighRisk++; break;
-                    case "Medium": ins.MachinesMediumRisk++; break;
-                    case "Low": ins.MachinesLowRisk++; break;
+                    case "high": ins.MachinesHighRisk++; break;
+                    case "medium": ins.MachinesMediumRisk++; break;
+                    case "low": ins.MachinesLowRisk++; break;
                 }
             }
         }
         catch (Exception ex)
         {
+            err.MarkError();
             log.LogWarning(ex, "Defender machines collection failed");
         }
     }
@@ -440,11 +442,11 @@ public static class EndpointPipeline
     {
         try
         {
-            var resp = await http.GetAsync("/api/vulnerabilities", ct);
+            using var resp = await http.GetAsync("/api/vulnerabilities", ct);
             if (!HandleDefenderResponse(resp, "vulnerabilities", ins, log)) return;
 
-            using var doc = await JsonDocument.ParseAsync(
-                await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (!doc.RootElement.TryGetProperty("value", out var items)) return;
 
             ins.DefenderEndpointAvailable = true;
@@ -464,6 +466,7 @@ public static class EndpointPipeline
         }
         catch (Exception ex)
         {
+            err.MarkError();
             log.LogWarning(ex, "Defender vulnerabilities collection failed");
         }
     }
@@ -474,11 +477,11 @@ public static class EndpointPipeline
     {
         try
         {
-            var resp = await http.GetAsync("/api/exposureScore", ct);
+            using var resp = await http.GetAsync("/api/exposureScore", ct);
             if (!HandleDefenderResponse(resp, "exposure_score", ins, log)) return;
 
-            using var doc = await JsonDocument.ParseAsync(
-                await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             var root = doc.RootElement;
 
             ins.DefenderEndpointAvailable = true;
@@ -492,6 +495,7 @@ public static class EndpointPipeline
         }
         catch (Exception ex)
         {
+            err.MarkError();
             log.LogWarning(ex, "Defender exposure score collection failed");
         }
     }
@@ -502,11 +506,11 @@ public static class EndpointPipeline
     {
         try
         {
-            var resp = await http.GetAsync("/api/recommendations", ct);
+            using var resp = await http.GetAsync("/api/recommendations", ct);
             if (!HandleDefenderResponse(resp, "recommendations", ins, log)) return;
 
-            using var doc = await JsonDocument.ParseAsync(
-                await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (!doc.RootElement.TryGetProperty("value", out var items)) return;
 
             ins.DefenderEndpointAvailable = true;
@@ -521,6 +525,7 @@ public static class EndpointPipeline
         }
         catch (Exception ex)
         {
+            err.MarkError();
             log.LogWarning(ex, "Defender recommendations collection failed");
         }
     }
@@ -531,11 +536,11 @@ public static class EndpointPipeline
     {
         try
         {
-            var resp = await http.GetAsync("/api/Software", ct);
+            using var resp = await http.GetAsync("/api/Software", ct);
             if (!HandleDefenderResponse(resp, "software", ins, log)) return;
 
-            using var doc = await JsonDocument.ParseAsync(
-                await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (!doc.RootElement.TryGetProperty("value", out var items)) return;
 
             ins.DefenderEndpointAvailable = true;
@@ -543,8 +548,9 @@ public static class EndpointPipeline
 
             foreach (var app in items.EnumerateArray())
             {
-                var weaknesses = app.TryGetProperty("numberOfWeaknesses", out var w)
-                    ? w.GetInt32() : 0;
+                int weaknesses = 0;
+                if (app.TryGetProperty("numberOfWeaknesses", out var w) && w.ValueKind == JsonValueKind.Number)
+                    w.TryGetInt32(out weaknesses);
                 if (weaknesses > 0)
                 {
                     ins.SoftwareVulnerable++;
@@ -554,6 +560,7 @@ public static class EndpointPipeline
         }
         catch (Exception ex)
         {
+            err.MarkError();
             log.LogWarning(ex, "Defender software collection failed");
         }
     }
@@ -567,7 +574,6 @@ public static class EndpointPipeline
             | where Timestamp > ago(30d)
             | where ActionType in ('UsbDriveMounted', 'UsbDriveMount', 'PnpDeviceConnected')
             | summarize TotalEvents=count(), UniqueDevices=dcount(DeviceName)
-            | limit 1
             """;
 
         const string unsignedQuery = """
@@ -575,7 +581,6 @@ public static class EndpointPipeline
             | where Timestamp > ago(30d)
             | where InitiatingProcessSignatureStatus in ('Unsigned','Invalid','Unknown')
             | summarize TotalEvents=count()
-            | limit 1
             """;
 
         const string lateralQuery = """
@@ -584,55 +589,36 @@ public static class EndpointPipeline
             | where LogonType in ('Network','RemoteInteractive','NetworkCleartext')
             | where ActionType == 'LogonFailed'
             | summarize TotalEvents=count()
-            | limit 1
             """;
 
         var queries = new (string Name, string Kql, Action<EndpointInsights, JsonElement> Apply)[]
         {
-            ("usb_usage", usbQuery, (i, results) =>
-            {
-                foreach (var r in results.EnumerateArray())
-                {
-                    i.UsbUsageEvents += r.TryGetProperty("TotalEvents", out var te)
-                        ? te.GetInt32() : 0;
-                }
-            }),
-            ("unsigned_binaries", unsignedQuery, (i, results) =>
-            {
-                foreach (var r in results.EnumerateArray())
-                {
-                    i.UnsignedBinariesLast30d += r.TryGetProperty("TotalEvents", out var te)
-                        ? te.GetInt32() : 0;
-                }
-            }),
-            ("lateral_movement", lateralQuery, (i, results) =>
-            {
-                foreach (var r in results.EnumerateArray())
-                {
-                    i.LateralMovementAttempts30d += r.TryGetProperty("TotalEvents", out var te)
-                        ? te.GetInt32() : 0;
-                }
-            }),
+            ("usb_usage", usbQuery,
+                (i, results) => i.UsbUsageEvents += ExtractTotalEvents(results)),
+            ("unsigned_binaries", unsignedQuery,
+                (i, results) => i.UnsignedBinariesLast30d += ExtractTotalEvents(results)),
+            ("lateral_movement", lateralQuery,
+                (i, results) => i.LateralMovementAttempts30d += ExtractTotalEvents(results)),
         };
 
         var huntingTasks = queries.Select(q =>
-            RunHuntingQuery(http, q.Name, q.Kql, q.Apply, ins, log, ct));
+            RunHuntingQuery(http, q.Name, q.Kql, q.Apply, ins, err, log, ct));
         await Task.WhenAll(huntingTasks);
     }
 
     private static async Task RunHuntingQuery(
         HttpClient http, string name, string kql,
         Action<EndpointInsights, JsonElement> apply,
-        EndpointInsights ins, ILogger log, CancellationToken ct)
+        EndpointInsights ins, CollectorErrorTracker err, ILogger log, CancellationToken ct)
     {
         try
         {
             var payload = new { Query = kql };
-            var resp = await http.PostAsJsonAsync("/api/advancedhunting/run", payload, ct);
+            using var resp = await http.PostAsJsonAsync("/api/advancedhunting/run", payload, ct);
             if (!HandleDefenderResponse(resp, $"hunting_{name}", ins, log)) return;
 
-            using var doc = await JsonDocument.ParseAsync(
-                await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (doc.RootElement.TryGetProperty("Results", out var results))
             {
                 ins.DefenderEndpointAvailable = true;
@@ -641,8 +627,29 @@ public static class EndpointPipeline
         }
         catch (Exception ex)
         {
+            err.MarkError();
             log.LogWarning(ex, "Endpoint advanced-hunting query '{Name}' failed", name);
         }
+    }
+
+    /// <summary>
+    /// Sums the <c>TotalEvents</c> column across all result rows emitted by a
+    /// Defender advanced-hunting query. Missing / non-numeric values are
+    /// treated as zero so a malformed row can't poison the metric.
+    /// </summary>
+    private static int ExtractTotalEvents(JsonElement results)
+    {
+        int total = 0;
+        foreach (var r in results.EnumerateArray())
+        {
+            if (r.TryGetProperty("TotalEvents", out var te)
+                && te.ValueKind == JsonValueKind.Number
+                && te.TryGetInt32(out var value))
+            {
+                total += value;
+            }
+        }
+        return total;
     }
 
     // ================================================================
