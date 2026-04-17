@@ -15,6 +15,7 @@ import { OverviewTab } from './OverviewTab';
 import { ConnectAzureCard } from './ConnectAzureCard';
 import { AzureSubscriptionsList } from './AzureSubscriptionsList';
 import { AzureInfrastructureView } from './AzureInfrastructureView';
+import { RemediationTab } from './RemediationTab';
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -208,6 +209,7 @@ export function CloudAssessmentPage() {
         <TabsTrigger value="data">Data</TabsTrigger>
         <TabsTrigger value="productivity">Productivity</TabsTrigger>
         <TabsTrigger value="azure">Azure</TabsTrigger>
+        <TabsTrigger value="remediation">Remediation</TabsTrigger>
       </TabsList>
       <TabsContent value="overview"><OverviewTab orgId={orgId} /></TabsContent>
       <TabsContent value="identity"><AreaFindingsTab area="identity" scanId={latestScanId} /></TabsContent>
@@ -221,6 +223,7 @@ export function CloudAssessmentPage() {
           hasAzureScanData={hasAzureScanData}
         />
       </TabsContent>
+      <TabsContent value="remediation"><RemediationTab orgId={orgId} /></TabsContent>
     </Tabs>
   );
 }
