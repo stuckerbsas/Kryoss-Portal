@@ -112,20 +112,26 @@ public class CloudAssessmentService : ICloudAssessmentService
             var graphBetaHttp = await TryCreateAuthenticatedClient(
                 credential, "https://graph.microsoft.com/.default",
                 "https://graph.microsoft.com/beta", log);
+            var defenderHttp = await TryCreateAuthenticatedClient(
+                credential, "https://api.security.microsoft.com/.default",
+                "https://api.security.microsoft.com", log);
 
             AddActlog(db, "info", "scan.tokens.acquired", scanId,
-                $"Tokens: beta={graphBetaHttp != null}");
+                $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null}");
             await db.SaveChangesAsync();
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             var ct = cts.Token;
 
-            // CA-1: Identity is the only pipeline. CA-2+ will add more.
+            // CA-2: identity + endpoint pipelines run in parallel.
             var identityTask = TrackPipeline("identity",
                 () => IdentityPipeline.RunAsync(graph, graphBetaHttp, log, ct),
                 scanId, db, log);
+            var endpointTask = TrackPipeline("endpoint",
+                () => EndpointPipeline.RunAsync(graph, defenderHttp, log, ct),
+                scanId, db, log);
 
-            try { await identityTask; }
+            try { await Task.WhenAll(identityTask, endpointTask); }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
                 log.LogError("CA scan {ScanId} hit 10-min timeout", scanId);
@@ -133,28 +139,35 @@ public class CloudAssessmentService : ICloudAssessmentService
             }
 
             var identityResult = identityTask.Result;
+            var endpointResult = endpointTask.Result;
 
             // Aggregate findings + metrics by area.
-            var allFindings = new List<RecommendationResult>(identityResult.Findings);
+            var allFindings = new List<RecommendationResult>();
+            allFindings.AddRange(identityResult.Findings);
+            allFindings.AddRange(endpointResult.Findings);
 
             var allMetrics = new Dictionary<string, Dictionary<string, string>>();
             AddMetrics(allMetrics, "identity", identityResult.Metrics);
+            AddMetrics(allMetrics, "endpoint", endpointResult.Metrics);
 
-            // Compute Identity area score (0.0-5.0 scale matching verdict system).
-            var identityScore = ComputeIdentityAreaScore(identityResult.Metrics, allFindings);
+            // Per-area scores (0.0-5.0 scale matching verdict system).
+            var identityScore = ComputeIdentityAreaScore(identityResult.Metrics, identityResult.Findings);
+            var endpointScore = ComputeEndpointAreaScore(endpointResult.Metrics, endpointResult.Findings);
 
             var areaScores = JsonSerializer.Serialize(new Dictionary<string, decimal>
             {
-                ["identity"] = identityScore
+                ["identity"] = identityScore,
+                ["endpoint"] = endpointScore
             });
 
             var pipelineStatus = JsonSerializer.Serialize(new Dictionary<string, string>
             {
-                ["identity"] = identityResult.Status
+                ["identity"] = identityResult.Status,
+                ["endpoint"] = endpointResult.Status
             });
 
-            // Overall = identity for CA-1; later phases will average across areas.
-            var overallScore = identityScore;
+            // Overall = simple average across areas; will become weighted as more areas land.
+            var overallScore = Math.Round((identityScore + endpointScore) / 2m, 2);
             var verdict = VerdictFromScore(overallScore);
 
             // Update scan row.
@@ -168,15 +181,31 @@ public class CloudAssessmentService : ICloudAssessmentService
             scan.PipelineStatus = pipelineStatus;
             scan.CompletedAt = DateTime.UtcNow;
 
-            // Persist findings — CloudAssessmentFinding has an Area column on top
-            // of CopilotReadinessFinding's shape, so tag every row with "identity".
+            // Persist findings — CloudAssessmentFinding has an Area column; tag per-pipeline.
             var now = DateTime.UtcNow;
-            foreach (var f in allFindings)
+            foreach (var f in identityResult.Findings)
             {
                 db.CloudAssessmentFindings.Add(new CloudAssessmentFinding
                 {
                     ScanId = scanId,
                     Area = "identity",
+                    Service = f.Service,
+                    Feature = f.Feature,
+                    Status = f.Status,
+                    Priority = f.Priority,
+                    Observation = f.Observation,
+                    Recommendation = f.Recommendation,
+                    LinkText = f.LinkText,
+                    LinkUrl = f.LinkUrl,
+                    CreatedAt = now
+                });
+            }
+            foreach (var f in endpointResult.Findings)
+            {
+                db.CloudAssessmentFindings.Add(new CloudAssessmentFinding
+                {
+                    ScanId = scanId,
+                    Area = "endpoint",
                     Service = f.Service,
                     Feature = f.Feature,
                     Status = f.Status,
@@ -208,12 +237,12 @@ public class CloudAssessmentService : ICloudAssessmentService
             await db.SaveChangesAsync();
 
             AddActlog(db, "info", "scan.completed", scanId,
-                $"CA scan completed identityScore={identityScore} findings={allFindings.Count}");
+                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} findings={allFindings.Count}");
             await db.SaveChangesAsync();
 
             log.LogInformation(
-                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Verdict={Verdict}",
-                scanId, identityScore, verdict);
+                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Verdict={Verdict}",
+                scanId, identityScore, endpointScore, verdict);
         }
         catch (Exception ex)
         {
@@ -417,6 +446,67 @@ public class CloudAssessmentService : ICloudAssessmentService
 
         if (TryGetInt(metrics, "admins_without_mfa", out var adminsNoMfa) && adminsNoMfa > 0)
             score -= 0.3m;
+
+        // Clamp to [0, 5] then round to 2 decimal places.
+        if (score < 0m) score = 0m;
+        if (score > 5m) score = 5m;
+        return Math.Round(score, 2);
+    }
+
+    /// <summary>
+    /// Compute the Endpoint area score on the 0.00-5.00 verdict scale.
+    /// Spec weights: device compliance 30%, exposure 25%, app protection 20%,
+    /// vulns 15%, Autopilot 10%. Implementation: start at 5.0, deduct for
+    /// findings + metric gaps, clamp + round.
+    /// </summary>
+    private static decimal ComputeEndpointAreaScore(
+        Dictionary<string, string> metrics,
+        List<RecommendationResult> findings)
+    {
+        decimal score = 5.0m;
+
+        // Finding-based deductions — endpoint findings only (caller passes endpointResult.Findings).
+        var actionRequired = findings.Count(f =>
+            string.Equals(f.Status, "action_required", StringComparison.OrdinalIgnoreCase));
+        var warnings = findings.Count(f =>
+            string.Equals(f.Status, "warning", StringComparison.OrdinalIgnoreCase));
+
+        score -= Math.Min(actionRequired * 0.15m, 2.5m);
+        score -= Math.Min(warnings * 0.07m, 1.0m);
+
+        // Compliance rate: non_compliant / total.
+        if (TryGetInt(metrics, "devices_total", out var devicesTotal) && devicesTotal > 0)
+        {
+            var nonCompliant = TryGetInt(metrics, "devices_non_compliant", out var nc) ? nc : 0;
+            var rate = (decimal)nonCompliant / devicesTotal;
+            if (rate > 0.15m) score -= 0.4m;
+            else if (rate > 0.05m) score -= 0.2m;
+        }
+
+        // Exposure score (Defender): higher = worse.
+        if (TryGetDecimal(metrics, "exposure_score", out var exposure))
+        {
+            if (exposure > 60m) score -= 0.4m;
+            else if (exposure > 30m) score -= 0.2m;
+        }
+
+        // App protection coverage: any platform with devices but no APP policies = gap.
+        var devicesIos = TryGetInt(metrics, "devices_ios", out var iosCount) ? iosCount : 0;
+        var appProtIos = TryGetInt(metrics, "app_protection_ios", out var iosApp) ? iosApp : 0;
+        var devicesAndroid = TryGetInt(metrics, "devices_android", out var androidCount) ? androidCount : 0;
+        var appProtAndroid = TryGetInt(metrics, "app_protection_android", out var androidApp) ? androidApp : 0;
+        if ((devicesIos > 0 && appProtIos == 0) || (devicesAndroid > 0 && appProtAndroid == 0))
+            score -= 0.3m;
+
+        // Vulnerability posture.
+        if (TryGetInt(metrics, "vuln_critical", out var vulnCritical) && vulnCritical > 0)
+            score -= 0.3m;
+
+        // Autopilot maturity: Windows fleet of decent size with no profiles.
+        var devicesWindows = TryGetInt(metrics, "devices_windows", out var winCount) ? winCount : 0;
+        var autopilotProfiles = TryGetInt(metrics, "autopilot_profiles", out var ap) ? ap : 0;
+        if (devicesWindows >= 5 && autopilotProfiles == 0)
+            score -= 0.15m;
 
         // Clamp to [0, 5] then round to 2 decimal places.
         if (score < 0m) score = 0m;
