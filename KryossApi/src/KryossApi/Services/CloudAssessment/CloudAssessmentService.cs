@@ -20,17 +20,20 @@ public class CloudAssessmentService : ICloudAssessmentService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly M365Config _m365Config;
     private readonly ILogger<CloudAssessmentService> _log;
+    private readonly IFindingStatusService _statusService;
 
     public CloudAssessmentService(
         KryossDbContext db,
         IServiceScopeFactory scopeFactory,
         M365Config m365Config,
-        ILogger<CloudAssessmentService> log)
+        ILogger<CloudAssessmentService> log,
+        IFindingStatusService statusService)
     {
         _db = db;
         _scopeFactory = scopeFactory;
         _m365Config = m365Config;
         _log = log;
+        _statusService = statusService;
     }
 
     // ── StartScanAsync ──────────────────────────────────────────────
@@ -363,6 +366,19 @@ public class CloudAssessmentService : ICloudAssessmentService
                 $"CA scan completed {scoreSummary} findings={findingCount} wastedLicenses={productivityIns.WastedLicenses.Count}");
             await db.SaveChangesAsync();
 
+            // Compute and persist suggestions for this scan (advisory only — never fail the scan).
+            try
+            {
+                var statusSvc = scope.ServiceProvider.GetRequiredService<IFindingStatusService>();
+                var suggestions = await statusSvc.ComputeSuggestionsForScanAsync(scan.OrganizationId, scan.Id);
+                if (suggestions.Count > 0)
+                    await statusSvc.PersistSuggestionsAsync(scan.OrganizationId, scan.Id, suggestions);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to compute suggestions for scan {ScanId}", scan.Id);
+            }
+
             if (azureResult.Status != "skipped")
             {
                 log.LogInformation(
@@ -462,7 +478,7 @@ public class CloudAssessmentService : ICloudAssessmentService
 
         if (scan is null) return null;
 
-        var findings = await _db.CloudAssessmentFindings
+        var findingsRaw = await _db.CloudAssessmentFindings
             .Where(f => f.ScanId == scanId)
             .OrderBy(f => f.Area).ThenBy(f => f.Service).ThenBy(f => f.Feature)
             .Select(f => new
@@ -471,6 +487,22 @@ public class CloudAssessmentService : ICloudAssessmentService
                 f.Observation, f.Recommendation, f.LinkText, f.LinkUrl
             })
             .ToListAsync();
+
+        // Load remediation statuses for this org and build lookup by (Area, Service, Feature).
+        var statuses = await _statusService.GetStatusesForOrgAsync(scan.OrganizationId);
+        var statusLookup = statuses.ToDictionary(
+            s => (s.Area, s.Service, s.Feature),
+            s => s);
+
+        // Project findings with RemediationStatus overlay (null when no status set).
+        var findings = findingsRaw.Select(f => (object)new
+        {
+            f.Area, f.Service, f.Feature, f.Status, f.Priority,
+            f.Observation, f.Recommendation, f.LinkText, f.LinkUrl,
+            RemediationStatus = statusLookup.TryGetValue((f.Area, f.Service, f.Feature), out var st)
+                ? (object)new { st.Status, st.Notes, st.OwnerUserId, st.UpdatedAt }
+                : null
+        }).ToList();
 
         var metrics = await _db.CloudAssessmentMetrics
             .Where(m => m.ScanId == scanId)
