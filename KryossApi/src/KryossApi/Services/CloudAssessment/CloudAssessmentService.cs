@@ -116,8 +116,28 @@ public class CloudAssessmentService : ICloudAssessmentService
                 credential, "https://api.security.microsoft.com/.default",
                 "https://api.security.microsoft.com", log);
 
+            // Load connected Azure subscriptions for this org (may be empty → pipeline returns skipped).
+            var scanForOrg = await db.CloudAssessmentScans
+                .Where(s => s.Id == scanId)
+                .Select(s => s.OrganizationId)
+                .FirstAsync();
+
+            var azureSubIds = await db.CloudAssessmentAzureSubscriptions
+                .Where(s => s.OrganizationId == scanForOrg && s.ConsentState == "connected")
+                .Select(s => s.SubscriptionId)
+                .ToListAsync();
+
+            // Only acquire an ARM bearer token when there's actually something to scan.
+            HttpClient? armHttp = null;
+            if (azureSubIds.Count > 0)
+            {
+                armHttp = await TryCreateAuthenticatedClient(
+                    credential, "https://management.azure.com/.default",
+                    "https://management.azure.com", log);
+            }
+
             AddActlog(db, "info", "scan.tokens.acquired", scanId,
-                $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null}");
+                $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null} arm={armHttp != null} azureSubs={azureSubIds.Count}");
             await db.SaveChangesAsync();
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
@@ -137,8 +157,12 @@ public class CloudAssessmentService : ICloudAssessmentService
             var productivityTask = TrackPipeline("productivity",
                 () => ProductivityPipeline.RunAsync(graph, graphBetaHttp, productivityIns, log, ct),
                 scanId, db, log);
+            // CA-6 Subsession B: Azure pipeline. Returns status="skipped" when armHttp/subIds empty.
+            var azureTask = TrackPipeline("azure",
+                () => AzurePipeline.RunAsync(armHttp, azureSubIds, scanId, db, log, ct),
+                scanId, db, log);
 
-            try { await Task.WhenAll(identityTask, endpointTask, dataTask, productivityTask); }
+            try { await Task.WhenAll(identityTask, endpointTask, dataTask, productivityTask, azureTask); }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
                 log.LogError("CA scan {ScanId} hit 10-min timeout", scanId);
@@ -149,46 +173,80 @@ public class CloudAssessmentService : ICloudAssessmentService
             var endpointResult = endpointTask.Result;
             var dataResult = dataTask.Result;
             var productivityResult = productivityTask.Result;
+            var azureResult = azureTask.Result;
 
             // Aggregate findings + metrics by area.
             var findingCount = identityResult.Findings.Count + endpointResult.Findings.Count
-                + dataResult.Findings.Count + productivityResult.Findings.Count;
+                + dataResult.Findings.Count + productivityResult.Findings.Count
+                + azureResult.Findings.Count;
 
             var allMetrics = new Dictionary<string, Dictionary<string, string>>();
             AddMetrics(allMetrics, "identity", identityResult.Metrics);
             AddMetrics(allMetrics, "endpoint", endpointResult.Metrics);
             AddMetrics(allMetrics, "data", dataResult.Metrics);
             AddMetrics(allMetrics, "productivity", productivityResult.Metrics);
+            AddMetrics(allMetrics, "azure", azureResult.Metrics);
 
             // Per-area scores (0.0-5.0 scale matching verdict system).
             var identityScore = ComputeIdentityAreaScore(identityResult.Metrics, identityResult.Findings);
             var endpointScore = ComputeEndpointAreaScore(endpointResult.Metrics, endpointResult.Findings);
             var dataScore = ComputeDataAreaScore(dataResult.Metrics, dataResult.Findings);
             var productivityScore = ComputeProductivityAreaScore(productivityResult.Metrics, productivityResult.Findings);
+            // Azure score only computed when the pipeline actually ran. When skipped
+            // (no subscriptions connected) we treat the area as absent — the overall
+            // weights revert to the 4-area formula and "azure" is omitted from the
+            // areaScores/pipelineStatus JSON so the portal renders a 4-area radar.
+            var azureScore = azureResult.Status != "skipped"
+                ? ComputeAzureAreaScore(azureResult.Metrics, azureResult.Findings)
+                : 0m;
 
-            var areaScores = JsonSerializer.Serialize(new Dictionary<string, decimal>
+            var areaScoresDict = new Dictionary<string, decimal>
             {
                 ["identity"] = identityScore,
                 ["endpoint"] = endpointScore,
                 ["data"] = dataScore,
                 ["productivity"] = productivityScore
-            });
+            };
+            if (azureResult.Status != "skipped")
+                areaScoresDict["azure"] = azureScore;
 
-            var pipelineStatus = JsonSerializer.Serialize(new Dictionary<string, string>
+            var areaScores = JsonSerializer.Serialize(areaScoresDict);
+
+            var pipelineStatusDict = new Dictionary<string, string>
             {
                 ["identity"] = identityResult.Status,
                 ["endpoint"] = endpointResult.Status,
                 ["data"] = dataResult.Status,
                 ["productivity"] = productivityResult.Status
-            });
+            };
+            if (azureResult.Status != "skipped")
+                pipelineStatusDict["azure"] = azureResult.Status;
 
-            // Overall = weighted average. Identity 30%, Data 30%, Endpoint 25%, Productivity 15%.
-            var overallScore = Math.Round(
-                (identityScore * 0.30m) +
-                (dataScore * 0.30m) +
-                (endpointScore * 0.25m) +
-                (productivityScore * 0.15m),
-                2);
+            var pipelineStatus = JsonSerializer.Serialize(pipelineStatusDict);
+
+            // Overall = weighted average. 5-area when Azure present, 4-area otherwise.
+            decimal overallScore;
+            if (azureResult.Status != "skipped")
+            {
+                // 5-area weights — identity 28%, data 25%, endpoint 22%, azure 15%, productivity 10%.
+                overallScore = Math.Round(
+                    (identityScore * 0.28m) +
+                    (dataScore * 0.25m) +
+                    (endpointScore * 0.22m) +
+                    (azureScore * 0.15m) +
+                    (productivityScore * 0.10m),
+                    2);
+            }
+            else
+            {
+                // Existing 4-area weights (unchanged).
+                overallScore = Math.Round(
+                    (identityScore * 0.30m) +
+                    (dataScore * 0.30m) +
+                    (endpointScore * 0.25m) +
+                    (productivityScore * 0.15m),
+                    2);
+            }
             var verdict = VerdictFromScore(overallScore);
 
             // Update scan row.
@@ -200,6 +258,9 @@ public class CloudAssessmentService : ICloudAssessmentService
             scan.AreaScores = areaScores;
             scan.Verdict = verdict;
             scan.PipelineStatus = pipelineStatus;
+            // Serialize subscription IDs even when empty so the portal can distinguish
+            // "nothing connected" from a null legacy value. JSON array, never null.
+            scan.AzureSubscriptionIds = JsonSerializer.Serialize(azureSubIds);
             scan.CompletedAt = DateTime.UtcNow;
 
             // Persist findings — CloudAssessmentFinding has an Area column; tag per-pipeline.
@@ -230,6 +291,7 @@ public class CloudAssessmentService : ICloudAssessmentService
             AddFindings("endpoint", endpointResult.Findings);
             AddFindings("data", dataResult.Findings);
             AddFindings("productivity", productivityResult.Findings);
+            AddFindings("azure", azureResult.Findings);
 
             // Persist productivity license rows.
             foreach (var lic in productivityIns.Licenses)
@@ -295,13 +357,24 @@ public class CloudAssessmentService : ICloudAssessmentService
 
             await db.SaveChangesAsync();
 
+            var scoreSummary = $"identityScore={identityScore} endpointScore={endpointScore} dataScore={dataScore} productivityScore={productivityScore}"
+                + (azureResult.Status != "skipped" ? $" azureScore={azureScore}" : "");
             AddActlog(db, "info", "scan.completed", scanId,
-                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} dataScore={dataScore} productivityScore={productivityScore} findings={findingCount} wastedLicenses={productivityIns.WastedLicenses.Count}");
+                $"CA scan completed {scoreSummary} findings={findingCount} wastedLicenses={productivityIns.WastedLicenses.Count}");
             await db.SaveChangesAsync();
 
-            log.LogInformation(
-                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Productivity={Productivity} Verdict={Verdict}",
-                scanId, identityScore, endpointScore, dataScore, productivityScore, verdict);
+            if (azureResult.Status != "skipped")
+            {
+                log.LogInformation(
+                    "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Productivity={Productivity} Azure={Azure} Verdict={Verdict}",
+                    scanId, identityScore, endpointScore, dataScore, productivityScore, azureScore, verdict);
+            }
+            else
+            {
+                log.LogInformation(
+                    "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Productivity={Productivity} Verdict={Verdict}",
+                    scanId, identityScore, endpointScore, dataScore, productivityScore, verdict);
+            }
         }
         catch (Exception ex)
         {
@@ -554,7 +627,9 @@ public class CloudAssessmentService : ICloudAssessmentService
         var areaScoresB = ParseScoreDict(scanB.AreaScores);
 
         var deltas = new Dictionary<string, decimal>();
-        foreach (var key in new[] { "identity", "endpoint", "data", "productivity" })
+        // Azure is compared when present in either scan — TryGetValue fallback keeps
+        // 4-area-only scans correct (missing key → 0m, handled by the caller).
+        foreach (var key in new[] { "identity", "endpoint", "data", "productivity", "azure" })
         {
             var a = areaScoresA.TryGetValue(key, out var av) ? av : 0m;
             var b = areaScoresB.TryGetValue(key, out var bv) ? bv : 0m;
@@ -847,6 +922,68 @@ public class CloudAssessmentService : ICloudAssessmentService
             if (wastedCount > 10) score -= 0.4m;
             else if (wastedCount > 5) score -= 0.2m;
         }
+
+        // Clamp to [0, 5] then round to 2 decimal places.
+        if (score < 0m) score = 0m;
+        if (score > 5m) score = 5m;
+        return Math.Round(score, 2);
+    }
+
+    /// <summary>
+    /// Compute the Azure area score on the 0.00-5.00 verdict scale. Start at 5.0,
+    /// deduct for action_required + warning findings (capped), then apply metric-
+    /// driven penalties for the highest-signal Azure exposure / hygiene gaps.
+    /// Caller must only invoke this when the pipeline did NOT skip (skipped
+    /// pipelines are absent from areaScores entirely).
+    /// </summary>
+    private static decimal ComputeAzureAreaScore(
+        Dictionary<string, string> metrics,
+        List<RecommendationResult> findings)
+    {
+        decimal score = 5.0m;
+
+        // Finding-based deductions — mirror the Endpoint shape (heavy weighting on
+        // action_required; warnings are softer but still cumulative).
+        var actionRequired = findings.Count(f =>
+            string.Equals(f.Status, "action_required", StringComparison.OrdinalIgnoreCase));
+        var warnings = findings.Count(f =>
+            string.Equals(f.Status, "warning", StringComparison.OrdinalIgnoreCase));
+
+        score -= Math.Min(actionRequired * 0.15m, 2.5m);
+        score -= Math.Min(warnings * 0.07m, 1.0m);
+
+        // Highest-signal exposure metrics — any positive count is a concrete gap.
+        if (TryGetInt(metrics, "storage_public_blob", out var publicBlob) && publicBlob > 0)
+            score -= 0.5m;
+
+        if (TryGetInt(metrics, "nsg_any_any_allow", out var nsgAnyAny) && nsgAnyAny > 0)
+            score -= 0.4m;
+
+        // Defender unhealthy ratio — only meaningful with a reasonable denominator.
+        if (TryGetInt(metrics, "assessments_healthy", out var healthy)
+            && TryGetInt(metrics, "assessments_unhealthy", out var unhealthy))
+        {
+            var total = healthy + unhealthy;
+            if (total >= 10)
+            {
+                var unhealthyRatio = (decimal)unhealthy / total;
+                if (unhealthyRatio > 0.30m)
+                    score -= 0.4m;
+            }
+        }
+
+        // Secure score — only penalise when actually observed (key may be absent).
+        if (TryGetDecimal(metrics, "secure_score_pct", out var securePct) && securePct < 50m)
+            score -= 0.3m;
+
+        if (TryGetInt(metrics, "keyvaults_no_soft_delete", out var kvNoSoft) && kvNoSoft > 0)
+            score -= 0.3m;
+
+        if (TryGetInt(metrics, "vms_unencrypted_os_disk", out var vmUnenc) && vmUnenc > 0)
+            score -= 0.3m;
+
+        if (TryGetInt(metrics, "storage_http_enabled", out var httpEnabled) && httpEnabled > 0)
+            score -= 0.3m;
 
         // Clamp to [0, 5] then round to 2 decimal places.
         if (score < 0m) score = 0m;
