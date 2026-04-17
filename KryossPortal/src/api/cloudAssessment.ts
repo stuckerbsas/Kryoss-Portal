@@ -36,6 +36,12 @@ export interface CloudAssessmentFinding {
   recommendation: string | null;
   linkText: string | null;
   linkUrl: string | null;
+  remediationStatus?: {
+    status: FindingRemediationStatus['status'];
+    notes: string | null;
+    ownerUserId: string | null;
+    updatedAt: string;
+  } | null;
 }
 
 export interface CloudAssessmentScanDetail extends CloudAssessmentScan {

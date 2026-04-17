@@ -3,13 +3,22 @@ import {
   useCloudAssessment,
   useCloudAssessmentDetail,
   useAzureSubscriptions,
+  useSetFindingStatus,
   type CloudAssessmentFinding,
+  type FindingRemediationStatus,
 } from '@/api/cloudAssessment';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Cloud, ExternalLink } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { ConnectAzureCard } from './ConnectAzureCard';
@@ -41,7 +50,55 @@ function priorityBadge(priority: string) {
   return <Badge variant="secondary" className={colors[priority] ?? 'bg-gray-100 text-gray-500'}>{priority}</Badge>;
 }
 
+type RemediationStatusOption = Exclude<FindingRemediationStatus['status'], 'acknowledged_regression'>;
+
+const AREA_STATUS_LABELS: Record<RemediationStatusOption, string> = {
+  open: 'Open',
+  in_progress: 'In Progress',
+  resolved: 'Resolved',
+  deferred: 'Deferred',
+};
+
+const AREA_STATUS_OPTIONS: RemediationStatusOption[] = ['open', 'in_progress', 'resolved', 'deferred'];
+
+function AreaInlineStatusSelect({
+  finding,
+  orgId,
+}: {
+  finding: CloudAssessmentFinding;
+  orgId: string;
+}) {
+  const setStatus = useSetFindingStatus();
+  const currentStatus = finding.remediationStatus?.status ?? 'open';
+
+  const handleChange = (value: string) => {
+    setStatus.mutate({
+      organizationId: orgId,
+      area: finding.area,
+      service: finding.service,
+      feature: finding.feature,
+      status: value as RemediationStatusOption,
+    });
+  };
+
+  return (
+    <Select value={currentStatus} onValueChange={handleChange} disabled={setStatus.isPending}>
+      <SelectTrigger className="h-7 text-xs w-32">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {AREA_STATUS_OPTIONS.map((s) => (
+          <SelectItem key={s} value={s} className="text-xs">
+            {AREA_STATUS_LABELS[s]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | undefined }) {
+  const { orgId } = useOrgParam();
   const { data: detail } = useCloudAssessmentDetail(scanId);
 
   if (!scanId) {
@@ -79,6 +136,7 @@ function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | unde
               <TableHead>Observation</TableHead>
               <TableHead>Recommendation</TableHead>
               <TableHead className="w-20">Link</TableHead>
+              <TableHead>Remediation</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -100,6 +158,11 @@ function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | unde
                       <ExternalLink className="h-3 w-3" />
                       {f.linkText ?? 'Docs'}
                     </a>
+                  ) : '—'}
+                </TableCell>
+                <TableCell>
+                  {orgId ? (
+                    <AreaInlineStatusSelect finding={f} orgId={orgId} />
                   ) : '—'}
                 </TableCell>
               </TableRow>
