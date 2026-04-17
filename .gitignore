@@ -47,3 +47,4 @@ coverage/
 # Temp
 *.tmp
 *.bak
+.worktrees/
