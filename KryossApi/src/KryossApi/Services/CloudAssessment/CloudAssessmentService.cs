@@ -123,7 +123,7 @@ public class CloudAssessmentService : ICloudAssessmentService
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             var ct = cts.Token;
 
-            // CA-2/CA-3: identity + endpoint + data pipelines run in parallel.
+            // CA-2/CA-3/CA-4: identity + endpoint + data + productivity pipelines run in parallel.
             var identityTask = TrackPipeline("identity",
                 () => IdentityPipeline.RunAsync(graph, graphBetaHttp, log, ct),
                 scanId, db, log);
@@ -133,8 +133,12 @@ public class CloudAssessmentService : ICloudAssessmentService
             var dataTask = TrackPipeline("data",
                 () => DataPipeline.RunAsync(graph, graphBetaHttp, log, ct),
                 scanId, db, log);
+            var productivityIns = new ProductivityInsights();
+            var productivityTask = TrackPipeline("productivity",
+                () => ProductivityPipeline.RunAsync(graph, graphBetaHttp, productivityIns, log, ct),
+                scanId, db, log);
 
-            try { await Task.WhenAll(identityTask, endpointTask, dataTask); }
+            try { await Task.WhenAll(identityTask, endpointTask, dataTask, productivityTask); }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
                 log.LogError("CA scan {ScanId} hit 10-min timeout", scanId);
@@ -144,36 +148,42 @@ public class CloudAssessmentService : ICloudAssessmentService
             var identityResult = identityTask.Result;
             var endpointResult = endpointTask.Result;
             var dataResult = dataTask.Result;
+            var productivityResult = productivityTask.Result;
 
             // Aggregate findings + metrics by area.
-            var findingCount = identityResult.Findings.Count + endpointResult.Findings.Count + dataResult.Findings.Count;
+            var findingCount = identityResult.Findings.Count + endpointResult.Findings.Count
+                + dataResult.Findings.Count + productivityResult.Findings.Count;
 
             var allMetrics = new Dictionary<string, Dictionary<string, string>>();
             AddMetrics(allMetrics, "identity", identityResult.Metrics);
             AddMetrics(allMetrics, "endpoint", endpointResult.Metrics);
             AddMetrics(allMetrics, "data", dataResult.Metrics);
+            AddMetrics(allMetrics, "productivity", productivityResult.Metrics);
 
             // Per-area scores (0.0-5.0 scale matching verdict system).
             var identityScore = ComputeIdentityAreaScore(identityResult.Metrics, identityResult.Findings);
             var endpointScore = ComputeEndpointAreaScore(endpointResult.Metrics, endpointResult.Findings);
             var dataScore = ComputeDataAreaScore(dataResult.Metrics, dataResult.Findings);
+            var productivityScore = ComputeProductivityAreaScore(productivityResult.Metrics, productivityResult.Findings);
 
             var areaScores = JsonSerializer.Serialize(new Dictionary<string, decimal>
             {
                 ["identity"] = identityScore,
                 ["endpoint"] = endpointScore,
-                ["data"] = dataScore
+                ["data"] = dataScore,
+                ["productivity"] = productivityScore
             });
 
             var pipelineStatus = JsonSerializer.Serialize(new Dictionary<string, string>
             {
                 ["identity"] = identityResult.Status,
                 ["endpoint"] = endpointResult.Status,
-                ["data"] = dataResult.Status
+                ["data"] = dataResult.Status,
+                ["productivity"] = productivityResult.Status
             });
 
-            // Overall = simple average across areas; will become weighted as more areas land.
-            var overallScore = Math.Round((identityScore + endpointScore + dataScore) / 3m, 2);
+            // Overall = average of four areas.
+            var overallScore = Math.Round((identityScore + endpointScore + dataScore + productivityScore) / 4m, 2);
             var verdict = VerdictFromScore(overallScore);
 
             // Update scan row.
@@ -214,6 +224,53 @@ public class CloudAssessmentService : ICloudAssessmentService
             AddFindings("identity", identityResult.Findings);
             AddFindings("endpoint", endpointResult.Findings);
             AddFindings("data", dataResult.Findings);
+            AddFindings("productivity", productivityResult.Findings);
+
+            // Persist productivity license rows.
+            foreach (var lic in productivityIns.Licenses)
+            {
+                db.CloudAssessmentLicenses.Add(new CloudAssessmentLicense
+                {
+                    ScanId = scanId,
+                    SkuPartNumber = lic.SkuPartNumber,
+                    FriendlyName = lic.FriendlyName,
+                    Purchased = lic.Purchased,
+                    Assigned = lic.Assigned,
+                    Available = lic.Available,
+                    CreatedAt = now
+                });
+            }
+
+            // Persist productivity adoption rows.
+            foreach (var adp in productivityIns.Adoptions)
+            {
+                db.CloudAssessmentAdoptions.Add(new CloudAssessmentAdoption
+                {
+                    ScanId = scanId,
+                    Area = "productivity",
+                    ServiceName = adp.ServiceName,
+                    LicensedCount = adp.LicensedCount,
+                    Active30d = adp.Active30d,
+                    AdoptionRate = adp.AdoptionRate,
+                    CreatedAt = now
+                });
+            }
+
+            // Persist wasted license rows.
+            foreach (var w in productivityIns.WastedLicenses)
+            {
+                db.CloudAssessmentWastedLicenses.Add(new CloudAssessmentWastedLicense
+                {
+                    ScanId = scanId,
+                    UserPrincipal = w.UserPrincipal,
+                    DisplayName = w.DisplayName,
+                    Sku = w.Sku,
+                    LastSignIn = w.LastSignIn,
+                    DaysInactive = w.DaysInactive,
+                    EstimatedCostYear = w.EstimatedCostYear,
+                    CreatedAt = now
+                });
+            }
 
             // Persist metrics — Area column = dimension key from allMetrics.
             foreach (var (dimension, metricsDict) in allMetrics)
@@ -234,12 +291,12 @@ public class CloudAssessmentService : ICloudAssessmentService
             await db.SaveChangesAsync();
 
             AddActlog(db, "info", "scan.completed", scanId,
-                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} dataScore={dataScore} findings={findingCount}");
+                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} dataScore={dataScore} productivityScore={productivityScore} findings={findingCount} wastedLicenses={productivityIns.WastedLicenses.Count}");
             await db.SaveChangesAsync();
 
             log.LogInformation(
-                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Verdict={Verdict}",
-                scanId, identityScore, endpointScore, dataScore, verdict);
+                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Productivity={Productivity} Verdict={Verdict}",
+                scanId, identityScore, endpointScore, dataScore, productivityScore, verdict);
         }
         catch (Exception ex)
         {
@@ -585,6 +642,69 @@ public class CloudAssessmentService : ICloudAssessmentService
         }
         if (falseLicenseCount >= 4) score -= 0.2m;
         if (falseLicenseCount == 6) score -= 0.2m; // additional — total -0.4 when all false.
+
+        // Clamp to [0, 5] then round to 2 decimal places.
+        if (score < 0m) score = 0m;
+        if (score > 5m) score = 5m;
+        return Math.Round(score, 2);
+    }
+
+    /// <summary>
+    /// Compute the Productivity area score on the 0.00-5.00 verdict scale.
+    /// Weights: overall adoption rate 40%, license utilization 25% (proxied via
+    /// action_required finding deductions), Copilot adoption 15%, waste ratio 20%.
+    /// Note: license utilization weight (25%) is folded into the base finding
+    /// deductions — licensing action_required findings capture over-purchased/
+    /// unassigned seats so no separate metric penalty is needed.
+    /// </summary>
+    private static decimal ComputeProductivityAreaScore(
+        Dictionary<string, string> metrics,
+        List<RecommendationResult> findings)
+    {
+        decimal score = 5.0m;
+
+        // Finding-based deductions.
+        var actionRequired = findings.Count(f =>
+            string.Equals(f.Status, "action_required", StringComparison.OrdinalIgnoreCase));
+        var warnings = findings.Count(f =>
+            string.Equals(f.Status, "warning", StringComparison.OrdinalIgnoreCase));
+
+        score -= Math.Min(actionRequired * 0.12m, 2.5m);
+        score -= Math.Min(warnings * 0.06m, 1.0m);
+
+        // Overall adoption signal (40% weight) — average of the four core workload rates
+        // that are non-zero (zero = service not licensed, not unused).
+        var adoptionRates = new List<decimal>();
+        foreach (var key in new[] { "email_adoption_rate", "teams_adoption_rate",
+                                    "sharepoint_adoption_rate", "onedrive_adoption_rate" })
+        {
+            if (TryGetDecimal(metrics, key, out var rate) && rate > 0m)
+                adoptionRates.Add(rate);
+        }
+        if (adoptionRates.Count > 0)
+        {
+            var avgAdoption = adoptionRates.Average();
+            if (avgAdoption < 40m) score -= 0.6m;
+            else if (avgAdoption < 60m) score -= 0.3m;
+        }
+
+        // Copilot adoption (15% weight).
+        if (TryGetInt(metrics, "copilot_licenses_purchased", out var copilotPurchased)
+            && copilotPurchased > 0)
+        {
+            if (TryGetDecimal(metrics, "copilot_adoption_pct", out var copilotPct))
+            {
+                if (copilotPct < 50m) score -= 0.3m;
+                else if (copilotPct < 80m) score -= 0.15m;
+            }
+        }
+
+        // Waste ratio (20% weight — more waste = more penalty).
+        if (TryGetInt(metrics, "wasted_license_count", out var wastedCount))
+        {
+            if (wastedCount > 10) score -= 0.4m;
+            else if (wastedCount > 5) score -= 0.2m;
+        }
 
         // Clamp to [0, 5] then round to 2 decimal places.
         if (score < 0m) score = 0m;
