@@ -14,15 +14,18 @@ public class CloudAssessmentFunction
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
     private readonly ICloudAssessmentService _service;
+    private readonly IFindingStatusService _statusService;
 
     public CloudAssessmentFunction(
         KryossDbContext db,
         ICurrentUserService user,
-        ICloudAssessmentService service)
+        ICloudAssessmentService service,
+        IFindingStatusService statusService)
     {
         _db = db;
         _user = user;
         _service = service;
+        _statusService = statusService;
     }
 
     /// <summary>
@@ -241,6 +244,157 @@ public class CloudAssessmentFunction
         return response;
     }
 
+    /// <summary>
+    /// Get finding statuses for an organization.
+    /// GET /v2/cloud-assessment/findings/status?organizationId={guid}[&area=identity][&status=open]
+    /// </summary>
+    [Function("CloudAssessmentFindingStatuses")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> GetFindingStatuses(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/findings/status")] HttpRequestData req)
+    {
+        var orgId = ResolveOrgId(req);
+        if (orgId is null)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+            return bad;
+        }
+
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var area = query["area"];
+        var statusFilter = query["status"];
+
+        var statuses = await _statusService.GetStatusesForOrgAsync(orgId.Value, area, statusFilter);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(statuses);
+        return response;
+    }
+
+    /// <summary>
+    /// Set (upsert) a finding status for an organization.
+    /// PATCH /v2/cloud-assessment/findings/status
+    /// </summary>
+    [Function("CloudAssessmentSetFindingStatus")]
+    [RequirePermission("assessment:write")]
+    public async Task<HttpResponseData> SetFindingStatus(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "v2/cloud-assessment/findings/status")] HttpRequestData req)
+    {
+        var body = await req.ReadFromJsonAsync<SetFindingStatusRequest>();
+        if (body is null || body.OrganizationId == Guid.Empty)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
+            return bad;
+        }
+
+        try
+        {
+            var updated = await _statusService.SetStatusAsync(
+                body.OrganizationId,
+                body.Area,
+                body.Service,
+                body.Feature,
+                body.Status,
+                body.Notes,
+                body.OwnerUserId,
+                actorUserId: _user.UserId);
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(updated);
+            return response;
+        }
+        catch (ArgumentException ex)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = ex.Message });
+            return bad;
+        }
+    }
+
+    /// <summary>
+    /// Get active remediation suggestions for an organization.
+    /// GET /v2/cloud-assessment/suggestions?organizationId={guid}
+    /// </summary>
+    [Function("CloudAssessmentGetSuggestions")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> GetSuggestions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/suggestions")] HttpRequestData req)
+    {
+        var orgId = ResolveOrgId(req);
+        if (orgId is null)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+            return bad;
+        }
+
+        var suggestions = await _statusService.GetActiveSuggestionsAsync(orgId.Value);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(suggestions);
+        return response;
+    }
+
+    /// <summary>
+    /// Dismiss a remediation suggestion.
+    /// POST /v2/cloud-assessment/suggestions/{suggestionId}/dismiss
+    /// </summary>
+    [Function("CloudAssessmentDismissSuggestion")]
+    [RequirePermission("assessment:write")]
+    public async Task<HttpResponseData> DismissSuggestion(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/cloud-assessment/suggestions/{suggestionId}/dismiss")] HttpRequestData req,
+        FunctionContext context,
+        string suggestionId)
+    {
+        if (!long.TryParse(suggestionId, out var id))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Invalid suggestionId" });
+            return bad;
+        }
+
+        try
+        {
+            await _statusService.DismissSuggestionAsync(id, _user.UserId);
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(new { dismissed = true });
+            return response;
+        }
+        catch (InvalidOperationException)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = "Suggestion not found" });
+            return notFound;
+        }
+    }
+
+    /// <summary>
+    /// Get remediation stats for an organization.
+    /// GET /v2/cloud-assessment/remediation/stats?organizationId={guid}
+    /// </summary>
+    [Function("CloudAssessmentRemediationStats")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> GetRemediationStats(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/remediation/stats")] HttpRequestData req)
+    {
+        var orgId = ResolveOrgId(req);
+        if (orgId is null)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+            return bad;
+        }
+
+        var stats = await _statusService.GetStatsAsync(orgId.Value);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(stats);
+        return response;
+    }
+
     // ── Helpers ──
 
     private Guid? ResolveOrgId(HttpRequestData req)
@@ -262,4 +416,15 @@ public class CloudAssessmentScanRequest
 {
     public Guid OrganizationId { get; set; }
     public Guid? TenantId { get; set; }
+}
+
+public class SetFindingStatusRequest
+{
+    public Guid OrganizationId { get; set; }
+    public string Area { get; set; } = string.Empty;
+    public string Service { get; set; } = string.Empty;
+    public string Feature { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public Guid? OwnerUserId { get; set; }
 }
