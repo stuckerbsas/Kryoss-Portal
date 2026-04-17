@@ -142,9 +142,7 @@ public class CloudAssessmentService : ICloudAssessmentService
             var endpointResult = endpointTask.Result;
 
             // Aggregate findings + metrics by area.
-            var allFindings = new List<RecommendationResult>();
-            allFindings.AddRange(identityResult.Findings);
-            allFindings.AddRange(endpointResult.Findings);
+            var findingCount = identityResult.Findings.Count + endpointResult.Findings.Count;
 
             var allMetrics = new Dictionary<string, Dictionary<string, string>>();
             AddMetrics(allMetrics, "identity", identityResult.Metrics);
@@ -183,40 +181,30 @@ public class CloudAssessmentService : ICloudAssessmentService
 
             // Persist findings — CloudAssessmentFinding has an Area column; tag per-pipeline.
             var now = DateTime.UtcNow;
-            foreach (var f in identityResult.Findings)
+
+            void AddFindings(string area, List<RecommendationResult> fs)
             {
-                db.CloudAssessmentFindings.Add(new CloudAssessmentFinding
+                foreach (var f in fs)
                 {
-                    ScanId = scanId,
-                    Area = "identity",
-                    Service = f.Service,
-                    Feature = f.Feature,
-                    Status = f.Status,
-                    Priority = f.Priority,
-                    Observation = f.Observation,
-                    Recommendation = f.Recommendation,
-                    LinkText = f.LinkText,
-                    LinkUrl = f.LinkUrl,
-                    CreatedAt = now
-                });
+                    db.CloudAssessmentFindings.Add(new CloudAssessmentFinding
+                    {
+                        ScanId = scanId,
+                        Area = area,
+                        Service = f.Service,
+                        Feature = f.Feature,
+                        Status = f.Status,
+                        Priority = f.Priority,
+                        Observation = f.Observation,
+                        Recommendation = f.Recommendation,
+                        LinkText = f.LinkText,
+                        LinkUrl = f.LinkUrl,
+                        CreatedAt = now
+                    });
+                }
             }
-            foreach (var f in endpointResult.Findings)
-            {
-                db.CloudAssessmentFindings.Add(new CloudAssessmentFinding
-                {
-                    ScanId = scanId,
-                    Area = "endpoint",
-                    Service = f.Service,
-                    Feature = f.Feature,
-                    Status = f.Status,
-                    Priority = f.Priority,
-                    Observation = f.Observation,
-                    Recommendation = f.Recommendation,
-                    LinkText = f.LinkText,
-                    LinkUrl = f.LinkUrl,
-                    CreatedAt = now
-                });
-            }
+
+            AddFindings("identity", identityResult.Findings);
+            AddFindings("endpoint", endpointResult.Findings);
 
             // Persist metrics — Area column = dimension key from allMetrics.
             foreach (var (dimension, metricsDict) in allMetrics)
@@ -237,7 +225,7 @@ public class CloudAssessmentService : ICloudAssessmentService
             await db.SaveChangesAsync();
 
             AddActlog(db, "info", "scan.completed", scanId,
-                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} findings={allFindings.Count}");
+                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} findings={findingCount}");
             await db.SaveChangesAsync();
 
             log.LogInformation(
