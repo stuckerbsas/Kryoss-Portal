@@ -71,6 +71,16 @@ public class KryossDbContext : DbContext
     public DbSet<CopilotReadinessSharepoint> CopilotReadinessSharepoint => Set<CopilotReadinessSharepoint>();
     public DbSet<CopilotReadinessExternalUser> CopilotReadinessExternalUsers => Set<CopilotReadinessExternalUser>();
 
+    // Cloud Assessment (CA-0)
+    public DbSet<CloudAssessmentScan> CloudAssessmentScans => Set<CloudAssessmentScan>();
+    public DbSet<CloudAssessmentFinding> CloudAssessmentFindings => Set<CloudAssessmentFinding>();
+    public DbSet<CloudAssessmentMetric> CloudAssessmentMetrics => Set<CloudAssessmentMetric>();
+    public DbSet<CloudAssessmentAzureSubscription> CloudAssessmentAzureSubscriptions => Set<CloudAssessmentAzureSubscription>();
+    public DbSet<CloudAssessmentLicense> CloudAssessmentLicenses => Set<CloudAssessmentLicense>();
+    public DbSet<CloudAssessmentAdoption> CloudAssessmentAdoptions => Set<CloudAssessmentAdoption>();
+    public DbSet<CloudAssessmentWastedLicense> CloudAssessmentWastedLicenses => Set<CloudAssessmentWastedLicense>();
+    public DbSet<CloudAssessmentFindingStatus> CloudAssessmentFindingStatuses => Set<CloudAssessmentFindingStatus>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // ── Auth ──
@@ -352,6 +362,20 @@ public class KryossDbContext : DbContext
         {
             e.ToTable("copilot_readiness_scans");
             e.HasKey(x => x.Id);
+            // snake_case column mappings
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.D1Score).HasColumnName("d1_score");
+            e.Property(x => x.D2Score).HasColumnName("d2_score");
+            e.Property(x => x.D3Score).HasColumnName("d3_score");
+            e.Property(x => x.D4Score).HasColumnName("d4_score");
+            e.Property(x => x.D5Score).HasColumnName("d5_score");
+            e.Property(x => x.D6Score).HasColumnName("d6_score");
+            e.Property(x => x.OverallScore).HasColumnName("overall_score");
+            e.Property(x => x.PipelineStatus).HasColumnName("pipeline_status");
+            e.Property(x => x.StartedAt).HasColumnName("started_at");
+            e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Metrics).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
@@ -365,6 +389,10 @@ public class KryossDbContext : DbContext
             e.ToTable("copilot_readiness_metrics");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.MetricKey).HasColumnName("metric_key");
+            e.Property(x => x.MetricValue).HasColumnName("metric_value");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
 
         mb.Entity<CopilotReadinessFinding>(e =>
@@ -372,6 +400,10 @@ public class KryossDbContext : DbContext
             e.ToTable("copilot_readiness_findings");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.LinkText).HasColumnName("link_text");
+            e.Property(x => x.LinkUrl).HasColumnName("link_url");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
 
         mb.Entity<CopilotReadinessSharepoint>(e =>
@@ -379,6 +411,15 @@ public class KryossDbContext : DbContext
             e.ToTable("copilot_readiness_sharepoint");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.SiteUrl).HasColumnName("site_url");
+            e.Property(x => x.SiteTitle).HasColumnName("site_title");
+            e.Property(x => x.TotalFiles).HasColumnName("total_files");
+            e.Property(x => x.LabeledFiles).HasColumnName("labeled_files");
+            e.Property(x => x.OversharedFiles).HasColumnName("overshared_files");
+            e.Property(x => x.RiskLevel).HasColumnName("risk_level");
+            e.Property(x => x.TopLabels).HasColumnName("top_labels");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
 
         mb.Entity<CopilotReadinessExternalUser>(e =>
@@ -386,6 +427,127 @@ public class KryossDbContext : DbContext
             e.ToTable("copilot_readiness_external_users");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.UserPrincipal).HasColumnName("user_principal");
+            e.Property(x => x.DisplayName).HasColumnName("display_name");
+            e.Property(x => x.EmailDomain).HasColumnName("email_domain");
+            e.Property(x => x.LastSignIn).HasColumnName("last_sign_in");
+            e.Property(x => x.RiskLevel).HasColumnName("risk_level");
+            e.Property(x => x.SitesAccessed).HasColumnName("sites_accessed");
+            e.Property(x => x.HighestPermission).HasColumnName("highest_permission");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        // ── Cloud Assessment (CA-0) ──
+        mb.Entity<CloudAssessmentScan>(e =>
+        {
+            e.ToTable("cloud_assessment_scans");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.AzureSubscriptionIds).HasColumnName("azure_subscription_ids");
+            e.Property(x => x.OverallScore).HasColumnName("overall_score");
+            e.Property(x => x.AreaScores).HasColumnName("area_scores");
+            e.Property(x => x.PipelineStatus).HasColumnName("pipeline_status");
+            e.Property(x => x.StartedAt).HasColumnName("started_at");
+            e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade).IsRequired(false);
+            e.HasMany(x => x.Findings).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Metrics).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Licenses).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Adoptions).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.WastedLicenses).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<CloudAssessmentFinding>(e =>
+        {
+            e.ToTable("cloud_assessment_findings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.LinkText).HasColumnName("link_text");
+            e.Property(x => x.LinkUrl).HasColumnName("link_url");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        mb.Entity<CloudAssessmentMetric>(e =>
+        {
+            e.ToTable("cloud_assessment_metrics");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.MetricKey).HasColumnName("metric_key");
+            e.Property(x => x.MetricValue).HasColumnName("metric_value");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        mb.Entity<CloudAssessmentAzureSubscription>(e =>
+        {
+            e.ToTable("cloud_assessment_azure_subscriptions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.SubscriptionId).HasColumnName("subscription_id");
+            e.Property(x => x.DisplayName).HasColumnName("display_name");
+            e.Property(x => x.TenantId).HasColumnName("tenant_id");
+            e.Property(x => x.ConsentState).HasColumnName("consent_state");
+            e.Property(x => x.ConnectedAt).HasColumnName("connected_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasIndex(x => new { x.OrganizationId, x.SubscriptionId }).IsUnique();
+        });
+
+        mb.Entity<CloudAssessmentLicense>(e =>
+        {
+            e.ToTable("cloud_assessment_licenses");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.SkuPartNumber).HasColumnName("sku_part_number");
+            e.Property(x => x.FriendlyName).HasColumnName("friendly_name");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        mb.Entity<CloudAssessmentAdoption>(e =>
+        {
+            e.ToTable("cloud_assessment_adoption");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.ServiceName).HasColumnName("service_name");
+            e.Property(x => x.LicensedCount).HasColumnName("licensed_count");
+            e.Property(x => x.Active30d).HasColumnName("active_30d");
+            e.Property(x => x.AdoptionRate).HasColumnName("adoption_rate");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        mb.Entity<CloudAssessmentWastedLicense>(e =>
+        {
+            e.ToTable("cloud_assessment_wasted_licenses");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.UserPrincipal).HasColumnName("user_principal");
+            e.Property(x => x.DisplayName).HasColumnName("display_name");
+            e.Property(x => x.LastSignIn).HasColumnName("last_sign_in");
+            e.Property(x => x.DaysInactive).HasColumnName("days_inactive");
+            e.Property(x => x.EstimatedCostYear).HasColumnName("estimated_cost_year");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        mb.Entity<CloudAssessmentFindingStatus>(e =>
+        {
+            e.ToTable("cloud_assessment_finding_status");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.OwnerUserId).HasColumnName("owner_user_id");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.Property(x => x.UpdatedBy).HasColumnName("updated_by");
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasIndex(x => new { x.OrganizationId, x.Area, x.Service, x.Feature }).IsUnique();
         });
     }
 }

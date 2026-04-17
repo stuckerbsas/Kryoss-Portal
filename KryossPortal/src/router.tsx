@@ -13,6 +13,7 @@ import { PortsTab } from './components/org-detail/PortsTab';
 import { ThreatsTab } from './components/org-detail/ThreatsTab';
 import { ExternalScanTab } from './components/org-detail/ExternalScanTab';
 import { M365Tab } from './components/org-detail/M365Tab';
+import { CloudAssessmentTab } from './components/org-detail/CloudAssessmentTab';
 import { ProtocolUsageTab } from './components/org-detail/ProtocolUsageTab';
 import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
 import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
               { path: 'threats', element: <ThreatsTab /> },
               { path: 'external-scan', element: <ExternalScanTab /> },
               { path: 'm365', element: <M365Tab /> },
+              { path: 'cloud-assessment', element: <CloudAssessmentTab /> },
               { path: 'protocol-usage', element: <ProtocolUsageTab /> },
               {
                 path: 'machines/:machineId',

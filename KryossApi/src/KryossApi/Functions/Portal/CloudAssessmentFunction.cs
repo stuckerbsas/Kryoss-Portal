@@ -2,23 +2,23 @@ using System.Net;
 using KryossApi.Data;
 using KryossApi.Middleware;
 using KryossApi.Services;
-using KryossApi.Services.CopilotReadiness;
+using KryossApi.Services.CloudAssessment;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace KryossApi.Functions.Portal;
 
-public class CopilotReadinessFunction
+public class CloudAssessmentFunction
 {
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
-    private readonly ICopilotReadinessService _service;
+    private readonly ICloudAssessmentService _service;
 
-    public CopilotReadinessFunction(
+    public CloudAssessmentFunction(
         KryossDbContext db,
         ICurrentUserService user,
-        ICopilotReadinessService service)
+        ICloudAssessmentService service)
     {
         _db = db;
         _user = user;
@@ -26,17 +26,17 @@ public class CopilotReadinessFunction
     }
 
     /// <summary>
-    /// Trigger a new Copilot Readiness scan.
-    /// POST /v2/copilot-readiness/scan
+    /// Trigger a new Cloud Assessment scan.
+    /// POST /v2/cloud-assessment/scan
     /// </summary>
-    [Function("CopilotReadiness_Scan")]
+    [Function("CloudAssessment_Scan")]
     [RequirePermission("assessment:create")]
     public async Task<HttpResponseData> Scan(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/copilot-readiness/scan")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/cloud-assessment/scan")] HttpRequestData req)
     {
         try
         {
-            var body = await req.ReadFromJsonAsync<CopilotReadinessScanRequest>();
+            var body = await req.ReadFromJsonAsync<CloudAssessmentScanRequest>();
             if (body is null || body.OrganizationId == Guid.Empty)
             {
                 var bad = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -58,31 +58,20 @@ public class CopilotReadinessFunction
                 }
             }
 
-            // Check M365 tenant is connected
-            var tenant = await _db.M365Tenants
-                .FirstOrDefaultAsync(t => t.OrganizationId == body.OrganizationId && t.Status == "active");
-
-            if (tenant is null)
-            {
-                var notFound = req.CreateResponse(HttpStatusCode.NotFound);
-                await notFound.WriteAsJsonAsync(new { error = "No active M365 tenant connected to this organization. Connect M365 first." });
-                return notFound;
-            }
-
             // Actlog entry at scan request — proves function was hit
             _db.Actlog.Add(new Data.Entities.Actlog
             {
                 Timestamp = DateTime.UtcNow,
                 Severity = "info",
-                Module = "copilot-readiness",
+                Module = "cloud-assessment",
                 Action = "scan.requested",
                 EntityType = "Organization",
                 EntityId = body.OrganizationId.ToString(),
-                Message = $"Copilot Readiness scan requested for org {body.OrganizationId}, tenant {tenant.Id}"
+                Message = $"Cloud Assessment scan requested for org {body.OrganizationId}"
             });
             await _db.SaveChangesAsync();
 
-            var scanId = await _service.StartScanAsync(body.OrganizationId, tenant.Id, tenant.TenantId);
+            var scanId = await _service.StartScanAsync(body.OrganizationId, body.TenantId);
 
             var response = req.CreateResponse(HttpStatusCode.Accepted);
             await response.WriteAsJsonAsync(new { scanId, status = "running" });
@@ -98,13 +87,13 @@ public class CopilotReadinessFunction
     }
 
     /// <summary>
-    /// Get latest Copilot Readiness scan for an organization.
-    /// GET /v2/copilot-readiness?organizationId={guid}
+    /// Get latest Cloud Assessment scan for an organization.
+    /// GET /v2/cloud-assessment?organizationId={guid}
     /// </summary>
-    [Function("CopilotReadiness_Get")]
+    [Function("CloudAssessment_Get")]
     [RequirePermission("assessment:read")]
     public async Task<HttpResponseData> Get(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/copilot-readiness")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment")] HttpRequestData req)
     {
         try
         {
@@ -135,13 +124,48 @@ public class CopilotReadinessFunction
     }
 
     /// <summary>
-    /// Get full detail for a specific scan.
-    /// GET /v2/copilot-readiness/{scanId}
+    /// Get scan history for an organization.
+    /// GET /v2/cloud-assessment/history?organizationId={guid}
+    /// NOTE: declared before /{scanId} — literal route segment wins over catchall.
     /// </summary>
-    [Function("CopilotReadiness_Detail")]
+    [Function("CloudAssessment_History")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> History(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/history")] HttpRequestData req)
+    {
+        try
+        {
+            var orgId = ResolveOrgId(req);
+            if (orgId is null)
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+                return bad;
+            }
+
+            var result = await _service.GetScanHistoryAsync(orgId.Value);
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(result);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            // TEMPORARY: return actual error for debugging
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteAsJsonAsync(new { error = ex.Message, stack = ex.StackTrace, inner = ex.InnerException?.Message });
+            return err;
+        }
+    }
+
+    /// <summary>
+    /// Get full detail for a specific scan.
+    /// GET /v2/cloud-assessment/{scanId}
+    /// </summary>
+    [Function("CloudAssessment_Detail")]
     [RequirePermission("assessment:read")]
     public async Task<HttpResponseData> Detail(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/copilot-readiness/{scanId}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/{scanId}")] HttpRequestData req,
         string scanId)
     {
         if (!Guid.TryParse(scanId, out var scanGuid))
@@ -158,30 +182,6 @@ public class CopilotReadinessFunction
             await notFound.WriteAsJsonAsync(new { error = "Scan not found" });
             return notFound;
         }
-
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(result);
-        return response;
-    }
-
-    /// <summary>
-    /// Get scan history for an organization.
-    /// GET /v2/copilot-readiness/history?organizationId={guid}
-    /// </summary>
-    [Function("CopilotReadiness_History")]
-    [RequirePermission("assessment:read")]
-    public async Task<HttpResponseData> History(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/copilot-readiness/history")] HttpRequestData req)
-    {
-        var orgId = ResolveOrgId(req);
-        if (orgId is null)
-        {
-            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
-            return bad;
-        }
-
-        var result = await _service.GetScanHistoryAsync(orgId.Value);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(result);
@@ -205,7 +205,8 @@ public class CopilotReadinessFunction
 
 // ── Request DTOs ──
 
-public class CopilotReadinessScanRequest
+public class CloudAssessmentScanRequest
 {
     public Guid OrganizationId { get; set; }
+    public Guid? TenantId { get; set; }
 }

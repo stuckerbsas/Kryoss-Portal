@@ -74,8 +74,9 @@ public class CopilotReadinessService : ICopilotReadinessService
 
         var scanId = scan.Id;
 
-        // Fire-and-forget background scan
-        _ = Task.Run(() => RunScanInternalAsync(scanId, customerTenantId, clientId, clientSecret));
+        // Run scan synchronously — Azure Functions fire-and-forget kills background tasks
+        // on worker recycle. func-kryoss is on App Service plan (30-min HTTP timeout).
+        await RunScanInternalAsync(scanId, customerTenantId, clientId, clientSecret);
 
         return scanId;
     }
@@ -92,34 +93,70 @@ public class CopilotReadinessService : ICopilotReadinessService
 
         try
         {
+            // Proof-of-life: background task started
+            db.Actlog.Add(new Data.Entities.Actlog
+            {
+                Timestamp = DateTime.UtcNow,
+                Severity = "info",
+                Module = "copilot-readiness",
+                Action = "scan.background.started",
+                EntityType = "CopilotReadinessScan",
+                EntityId = scanId.ToString(),
+                Message = "Background scan worker started"
+            });
+            await db.SaveChangesAsync();
+
             var credential = new ClientSecretCredential(customerTenantId, clientId, clientSecret);
             var graph = new GraphServiceClient(credential);
 
-            // Create authenticated HttpClients for non-Graph APIs
-            var defenderHttp = await CreateAuthenticatedClient(
+            // Create authenticated HttpClients for non-Graph APIs (gracefully handle missing service principals)
+            var defenderHttp = await TryCreateAuthenticatedClient(
                 credential, "https://api.security.microsoft.com/.default",
-                "https://api.security.microsoft.com");
-            var bapHttp = await CreateAuthenticatedClient(
+                "https://api.security.microsoft.com", log);
+            var bapHttp = await TryCreateAuthenticatedClient(
                 credential, "https://api.bap.microsoft.com/.default",
-                "https://api.bap.microsoft.com");
-            var flowHttp = await CreateAuthenticatedClient(
+                "https://api.bap.microsoft.com", log);
+            var flowHttp = await TryCreateAuthenticatedClient(
                 credential, "https://api.flow.microsoft.com/.default",
-                "https://api.flow.microsoft.com");
-            var graphBetaHttp = await CreateAuthenticatedClient(
+                "https://api.flow.microsoft.com", log);
+            var graphBetaHttp = await TryCreateAuthenticatedClient(
                 credential, "https://graph.microsoft.com/.default",
-                "https://graph.microsoft.com/beta");
+                "https://graph.microsoft.com/beta", log);
 
-            var ct = CancellationToken.None;
+            // 10-min timeout on whole pipeline phase — prevent hang
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+            var ct = cts.Token;
 
-            // Run 6 pipelines in parallel
-            var entraTask = EntraPipeline.RunAsync(graph, graphBetaHttp, log, ct);
-            var defenderTask = DefenderPipeline.RunAsync(graph, defenderHttp, log, ct);
-            var m365Task = M365Pipeline.RunAsync(graph, log, ct);
-            var purviewTask = PurviewPipeline.RunAsync(graph, log, ct);
-            var powerPlatformTask = PowerPlatformPipeline.RunAsync(graph, bapHttp, flowHttp, log, ct);
-            var sharepointTask = SharePointDeepPipeline.RunAsync(graph, log, ct);
+            // Actlog: token phase done
+            db.Actlog.Add(new Data.Entities.Actlog
+            {
+                Timestamp = DateTime.UtcNow,
+                Severity = "info",
+                Module = "copilot-readiness",
+                Action = "scan.tokens.acquired",
+                EntityType = "CopilotReadinessScan",
+                EntityId = scanId.ToString(),
+                Message = $"Tokens: defender={defenderHttp != null} bap={bapHttp != null} flow={flowHttp != null} beta={graphBetaHttp != null}"
+            });
+            await db.SaveChangesAsync();
 
-            await Task.WhenAll(entraTask, defenderTask, m365Task, purviewTask, powerPlatformTask, sharepointTask);
+            // Run 6 pipelines in parallel, track each individually
+            var entraTask = TrackPipeline("entra", () => EntraPipeline.RunAsync(graph, graphBetaHttp, log, ct), scanId, db, log);
+            var defenderTask = TrackPipeline("defender", () => DefenderPipeline.RunAsync(graph, defenderHttp, log, ct), scanId, db, log);
+            var m365Task = TrackPipeline("m365", () => M365Pipeline.RunAsync(graph, log, ct), scanId, db, log);
+            var purviewTask = TrackPipeline("purview", () => PurviewPipeline.RunAsync(graph, log, ct), scanId, db, log);
+            var powerPlatformTask = TrackPipeline("power_platform", () => PowerPlatformPipeline.RunAsync(graph, bapHttp, flowHttp, log, ct), scanId, db, log);
+            var sharepointTask = TrackPipeline("sharepoint", () => SharePointDeepPipeline.RunAsync(graph, log, ct), scanId, db, log);
+
+            try
+            {
+                await Task.WhenAll(entraTask, defenderTask, m365Task, purviewTask, powerPlatformTask, sharepointTask);
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                log.LogError("Scan {ScanId} hit 10-min timeout", scanId);
+                throw new TimeoutException("Pipeline execution exceeded 10 minutes");
+            }
 
             var entraResult = entraTask.Result;
             var defenderResult = defenderTask.Result;
@@ -280,6 +317,19 @@ public class CopilotReadinessService : ICopilotReadinessService
 
             await db.SaveChangesAsync();
 
+            // Actlog success entry
+            db.Actlog.Add(new Data.Entities.Actlog
+            {
+                Timestamp = DateTime.UtcNow,
+                Severity = "info",
+                Module = "copilot-readiness",
+                Action = "scan.completed",
+                EntityType = "CopilotReadinessScan",
+                EntityId = scanId.ToString(),
+                Message = $"Scan completed. Overall={scores.Overall} Verdict={scores.Verdict}"
+            });
+            await db.SaveChangesAsync();
+
             log.LogInformation(
                 "Copilot Readiness scan {ScanId} completed. Overall={Overall} Verdict={Verdict}",
                 scanId, scores.Overall, scores.Verdict);
@@ -290,14 +340,37 @@ public class CopilotReadinessService : ICopilotReadinessService
 
             try
             {
+                // Clear change tracker — context may be poisoned with failed inserts
+                db.ChangeTracker.Clear();
+
+                // Use fresh fetch to get untracked scan row
                 var scan = await db.CopilotReadinessScans.FindAsync(scanId);
                 if (scan is not null)
                 {
                     scan.Status = "failed";
                     scan.CompletedAt = DateTime.UtcNow;
-                    scan.PipelineStatus = JsonSerializer.Serialize(new { error = ex.Message });
+                    scan.PipelineStatus = JsonSerializer.Serialize(new
+                    {
+                        error = ex.Message,
+                        inner = ex.InnerException?.Message,
+                        stack = ex.StackTrace
+                    });
                     await db.SaveChangesAsync();
                 }
+
+                // Write actlog entry so failure visible in portal actlog view
+                db.Actlog.Add(new Data.Entities.Actlog
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Severity = "error",
+                    Module = "copilot-readiness",
+                    Action = "scan.failed",
+                    EntityType = "CopilotReadinessScan",
+                    EntityId = scanId.ToString(),
+                    Message = $"Scan failed: {ex.Message}"
+                        + (ex.InnerException is not null ? $" (inner: {ex.InnerException.Message})" : "")
+                });
+                await db.SaveChangesAsync();
             }
             catch (Exception innerEx)
             {
@@ -313,39 +386,60 @@ public class CopilotReadinessService : ICopilotReadinessService
         var scan = await _db.CopilotReadinessScans
             .Where(s => s.OrganizationId == organizationId)
             .OrderByDescending(s => s.CreatedAt)
-            .Select(s => new
-            {
-                s.Id,
-                s.Status,
-                s.D1Score,
-                s.D2Score,
-                s.D3Score,
-                s.D4Score,
-                s.D5Score,
-                s.D6Score,
-                s.OverallScore,
-                s.Verdict,
-                s.PipelineStatus,
-                s.StartedAt,
-                s.CompletedAt,
-                s.CreatedAt,
-                FindingsSummary = _db.CopilotReadinessFindings
-                    .Where(f => f.ScanId == s.Id)
-                    .GroupBy(f => f.Service)
-                    .Select(g => new
-                    {
-                        Service = g.Key,
-                        Total = g.Count(),
-                        ActionRequired = g.Count(f => f.Status == "action_required"),
-                        Warning = g.Count(f => f.Status == "warning"),
-                        Success = g.Count(f => f.Status == "success"),
-                        Disabled = g.Count(f => f.Status == "disabled")
-                    })
-                    .ToList()
-            })
             .FirstOrDefaultAsync();
 
-        return scan;
+        if (scan is null) return null;
+
+        // Separate query for findings summary (EF can't translate GroupBy inside projection)
+        var findingsSummary = await _db.CopilotReadinessFindings
+            .Where(f => f.ScanId == scan.Id)
+            .GroupBy(f => f.Service)
+            .Select(g => new
+            {
+                Service = g.Key,
+                Total = g.Count(),
+                ActionRequired = g.Count(f => f.Status == "Action Required"),
+                Warning = g.Count(f => f.Status == "Warning"),
+                Success = g.Count(f => f.Status == "Success"),
+                Disabled = g.Count(f => f.Status == "Disabled")
+            })
+            .ToListAsync();
+
+        return new
+        {
+            scan.Id,
+            scan.Status,
+            scan.D1Score,
+            scan.D2Score,
+            scan.D3Score,
+            scan.D4Score,
+            scan.D5Score,
+            scan.D6Score,
+            scan.OverallScore,
+            scan.Verdict,
+            PipelineStatus = ParsePipelineStatus(scan.PipelineStatus),
+            scan.StartedAt,
+            scan.CompletedAt,
+            scan.CreatedAt,
+            FindingsSummary = findingsSummary
+        };
+    }
+
+    /// <summary>
+    /// Parse pipeline_status JSON string to object so it ships to portal as JSON object,
+    /// not a string (otherwise portal Object.entries iterates characters).
+    /// </summary>
+    private static Dictionary<string, string>? ParsePipelineStatus(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // ── GetScanDetailAsync ──────────────────────────────────────────
@@ -353,79 +447,56 @@ public class CopilotReadinessService : ICopilotReadinessService
     public async Task<object?> GetScanDetailAsync(Guid scanId)
     {
         var scan = await _db.CopilotReadinessScans
-            .Where(s => s.Id == scanId)
-            .Select(s => new
-            {
-                s.Id,
-                s.OrganizationId,
-                s.TenantId,
-                s.Status,
-                s.D1Score,
-                s.D2Score,
-                s.D3Score,
-                s.D4Score,
-                s.D5Score,
-                s.D6Score,
-                s.OverallScore,
-                s.Verdict,
-                s.PipelineStatus,
-                s.StartedAt,
-                s.CompletedAt,
-                s.CreatedAt,
-                Findings = _db.CopilotReadinessFindings
-                    .Where(f => f.ScanId == s.Id)
-                    .OrderBy(f => f.Service).ThenBy(f => f.Feature)
-                    .Select(f => new
-                    {
-                        f.Service,
-                        f.Feature,
-                        f.Status,
-                        f.Priority,
-                        f.Observation,
-                        f.Recommendation,
-                        f.LinkText,
-                        f.LinkUrl
-                    })
-                    .ToList(),
-                Metrics = _db.CopilotReadinessMetrics
-                    .Where(m => m.ScanId == s.Id)
-                    .Select(m => new
-                    {
-                        m.Dimension,
-                        m.MetricKey,
-                        m.MetricValue
-                    })
-                    .ToList(),
-                SharepointSites = _db.CopilotReadinessSharepoint
-                    .Where(sp => sp.ScanId == s.Id)
-                    .Select(sp => new
-                    {
-                        sp.SiteUrl,
-                        sp.SiteTitle,
-                        sp.TotalFiles,
-                        sp.LabeledFiles,
-                        sp.OversharedFiles,
-                        sp.RiskLevel,
-                        sp.TopLabels
-                    })
-                    .ToList(),
-                ExternalUsers = _db.CopilotReadinessExternalUsers
-                    .Where(eu => eu.ScanId == s.Id)
-                    .Select(eu => new
-                    {
-                        eu.UserPrincipal,
-                        eu.DisplayName,
-                        eu.EmailDomain,
-                        eu.LastSignIn,
-                        eu.RiskLevel,
-                        eu.SitesAccessed,
-                        eu.HighestPermission
-                    })
-                    .ToList()
-            })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(s => s.Id == scanId);
 
-        return scan;
+        if (scan is null) return null;
+
+        var findings = await _db.CopilotReadinessFindings
+            .Where(f => f.ScanId == scanId)
+            .OrderBy(f => f.Service).ThenBy(f => f.Feature)
+            .Select(f => new
+            {
+                f.Service, f.Feature, f.Status, f.Priority,
+                f.Observation, f.Recommendation, f.LinkText, f.LinkUrl
+            })
+            .ToListAsync();
+
+        var metrics = await _db.CopilotReadinessMetrics
+            .Where(m => m.ScanId == scanId)
+            .Select(m => new { m.Dimension, m.MetricKey, m.MetricValue })
+            .ToListAsync();
+
+        var spSites = await _db.CopilotReadinessSharepoint
+            .Where(sp => sp.ScanId == scanId)
+            .Select(sp => new
+            {
+                sp.SiteUrl, sp.SiteTitle, sp.TotalFiles,
+                sp.LabeledFiles, sp.OversharedFiles, sp.RiskLevel, sp.TopLabels
+            })
+            .ToListAsync();
+
+        var extUsers = await _db.CopilotReadinessExternalUsers
+            .Where(eu => eu.ScanId == scanId)
+            .Select(eu => new
+            {
+                eu.UserPrincipal, eu.DisplayName, eu.EmailDomain,
+                eu.LastSignIn, eu.RiskLevel, eu.SitesAccessed, eu.HighestPermission
+            })
+            .ToListAsync();
+
+        return new
+        {
+            scan.Id, scan.OrganizationId, scan.TenantId,
+            scan.Status, scan.D1Score, scan.D2Score, scan.D3Score,
+            scan.D4Score, scan.D5Score, scan.D6Score,
+            scan.OverallScore, scan.Verdict,
+            PipelineStatus = ParsePipelineStatus(scan.PipelineStatus),
+            scan.StartedAt, scan.CompletedAt, scan.CreatedAt,
+            Findings = findings,
+            Metrics = metrics,
+            SharepointSites = spSites,
+            ExternalUsers = extUsers
+        };
     }
 
     // ── GetScanHistoryAsync ─────────────────────────────────────────
@@ -460,6 +531,95 @@ public class CopilotReadinessService : ICopilotReadinessService
         http.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.Token);
         return http;
+    }
+
+    /// <summary>
+    /// Acquire token + build HttpClient. Returns null if service principal missing in tenant
+    /// (e.g. customer never consented to this API or didn't register app in their tenant).
+    /// Pipelines must handle null clients gracefully.
+    /// </summary>
+    private static async Task<HttpClient?> TryCreateAuthenticatedClient(
+        ClientSecretCredential credential, string scope, string baseUrl, ILogger log)
+    {
+        try
+        {
+            return await CreateAuthenticatedClient(credential, scope, baseUrl);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(
+                "Token acquisition failed for scope {Scope} — pipeline will be skipped. Error: {Error}",
+                scope, ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Wrap pipeline execution with actlog start/end tracking + exception capture.
+    /// Never throw — always return a PipelineResult (failed if exception).
+    /// </summary>
+    private static async Task<Pipelines.PipelineResult> TrackPipeline(
+        string name,
+        Func<Task<Pipelines.PipelineResult>> pipelineFn,
+        Guid scanId,
+        KryossDbContext db,
+        ILogger log)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = await pipelineFn();
+            sw.Stop();
+            log.LogInformation("Pipeline {Name} completed in {Ms}ms status={Status}",
+                name, sw.ElapsedMilliseconds, result.Status);
+
+            try
+            {
+                db.Actlog.Add(new Data.Entities.Actlog
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Severity = "info",
+                    Module = "copilot-readiness",
+                    Action = $"pipeline.{name}.done",
+                    EntityType = "CopilotReadinessScan",
+                    EntityId = scanId.ToString(),
+                    Message = $"Pipeline {name} done in {sw.ElapsedMilliseconds}ms status={result.Status} findings={result.Findings.Count}"
+                });
+                await db.SaveChangesAsync();
+            }
+            catch { /* swallow */ }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            log.LogError(ex, "Pipeline {Name} crashed after {Ms}ms", name, sw.ElapsedMilliseconds);
+
+            // Fire-and-forget actlog write (best effort, don't break scan)
+            try
+            {
+                db.Actlog.Add(new Data.Entities.Actlog
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Severity = "error",
+                    Module = "copilot-readiness",
+                    Action = $"pipeline.{name}.failed",
+                    EntityType = "CopilotReadinessScan",
+                    EntityId = scanId.ToString(),
+                    Message = $"Pipeline {name} crashed in {sw.ElapsedMilliseconds}ms: {ex.Message}"
+                });
+                await db.SaveChangesAsync();
+            }
+            catch { /* swallow actlog errors */ }
+
+            return new Pipelines.PipelineResult
+            {
+                PipelineName = name,
+                Status = "failed",
+                Error = ex.Message
+            };
+        }
     }
 
     private static void AddMetrics(
