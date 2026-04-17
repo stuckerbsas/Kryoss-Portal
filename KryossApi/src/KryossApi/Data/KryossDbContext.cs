@@ -81,6 +81,7 @@ public class KryossDbContext : DbContext
     public DbSet<CloudAssessmentAdoption> CloudAssessmentAdoptions => Set<CloudAssessmentAdoption>();
     public DbSet<CloudAssessmentWastedLicense> CloudAssessmentWastedLicenses => Set<CloudAssessmentWastedLicense>();
     public DbSet<CloudAssessmentFindingStatus> CloudAssessmentFindingStatuses => Set<CloudAssessmentFindingStatus>();
+    public DbSet<CloudAssessmentSuggestion> CloudAssessmentSuggestions => Set<CloudAssessmentSuggestion>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -571,6 +572,20 @@ public class KryossDbContext : DbContext
             e.Property(x => x.UpdatedBy).HasColumnName("updated_by");
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasIndex(x => new { x.OrganizationId, x.Area, x.Service, x.Feature }).IsUnique();
+        });
+
+        mb.Entity<CloudAssessmentSuggestion>(e =>
+        {
+            e.ToTable("cloud_assessment_suggestions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.Area).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Service).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Feature).HasMaxLength(200).IsRequired();
+            e.Property(x => x.SuggestionType).HasMaxLength(30).IsRequired();
+            e.HasIndex(x => new { x.OrganizationId, x.ScanId });
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

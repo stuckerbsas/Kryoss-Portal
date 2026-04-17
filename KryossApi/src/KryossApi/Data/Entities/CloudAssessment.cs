@@ -153,3 +153,20 @@ public class CloudAssessmentAzureResource
 
     public CloudAssessmentScan Scan { get; set; } = null!;
 }
+
+public class CloudAssessmentSuggestion
+{
+    public long Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid ScanId { get; set; }
+    public string Area { get; set; } = null!;
+    public string Service { get; set; } = null!;
+    public string Feature { get; set; } = null!;
+    public string SuggestionType { get; set; } = null!;  // "likely_resolved" | "possible_regression"
+    public DateTime CreatedAt { get; set; }
+    public DateTime? DismissedAt { get; set; }
+    public Guid? DismissedBy { get; set; }
+
+    public Organization Organization { get; set; } = null!;
+    public CloudAssessmentScan Scan { get; set; } = null!;
+}
