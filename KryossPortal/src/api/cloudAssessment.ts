@@ -266,3 +266,131 @@ export function useAzureDisconnect() {
     },
   });
 }
+
+// ── Remediation tracker types (CA-7) ──
+
+export interface FindingRemediationStatus {
+  id: number;
+  organizationId: string;
+  area: string;
+  service: string;
+  feature: string;
+  status: 'open' | 'in_progress' | 'resolved' | 'deferred' | 'acknowledged_regression';
+  ownerUserId: string | null;
+  notes: string | null;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export interface RemediationSuggestion {
+  id: number;
+  organizationId: string;
+  scanId: string;
+  area: string;
+  service: string;
+  feature: string;
+  suggestionType: 'likely_resolved' | 'possible_regression';
+  createdAt: string;
+}
+
+export interface RemediationStats {
+  open: number;
+  inProgress: number;
+  resolved: number;
+  deferred: number;
+  total: number;
+}
+
+export interface SetFindingStatusRequest {
+  organizationId: string;
+  area: string;
+  service: string;
+  feature: string;
+  status: FindingRemediationStatus['status'];
+  notes?: string;
+  ownerUserId?: string;
+}
+
+// ── Remediation tracker hooks (CA-7) ──
+
+// GET /v2/cloud-assessment/findings/status?organizationId=X&area=Y&status=Z
+export function useFindingStatuses(
+  organizationId: string | undefined,
+  area?: string,
+  statusFilter?: string,
+) {
+  return useQuery({
+    queryKey: ['cloud-assessment-finding-statuses', organizationId, area, statusFilter],
+    queryFn: () => {
+      const params = new URLSearchParams({ organizationId: organizationId! });
+      if (area !== undefined) params.set('area', area);
+      if (statusFilter !== undefined) params.set('status', statusFilter);
+      return apiFetch<FindingRemediationStatus[]>(
+        `/v2/cloud-assessment/findings/status?${params.toString()}`,
+      );
+    },
+    enabled: !!organizationId,
+  });
+}
+
+// GET /v2/cloud-assessment/suggestions?organizationId=X
+export function useRemediationSuggestions(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['cloud-assessment-suggestions', organizationId],
+    queryFn: () =>
+      apiFetch<RemediationSuggestion[]>(
+        `/v2/cloud-assessment/suggestions?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+// GET /v2/cloud-assessment/remediation/stats?organizationId=X
+export function useRemediationStats(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['remediation-stats', organizationId],
+    queryFn: () =>
+      apiFetch<RemediationStats>(
+        `/v2/cloud-assessment/remediation/stats?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+// PATCH /v2/cloud-assessment/findings/status
+export function useSetFindingStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SetFindingStatusRequest) =>
+      apiFetch<FindingRemediationStatus>('/v2/cloud-assessment/findings/status', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({
+        queryKey: ['cloud-assessment-finding-statuses', variables.organizationId],
+      });
+      qc.invalidateQueries({
+        queryKey: ['cloud-assessment-suggestions', variables.organizationId],
+      });
+      qc.invalidateQueries({
+        queryKey: ['remediation-stats', variables.organizationId],
+      });
+    },
+  });
+}
+
+// POST /v2/cloud-assessment/suggestions/{id}/dismiss
+export function useDismissSuggestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ suggestionId }: { suggestionId: number }) =>
+      apiFetch<void>(`/v2/cloud-assessment/suggestions/${suggestionId}/dismiss`, {
+        method: 'POST',
+      }),
+    onSuccess: (_data, _variables, context) => {
+      // context is not available here; invalidate all suggestions queries
+      qc.invalidateQueries({ queryKey: ['cloud-assessment-suggestions'] });
+    },
+  });
+}
