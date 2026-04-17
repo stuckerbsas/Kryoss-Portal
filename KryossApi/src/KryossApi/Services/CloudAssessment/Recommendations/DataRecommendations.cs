@@ -288,7 +288,7 @@ public static class DataRecommendations
 
         if (!ins.DlpLicensed) return list;
 
-        if (ins.DlpAlertsLast30d == 0 && ins.DlpLicensed)
+        if (ins.DlpAlertsLast30d == 0)
         {
             list.Add(RecommendationResult.Warning(PurviewSvc, feature,
                 observation: "DLP is licensed but no alerts were generated in the last 30 days — policies may be misconfigured or audit-only.",
