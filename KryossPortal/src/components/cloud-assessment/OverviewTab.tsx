@@ -51,6 +51,7 @@ const AREAS = [
   { key: 'endpoint', label: 'Endpoint', icon: Shield },
   { key: 'data', label: 'Data', icon: Database },
   { key: 'productivity', label: 'Productivity', icon: Activity },
+  { key: 'azure', label: 'Azure', icon: Cloud },
 ] as const;
 
 function scoreColor(score: number | null): string {
@@ -110,6 +111,7 @@ const PIPELINE_LABELS: Record<string, string> = {
   endpoint: 'Endpoint',
   data: 'Data',
   productivity: 'Productivity',
+  azure: 'Azure',
 };
 
 interface OverviewTabProps {
@@ -356,7 +358,7 @@ export function OverviewTab({ orgId }: OverviewTabProps) {
           </Card>
 
           {/* Area cards */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {AREAS.map(({ key, label, icon: Icon }) => {
               const score = scan.areaScores?.[key] ?? null;
               return (

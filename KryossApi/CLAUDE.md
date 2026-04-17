@@ -139,6 +139,7 @@ src/KryossApi/
 - **`ReportService`** — Renders the 3 report types (technical/executive/presales) with Brand 2025 redesign: framework score gauges, AD hygiene section, hardware/software summary. Self-contained HTML, Montserrat font, no external deps.
 - **`BinaryPatcher`** — Replaces UTF-16LE sentinel strings in the compiled agent .exe to produce org-specific binaries. Sentinels: `@@KRYOSS_ENROLL:` (64 chars), `@@KRYOSS_APIURL:` (256 chars), `@@KRYOSS_ORGNAM:` (128 chars), `@@KRYOSS_MSPNAM:` (128 chars), `@@CLRPRI:` (32 chars), `@@CLRACC:` (32 chars). Called by `AgentDownloadFunction`.
 - **`InventoryFunction`** — Org-level hardware and software inventory. Software endpoint includes 600+ commercial application detection list for normalizing `DisplayName` registry values into recognized products.
+- **CloudAssessment pipelines** — `Services/CloudAssessment/Pipelines/{Identity,Endpoint,Data,Productivity,Azure}Pipeline.cs` + `Services/CloudAssessment/Recommendations/{Identity,Endpoint,Data,Productivity,Azure}Recommendations.cs`. CA-6 Subsession B added `Services/CloudAssessment/Pipelines/AzurePipeline.cs` (+ `AzureInsights.cs`) and `Services/CloudAssessment/Recommendations/AzureRecommendations.cs` for Azure infrastructure auditing (resources, Defender for Cloud, public exposure, NSG, Key Vault, VM audits).
 
 ---
 
