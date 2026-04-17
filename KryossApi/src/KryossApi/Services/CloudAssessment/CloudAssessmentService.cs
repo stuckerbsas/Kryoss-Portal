@@ -123,15 +123,18 @@ public class CloudAssessmentService : ICloudAssessmentService
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             var ct = cts.Token;
 
-            // CA-2: identity + endpoint pipelines run in parallel.
+            // CA-2/CA-3: identity + endpoint + data pipelines run in parallel.
             var identityTask = TrackPipeline("identity",
                 () => IdentityPipeline.RunAsync(graph, graphBetaHttp, log, ct),
                 scanId, db, log);
             var endpointTask = TrackPipeline("endpoint",
                 () => EndpointPipeline.RunAsync(graph, defenderHttp, log, ct),
                 scanId, db, log);
+            var dataTask = TrackPipeline("data",
+                () => DataPipeline.RunAsync(graph, graphBetaHttp, log, ct),
+                scanId, db, log);
 
-            try { await Task.WhenAll(identityTask, endpointTask); }
+            try { await Task.WhenAll(identityTask, endpointTask, dataTask); }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
                 log.LogError("CA scan {ScanId} hit 10-min timeout", scanId);
@@ -140,32 +143,37 @@ public class CloudAssessmentService : ICloudAssessmentService
 
             var identityResult = identityTask.Result;
             var endpointResult = endpointTask.Result;
+            var dataResult = dataTask.Result;
 
             // Aggregate findings + metrics by area.
-            var findingCount = identityResult.Findings.Count + endpointResult.Findings.Count;
+            var findingCount = identityResult.Findings.Count + endpointResult.Findings.Count + dataResult.Findings.Count;
 
             var allMetrics = new Dictionary<string, Dictionary<string, string>>();
             AddMetrics(allMetrics, "identity", identityResult.Metrics);
             AddMetrics(allMetrics, "endpoint", endpointResult.Metrics);
+            AddMetrics(allMetrics, "data", dataResult.Metrics);
 
             // Per-area scores (0.0-5.0 scale matching verdict system).
             var identityScore = ComputeIdentityAreaScore(identityResult.Metrics, identityResult.Findings);
             var endpointScore = ComputeEndpointAreaScore(endpointResult.Metrics, endpointResult.Findings);
+            var dataScore = ComputeDataAreaScore(dataResult.Metrics, dataResult.Findings);
 
             var areaScores = JsonSerializer.Serialize(new Dictionary<string, decimal>
             {
                 ["identity"] = identityScore,
-                ["endpoint"] = endpointScore
+                ["endpoint"] = endpointScore,
+                ["data"] = dataScore
             });
 
             var pipelineStatus = JsonSerializer.Serialize(new Dictionary<string, string>
             {
                 ["identity"] = identityResult.Status,
-                ["endpoint"] = endpointResult.Status
+                ["endpoint"] = endpointResult.Status,
+                ["data"] = dataResult.Status
             });
 
             // Overall = simple average across areas; will become weighted as more areas land.
-            var overallScore = Math.Round((identityScore + endpointScore) / 2m, 2);
+            var overallScore = Math.Round((identityScore + endpointScore + dataScore) / 3m, 2);
             var verdict = VerdictFromScore(overallScore);
 
             // Update scan row.
@@ -205,6 +213,7 @@ public class CloudAssessmentService : ICloudAssessmentService
 
             AddFindings("identity", identityResult.Findings);
             AddFindings("endpoint", endpointResult.Findings);
+            AddFindings("data", dataResult.Findings);
 
             // Persist metrics — Area column = dimension key from allMetrics.
             foreach (var (dimension, metricsDict) in allMetrics)
@@ -225,12 +234,12 @@ public class CloudAssessmentService : ICloudAssessmentService
             await db.SaveChangesAsync();
 
             AddActlog(db, "info", "scan.completed", scanId,
-                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} findings={findingCount}");
+                $"CA scan completed identityScore={identityScore} endpointScore={endpointScore} dataScore={dataScore} findings={findingCount}");
             await db.SaveChangesAsync();
 
             log.LogInformation(
-                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Verdict={Verdict}",
-                scanId, identityScore, endpointScore, verdict);
+                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Verdict={Verdict}",
+                scanId, identityScore, endpointScore, dataScore, verdict);
         }
         catch (Exception ex)
         {
@@ -502,6 +511,87 @@ public class CloudAssessmentService : ICloudAssessmentService
         return Math.Round(score, 2);
     }
 
+    /// <summary>
+    /// Compute the Data area score on the 0.00-5.00 verdict scale.
+    /// Spec weights: label coverage 30%, oversharing 25%, DLP posture 20%,
+    /// external access 15%, Purview licensing 10%. Implementation: start at 5.0,
+    /// deduct for findings + metric gaps, clamp + round.
+    /// </summary>
+    private static decimal ComputeDataAreaScore(
+        Dictionary<string, string> metrics,
+        List<RecommendationResult> findings)
+    {
+        decimal score = 5.0m;
+
+        // Finding-based deductions — data findings only (caller passes dataResult.Findings).
+        var actionRequired = findings.Count(f =>
+            string.Equals(f.Status, "action_required", StringComparison.OrdinalIgnoreCase));
+        var warnings = findings.Count(f =>
+            string.Equals(f.Status, "warning", StringComparison.OrdinalIgnoreCase));
+
+        score -= Math.Min(actionRequired * 0.12m, 2.5m);
+        score -= Math.Min(warnings * 0.06m, 1.0m);
+
+        // Label coverage (30% weight) — decimal percent of labeled items.
+        if (TryGetDecimal(metrics, "label_coverage_pct", out var labelCoverage))
+        {
+            if (labelCoverage < 40m) score -= 0.6m;
+            else if (labelCoverage < 60m) score -= 0.3m;
+        }
+
+        // Oversharing (25% weight) — higher = worse.
+        if (TryGetDecimal(metrics, "overshared_pct", out var oversharedPct))
+        {
+            if (oversharedPct >= 20m) score -= 0.5m;
+            else if (oversharedPct >= 10m) score -= 0.25m;
+        }
+
+        // DLP posture (20% weight): licensing + alert activity.
+        if (TryGetBool(metrics, "dlp_licensed", out var dlpLicensed))
+        {
+            if (!dlpLicensed)
+            {
+                score -= 0.4m;
+            }
+            else if (TryGetInt(metrics, "dlp_alerts_last_30d", out var dlpAlerts) && dlpAlerts == 0)
+            {
+                // Licensed but no alerts in 30d — suggests DLP policies not configured.
+                score -= 0.2m;
+            }
+        }
+
+        // External access (15% weight) — guest user count.
+        if (TryGetInt(metrics, "total_guests", out var totalGuests))
+        {
+            if (totalGuests > 50) score -= 0.3m;
+            else if (totalGuests > 20) score -= 0.15m;
+        }
+
+        // Purview licensing (10% weight) — count how many of the six *_licensed flags are false.
+        string[] purviewLicenseKeys =
+        {
+            "information_protection_licensed",
+            "dlp_licensed",
+            "insider_risk_licensed",
+            "records_management_licensed",
+            "ediscovery_licensed",
+            "communication_compliance_licensed"
+        };
+        var falseLicenseCount = 0;
+        foreach (var key in purviewLicenseKeys)
+        {
+            if (TryGetBool(metrics, key, out var licensed) && !licensed)
+                falseLicenseCount++;
+        }
+        if (falseLicenseCount >= 4) score -= 0.2m;
+        if (falseLicenseCount == 6) score -= 0.2m; // additional — total -0.4 when all false.
+
+        // Clamp to [0, 5] then round to 2 decimal places.
+        if (score < 0m) score = 0m;
+        if (score > 5m) score = 5m;
+        return Math.Round(score, 2);
+    }
+
     private static bool TryGetDecimal(Dictionary<string, string> metrics, string key, out decimal value)
     {
         value = 0m;
@@ -518,6 +608,15 @@ public class CloudAssessmentService : ICloudAssessmentService
             return false;
         return int.TryParse(raw, System.Globalization.NumberStyles.Any,
             System.Globalization.CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryGetBool(Dictionary<string, string> metrics, string key, out bool value)
+    {
+        value = false;
+        if (!metrics.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+            return false;
+        value = string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+        return true;
     }
 
     private static string VerdictFromScore(decimal score) => score switch
