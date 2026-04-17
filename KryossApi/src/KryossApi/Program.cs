@@ -63,6 +63,7 @@ builder.Services.AddScoped<ExternalScanService>();
 builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
 builder.Services.AddScoped<ICopilotReadinessService, CopilotReadinessService>();
 builder.Services.AddScoped<ICloudAssessmentService, CloudAssessmentService>();
+builder.Services.AddScoped<IFindingStatusService, FindingStatusService>();
 
 // ── M365 multi-tenant admin consent config ──
 builder.Services.AddSingleton(new M365Config
