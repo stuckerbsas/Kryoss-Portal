@@ -106,6 +106,18 @@ public sealed class ProductivityInsights
     // so CollectUsers can resolve friendly names in the post-processing step.
     public Dictionary<Guid, string> SkuIdToPartNumber { get; } = new();
 
+    // Tenant-resolved Copilot SKU GUIDs — populated by CollectSubscribedSkus based on
+    // both hardcoded known Copilot SKU IDs and SkuPartNumber pattern match ("Copilot"
+    // substring, excluding "Studio"). Used in post-Task.WhenAll Copilot adoption
+    // recomputation (CollectUsers runs in parallel and may finish before this set
+    // is populated, so the authoritative count happens after both collectors end).
+    public HashSet<Guid> CopilotSkuGuids { get; } = new();
+
+    // Per-user assigned SKU GUID lists — populated by CollectUsers. Used in post-
+    // Task.WhenAll step to compute CopilotLicensesAssigned once CopilotSkuGuids
+    // is fully resolved.
+    public List<Guid[]> UserSkuAssignments { get; } = new();
+
     public bool Available =>
         EmailReportAvailable || TeamsReportAvailable ||
         SharePointReportAvailable || OneDriveReportAvailable ||

@@ -102,6 +102,30 @@ public static class SkuFriendlyNames
             // Copilot
             { "COPILOT_M365",                    "Microsoft 365 Copilot" },
             { "Microsoft_365_Copilot",           "Microsoft 365 Copilot" },
+
+            // Power Platform / RPA (tenant-observed variants)
+            { "PBI_PREMIUM_PER_USER",            "Power BI Premium (per user)" },
+            { "POWERAUTOMATE_ATTENDED_RPA",      "Power Automate Attended RPA" },
+            { "POWERAPPS_PER_USER",              "Power Apps (per user)" },
+            { "POWERAPPS_PER_APP",               "Power Apps (per app)" },
+            { "POWERAPPS_DEV",                   "Power Apps Developer" },
+
+            // Information Protection / SharePoint add-ons
+            { "RMSBASIC",                        "Azure Information Protection (Basic)" },
+            { "SharePoint_advanced_management_plan_1", "SharePoint Advanced Management" },
+
+            // Teams / M365 Business tenant-specific variants (non-canonical names
+            // as surfaced by /subscribedSkus on some tenants — keep both spaced
+            // and un-spaced forms for robustness).
+            { "Microsoft_Teams_Enterprise_New",              "Microsoft Teams Enterprise" },
+            { "Microsoft_Teams_Trials",                      "Microsoft Teams Trial" },
+            { "MS_TEAMS_IW",                                 "Microsoft Teams Trial (IW)" },
+            { "Microsoft_365_Business_Premium_(no_Teams)",   "Microsoft 365 Business Premium (no Teams)" },
+            { "Microsoft_365_ Business_ Premium_(no Teams)", "Microsoft 365 Business Premium (no Teams)" },
+            { "Microsoft_365_E3_(no_Teams)",                 "Microsoft 365 E3 (no Teams)" },
+            { "Microsoft_365_E5_(no_Teams)",                 "Microsoft 365 E5 (no Teams)" },
+            { "O365_w/o_Teams_Bundle_E3",                    "Office 365 E3 (no Teams)" },
+            { "O365_w/o_Teams_Bundle_E5",                    "Office 365 E5 (no Teams)" },
         };
 
     public static readonly IReadOnlyDictionary<string, string> Map = _map;

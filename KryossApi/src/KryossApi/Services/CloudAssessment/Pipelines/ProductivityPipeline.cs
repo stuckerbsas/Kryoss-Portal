@@ -68,6 +68,27 @@ public static class ProductivityPipeline
 
             await Task.WhenAll(tasks);
 
+            // Post-processing: Copilot assignment count. CollectSubscribedSkus and
+            // CollectUsers run in parallel, so the authoritative Copilot GUID set
+            // is only complete after both finish. Count each user once if any of
+            // their assigned SKUs is a known Copilot SKU.
+            int copilotAssigned = 0;
+            foreach (var skuGuids in ins.UserSkuAssignments)
+            {
+                for (int i = 0; i < skuGuids.Length; i++)
+                {
+                    if (ins.CopilotSkuGuids.Contains(skuGuids[i]))
+                    {
+                        copilotAssigned++;
+                        break;
+                    }
+                }
+            }
+            ins.CopilotLicensesAssigned = copilotAssigned;
+            ins.CopilotAdoptionPct = ins.CopilotLicensesPurchased > 0
+                ? copilotAssigned * 100.0 / ins.CopilotLicensesPurchased
+                : 0;
+
             // Post-processing: resolve wasted-license SKU friendly names now that
             // both CollectSubscribedSkus and CollectUsers have completed.
             foreach (var row in ins.WastedLicenses)
@@ -214,6 +235,14 @@ public static class ProductivityPipeline
         }
     }
 
+    // Matches tenant-specific Copilot SKU part numbers (e.g. "Microsoft_365_Copilot",
+    // "COPILOT_M365"). Excludes "Copilot Studio" — it's a different product licensed
+    // separately and would inflate the Copilot adoption metric if counted here.
+    private static bool IsCopilotSkuPart(string partNumber) =>
+        !string.IsNullOrEmpty(partNumber)
+        && partNumber.Contains("Copilot", StringComparison.OrdinalIgnoreCase)
+        && !partNumber.Contains("Studio", StringComparison.OrdinalIgnoreCase);
+
     // ================================================================
     // Helper: per-collector error tracking
     // ================================================================
@@ -251,18 +280,26 @@ public static class ProductivityPipeline
                     FriendlyName  = SkuFriendlyNames.Resolve(partNumber),
                     Purchased     = purchased,
                     Assigned      = assigned,
-                    Available     = purchased - assigned,
+                    // Bundled plans (e.g. Entra P2 inside M365 E5) may assign without a
+                    // direct purchase, producing negative available. Clamp to 0.
+                    Available     = Math.Max(0, purchased - assigned),
                 });
 
                 // SkuId → SkuPartNumber map for wasted-license post-processing.
                 if (sku.SkuId.HasValue && !string.IsNullOrEmpty(partNumber))
                     ins.SkuIdToPartNumber.TryAdd(sku.SkuId.Value, partNumber);
 
-                // Copilot SKU detection by SkuId.
-                if (sku.SkuId.HasValue
-                    && CopilotSkuIds.Contains(sku.SkuId.Value.ToString()))
+                // Copilot SKU detection — match by hardcoded GUID (legacy) OR
+                // SkuPartNumber containing "Copilot" (excluding Copilot Studio).
+                bool isCopilotById = sku.SkuId.HasValue
+                    && CopilotSkuIds.Contains(sku.SkuId.Value.ToString());
+                bool isCopilotByPart = IsCopilotSkuPart(partNumber);
+
+                if (isCopilotById || isCopilotByPart)
                 {
                     copilotPurchased += purchased;
+                    if (sku.SkuId.HasValue)
+                        ins.CopilotSkuGuids.Add(sku.SkuId.Value);
                 }
 
                 // SKU service-plan map (first-wins across SKUs).
@@ -322,7 +359,6 @@ public static class ProductivityPipeline
             int enabled  = 0;
             int disabled = 0;
             int guests   = 0;
-            int copilotAssigned = 0;
             int wastedSeats = 0;
 
             var now = DateTime.UtcNow;
@@ -335,19 +371,15 @@ public static class ProductivityPipeline
                 if (string.Equals(user.UserType, "Guest", StringComparison.OrdinalIgnoreCase))
                     guests++;
 
-                // Copilot assignment (count each user once max).
-                bool hasCopilot = false;
-                if (user.AssignedLicenses is not null)
+                // Capture the user's assigned SKU GUIDs. CollectSubscribedSkus runs in
+                // parallel and may not have populated CopilotSkuGuids yet — Copilot
+                // assigned count is computed post-Task.WhenAll in RunAsync.
+                if (user.AssignedLicenses is { Count: > 0 })
                 {
-                    foreach (var lic in user.AssignedLicenses)
-                    {
-                        if (!hasCopilot && lic.SkuId.HasValue
-                            && CopilotSkuIds.Contains(lic.SkuId.Value.ToString()))
-                        {
-                            copilotAssigned++;
-                            hasCopilot = true;
-                        }
-                    }
+                    var skuGuids = new Guid[user.AssignedLicenses.Count];
+                    for (int i = 0; i < user.AssignedLicenses.Count; i++)
+                        skuGuids[i] = user.AssignedLicenses[i].SkuId ?? Guid.Empty;
+                    ins.UserSkuAssignments.Add(skuGuids);
                 }
 
                 // Wasted-license detection: any assigned license + inactive >= 30 d.
@@ -389,10 +421,8 @@ public static class ProductivityPipeline
             ins.DisabledUsers = disabled;
             ins.GuestUserCount = guests;
 
-            ins.CopilotLicensesAssigned = copilotAssigned;
-            ins.CopilotAdoptionPct = ins.CopilotLicensesPurchased > 0
-                ? copilotAssigned * 100.0 / ins.CopilotLicensesPurchased
-                : 0;
+            // CopilotLicensesAssigned + CopilotAdoptionPct are computed post-Task.WhenAll
+            // in RunAsync once CopilotSkuGuids is fully resolved by CollectSubscribedSkus.
 
             ins.WastedLicenseCount       = ins.WastedLicenses.Count;
             ins.WastedLicenseTotalSeats  = wastedSeats;
