@@ -3,7 +3,7 @@ import { apiFetch } from './client';
 
 // ── Types ──
 
-export type CloudAssessmentAreaKey = 'identity' | 'endpoint' | 'data' | 'productivity';
+export type CloudAssessmentAreaKey = 'identity' | 'endpoint' | 'data' | 'productivity' | 'azure';
 
 export interface CloudAssessmentScan {
   id: string;

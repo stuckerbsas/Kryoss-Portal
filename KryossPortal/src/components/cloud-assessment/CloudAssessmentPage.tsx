@@ -10,10 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ExternalLink } from 'lucide-react';
+import { Cloud, ExternalLink } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { ConnectAzureCard } from './ConnectAzureCard';
 import { AzureSubscriptionsList } from './AzureSubscriptionsList';
+import { AzureInfrastructureView } from './AzureInfrastructureView';
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -109,9 +110,18 @@ function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | unde
   );
 }
 
-function AzureTab({ orgId }: { orgId: string }) {
+function AzureTab({
+  orgId,
+  latestScanId,
+  hasAzureScanData,
+}: {
+  orgId: string;
+  latestScanId: string | undefined;
+  hasAzureScanData: boolean;
+}) {
   const { data: subs, isLoading } = useAzureSubscriptions(orgId);
   const [showConnect, setShowConnect] = useState(false);
+  const [showManage, setShowManage] = useState(false);
 
   if (isLoading) {
     return (
@@ -125,16 +135,54 @@ function AzureTab({ orgId }: { orgId: string }) {
 
   const hasSubs = subs && subs.length > 0;
 
+  // State 1: no subscriptions connected → ConnectAzureCard.
   if (!hasSubs || showConnect) {
     return <ConnectAzureCard orgId={orgId} onConnected={() => setShowConnect(false)} />;
   }
 
+  // State 3 preference: subs + scan has Azure data → rich infrastructure view.
+  // (Unless the user explicitly clicked "Manage subscriptions".)
+  if (hasAzureScanData && latestScanId && !showManage) {
+    return (
+      <AzureInfrastructureView
+        orgId={orgId}
+        scanId={latestScanId}
+        subs={subs!}
+        onManageSubscriptions={() => setShowManage(true)}
+      />
+    );
+  }
+
+  // State 2: subs connected but no Azure scan data yet (or user chose to manage).
   return (
-    <AzureSubscriptionsList
-      orgId={orgId}
-      subscriptions={subs!}
-      onConnectAnother={() => setShowConnect(true)}
-    />
+    <div className="space-y-4">
+      {!hasAzureScanData && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 flex items-start gap-3">
+          <Cloud className="h-5 w-5 shrink-0 mt-0.5 text-blue-600" />
+          <div>
+            <p className="font-medium">No Azure infrastructure data yet</p>
+            <p className="text-xs mt-1 text-blue-700">
+              Run a scan from the Overview tab to see Azure infrastructure posture.
+            </p>
+          </div>
+        </div>
+      )}
+      <AzureSubscriptionsList
+        orgId={orgId}
+        subscriptions={subs!}
+        onConnectAnother={() => setShowConnect(true)}
+      />
+      {showManage && hasAzureScanData && (
+        <div className="text-right">
+          <button
+            className="text-sm text-blue-600 hover:underline"
+            onClick={() => setShowManage(false)}
+          >
+            Back to infrastructure view
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -143,6 +191,11 @@ export function CloudAssessmentPage() {
   const { data: summary } = useCloudAssessment(orgId);
 
   const latestScanId = summary && 'id' in summary ? summary.id : undefined;
+  const hasAzureScanData =
+    summary !== undefined &&
+    'areaScores' in summary &&
+    summary.areaScores != null &&
+    summary.areaScores['azure'] != null;
 
   if (!orgId) return null;
 
@@ -161,7 +214,13 @@ export function CloudAssessmentPage() {
       <TabsContent value="endpoint"><AreaFindingsTab area="endpoint" scanId={latestScanId} /></TabsContent>
       <TabsContent value="data"><AreaFindingsTab area="data" scanId={latestScanId} /></TabsContent>
       <TabsContent value="productivity"><AreaFindingsTab area="productivity" scanId={latestScanId} /></TabsContent>
-      <TabsContent value="azure"><AzureTab orgId={orgId} /></TabsContent>
+      <TabsContent value="azure">
+        <AzureTab
+          orgId={orgId}
+          latestScanId={latestScanId}
+          hasAzureScanData={hasAzureScanData}
+        />
+      </TabsContent>
     </Tabs>
   );
 }
