@@ -76,6 +76,7 @@ public class KryossDbContext : DbContext
     public DbSet<CloudAssessmentFinding> CloudAssessmentFindings => Set<CloudAssessmentFinding>();
     public DbSet<CloudAssessmentMetric> CloudAssessmentMetrics => Set<CloudAssessmentMetric>();
     public DbSet<CloudAssessmentAzureSubscription> CloudAssessmentAzureSubscriptions => Set<CloudAssessmentAzureSubscription>();
+    public DbSet<CloudAssessmentAzureResource> CloudAssessmentAzureResources => Set<CloudAssessmentAzureResource>();
     public DbSet<CloudAssessmentLicense> CloudAssessmentLicenses => Set<CloudAssessmentLicense>();
     public DbSet<CloudAssessmentAdoption> CloudAssessmentAdoptions => Set<CloudAssessmentAdoption>();
     public DbSet<CloudAssessmentWastedLicense> CloudAssessmentWastedLicenses => Set<CloudAssessmentWastedLicense>();
@@ -499,6 +500,26 @@ public class KryossDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasIndex(x => new { x.OrganizationId, x.SubscriptionId }).IsUnique();
+        });
+
+        mb.Entity<CloudAssessmentAzureResource>(e =>
+        {
+            e.ToTable("cloud_assessment_azure_resources");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.SubscriptionId).HasColumnName("subscription_id");
+            e.Property(x => x.ResourceType).HasColumnName("resource_type");
+            e.Property(x => x.ResourceId).HasColumnName("resource_id");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.Location).HasColumnName("location");
+            e.Property(x => x.Kind).HasColumnName("kind");
+            e.Property(x => x.PropertiesJson).HasColumnName("properties_json");
+            e.Property(x => x.RiskFlags).HasColumnName("risk_flags");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ScanId, x.ResourceType }).HasDatabaseName("ix_car_scan");
+            e.HasIndex(x => new { x.ScanId, x.SubscriptionId }).HasDatabaseName("ix_car_subscription");
         });
 
         mb.Entity<CloudAssessmentLicense>(e =>
