@@ -78,7 +78,7 @@ public class AzureConsentFunction
             }
 
             var appId = _m365Config.ClientId;
-            var spnObjectId = await TryResolveKryossSpnObjectIdAsync(body.TenantId!, _log);
+            var spnObjectId = await TryResolveKryossSpnObjectIdAsync(body.TenantId!);
 
             var azCliCommand = BuildAzCliCommand(appId, spnObjectId);
             var portalUrl =
@@ -168,7 +168,7 @@ public class AzureConsentFunction
             }
             catch (AuthenticationFailedException afex)
             {
-                var reason = $"Token acquisition failed: {afex.Message}";
+                var reason = $"Tenant authentication failed: {afex.Message}";
                 await TouchExistingRowsOnFailure(body.OrganizationId, reason);
                 await LogVerifyOutcome(body.OrganizationId, "warn", $"Azure verify failed: {reason}");
                 var resp = req.CreateResponse(HttpStatusCode.OK);
@@ -475,7 +475,7 @@ public class AzureConsentFunction
     /// tenant by calling Graph /servicePrincipals?$filter=appId eq '&lt;KRYOSS_APP_ID&gt;'.
     /// Returns null on any failure (token, 403, empty result) — never throws.
     /// </summary>
-    private async Task<string?> TryResolveKryossSpnObjectIdAsync(string customerTenantId, ILogger log)
+    private async Task<string?> TryResolveKryossSpnObjectIdAsync(string customerTenantId)
     {
         try
         {
@@ -488,14 +488,14 @@ public class AzureConsentFunction
             var spn = result?.Value?.FirstOrDefault();
             if (spn is null)
             {
-                log.LogInformation("Kryoss SPN not found in tenant {TenantId} (empty result)", customerTenantId);
+                _log.LogInformation("Kryoss SPN not found in tenant {TenantId} (empty result)", customerTenantId);
                 return null;
             }
             return spn.Id;
         }
         catch (Exception ex)
         {
-            log.LogInformation("SPN resolve failed for tenant {TenantId}: {Error}", customerTenantId, ex.Message);
+            _log.LogInformation("SPN resolve failed for tenant {TenantId}: {Error}", customerTenantId, ex.Message);
             return null;
         }
     }
@@ -528,10 +528,9 @@ public class AzureConsentFunction
     }
 
     /// <summary>
-    /// On ARM/token failure, update LastVerifiedAt + ErrorMessage on all
-    /// existing rows for the org but keep their ConsentState intact (so the
-    /// failure is surfaced without blowing away history). Caller is expected
-    /// to SaveChanges separately.
+    /// Append the verify-outcome actlog entry and commit all pending mutations
+    /// (row updates staged by <see cref="TouchExistingRowsOnFailure"/> plus this
+    /// actlog row) in a single SaveChanges round-trip.
     /// </summary>
     private async Task LogVerifyOutcome(Guid organizationId, string severity, string message)
     {
@@ -548,6 +547,11 @@ public class AzureConsentFunction
         await _db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// On ARM/token failure, stage updates to LastVerifiedAt + ErrorMessage on
+    /// all existing rows for the org (ConsentState is preserved so history is
+    /// not lost). Does not call SaveChanges — caller must commit.
+    /// </summary>
     private async Task TouchExistingRowsOnFailure(Guid organizationId, string reason)
     {
         var rows = await _db.CloudAssessmentAzureSubscriptions
@@ -561,7 +565,6 @@ public class AzureConsentFunction
             r.LastVerifiedAt = now;
             r.ErrorMessage = reason;
         }
-        await _db.SaveChangesAsync();
     }
 
     private async Task<bool> UserCanAccessOrg(Guid organizationId)
