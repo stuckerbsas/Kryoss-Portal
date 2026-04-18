@@ -58,14 +58,6 @@ const STATUS_BADGE_CLASSES: Record<FindingStatus, string> = {
   acknowledged_regression: 'bg-purple-100 text-purple-800',
 };
 
-function statusBadge(status: FindingStatus) {
-  return (
-    <Badge variant="secondary" className={STATUS_BADGE_CLASSES[status] ?? 'bg-gray-100 text-gray-500'}>
-      {STATUS_LABELS[status] ?? status}
-    </Badge>
-  );
-}
-
 function formatDate(s: string | null | undefined): string {
   if (!s) return '—';
   return new Date(s).toLocaleDateString();
