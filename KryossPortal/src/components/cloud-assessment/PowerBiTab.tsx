@@ -282,11 +282,35 @@ export function PowerBiTab({
     );
   }
 
-  const isConnected = connection && 'connectionState' in connection && connection.connectionState === 'connected';
+  const connState = connection && 'connectionState' in connection ? connection.connectionState : 'none';
+  const errorMsg = connection && 'errorMessage' in connection ? (connection as any).errorMessage : null;
 
-  if (!isConnected) {
-    return <ConnectPowerBiCard orgId={orgId} />;
+  if (connState === 'connected') {
+    return <PowerBiDashboard orgId={orgId} scanId={scanId} />;
   }
 
-  return <PowerBiDashboard orgId={orgId} scanId={scanId} />;
+  if (connState === 'unavailable') {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center space-y-3">
+          <BarChart3 className="h-8 w-8 text-gray-400 mx-auto" />
+          <p className="text-sm font-medium text-muted-foreground">Power BI Governance — Not Available</p>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            {errorMsg ?? 'The Power BI Admin API is not accessible for this tenant. Enable "Service principals can use read-only admin APIs" in Power BI Admin Portal.'}
+          </p>
+          <a
+            href="https://app.powerbi.com/admin-portal/tenantSettings"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+          >
+            Open Power BI Admin Portal
+          </a>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Default: not connected yet
+  return <ConnectPowerBiCard orgId={orgId} />;
 }
