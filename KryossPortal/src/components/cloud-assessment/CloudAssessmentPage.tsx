@@ -27,6 +27,7 @@ import { AzureInfrastructureView } from './AzureInfrastructureView';
 import { RemediationTab } from './RemediationTab';
 import { ComplianceTab } from './ComplianceTab';
 import { PowerBiTab } from './PowerBiTab';
+import { ConnectProgressModal } from './ConnectProgressModal';
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -266,8 +267,10 @@ export function CloudAssessmentPage() {
   if (!orgId) return null;
 
   return (
-    <Tabs defaultValue="overview" className="space-y-4">
-      <TabsList>
+    <div className="space-y-4">
+      <ConnectProgressModal orgId={orgId} />
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="identity">Identity</TabsTrigger>
         <TabsTrigger value="endpoint">Endpoint</TabsTrigger>
@@ -293,6 +296,7 @@ export function CloudAssessmentPage() {
       <TabsContent value="powerbi"><PowerBiTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="compliance"><ComplianceTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="remediation"><RemediationTab orgId={orgId} /></TabsContent>
-    </Tabs>
+      </Tabs>
+    </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   Database,
   Users,
   Activity,
+  BarChart3,
   TrendingUp,
   TrendingDown,
   CheckCircle,
@@ -43,6 +44,8 @@ import {
   PolarRadiusAxis,
   ResponsiveContainer,
 } from 'recharts';
+import { useM365 } from '@/api/m365';
+import { CloudConnectCard } from './CloudConnectCard';
 import { TimelineCard } from './TimelineCard';
 import { CompareModal } from './CompareModal';
 
@@ -52,6 +55,7 @@ const AREAS = [
   { key: 'data', label: 'Data', icon: Database },
   { key: 'productivity', label: 'Productivity', icon: Activity },
   { key: 'azure', label: 'Azure', icon: Cloud },
+  { key: 'powerbi', label: 'Power BI', icon: BarChart3 },
 ] as const;
 
 function scoreColor(score: number | null): string {
@@ -112,6 +116,7 @@ const PIPELINE_LABELS: Record<string, string> = {
   data: 'Data',
   productivity: 'Productivity',
   azure: 'Azure',
+  powerbi: 'Power BI',
 };
 
 interface OverviewTabProps {
@@ -120,6 +125,8 @@ interface OverviewTabProps {
 
 export function OverviewTab({ orgId }: OverviewTabProps) {
   const { data: summary, isLoading } = useCloudAssessment(orgId);
+  const { data: m365Status } = useM365(orgId);
+  const m365Connected = m365Status?.connected === true;
   const scanMutation = useCloudAssessmentScan();
   const [compareOpen, setCompareOpen] = useState(false);
 
@@ -168,6 +175,10 @@ export function OverviewTab({ orgId }: OverviewTabProps) {
         <Skeleton className="h-64" />
       </div>
     );
+  }
+
+  if (notScanned && !m365Connected) {
+    return <CloudConnectCard orgId={orgId} />;
   }
 
   // Radar data.
@@ -358,7 +369,7 @@ export function OverviewTab({ orgId }: OverviewTabProps) {
           </Card>
 
           {/* Area cards */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             {AREAS.map(({ key, label, icon: Icon }) => {
               const score = scan.areaScores?.[key] ?? null;
               return (
