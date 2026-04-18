@@ -27,6 +27,7 @@ import { AzureInfrastructureView } from './AzureInfrastructureView';
 import { RemediationTab } from './RemediationTab';
 import { ComplianceTab } from './ComplianceTab';
 import { PowerBiTab } from './PowerBiTab';
+import { CopilotReadinessTab } from './CopilotReadinessTab';
 import { ConnectProgressModal } from './ConnectProgressModal';
 
 function statusBadge(status: string) {
@@ -278,6 +279,7 @@ export function CloudAssessmentPage() {
         <TabsTrigger value="productivity">Productivity</TabsTrigger>
         <TabsTrigger value="azure">Azure</TabsTrigger>
         <TabsTrigger value="powerbi">Power BI</TabsTrigger>
+        <TabsTrigger value="copilot">Copilot Readiness</TabsTrigger>
         <TabsTrigger value="compliance">Compliance</TabsTrigger>
         <TabsTrigger value="remediation">Remediation</TabsTrigger>
       </TabsList>
@@ -294,6 +296,7 @@ export function CloudAssessmentPage() {
         />
       </TabsContent>
       <TabsContent value="powerbi"><PowerBiTab orgId={orgId} scanId={latestScanId} /></TabsContent>
+      <TabsContent value="copilot"><CopilotReadinessTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="compliance"><ComplianceTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="remediation"><RemediationTab orgId={orgId} /></TabsContent>
       </Tabs>

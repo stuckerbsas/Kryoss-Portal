@@ -3,7 +3,38 @@ import { apiFetch } from './client';
 
 // ── Types ──
 
-export type CloudAssessmentAreaKey = 'identity' | 'endpoint' | 'data' | 'productivity' | 'azure';
+export type CloudAssessmentAreaKey = 'identity' | 'endpoint' | 'data' | 'productivity' | 'azure' | 'powerbi';
+
+export interface CopilotReadinessScores {
+  d1Labels: number;
+  d2Oversharing: number;
+  d3External: number;
+  d4ConditionalAccess: number;
+  d5ZeroTrust: number;
+  d6Purview: number;
+  overall: number;
+  copilotVerdict: string;
+}
+
+export interface SharepointSiteData {
+  siteUrl: string;
+  siteTitle: string | null;
+  totalFiles: number;
+  labeledFiles: number;
+  oversharedFiles: number;
+  riskLevel: string | null;
+  topLabels: string | null;
+}
+
+export interface ExternalUserData {
+  userPrincipal: string;
+  displayName: string | null;
+  emailDomain: string | null;
+  lastSignIn: string | null;
+  riskLevel: string | null;
+  sitesAccessed: number;
+  highestPermission: string | null;
+}
 
 export interface CloudAssessmentScan {
   id: string;
@@ -24,6 +55,7 @@ export interface CloudAssessmentScan {
     success: number;
     disabled: number;
   }>;
+  copilotReadiness: CopilotReadinessScores | null;
 }
 
 export interface CloudAssessmentFinding {
@@ -69,6 +101,8 @@ export interface CloudAssessmentScanDetail extends CloudAssessmentScan {
     daysInactive: number | null;
     estimatedCostYear: number | null;
   }>;
+  sharepointSites: SharepointSiteData[];
+  externalUsers: ExternalUserData[];
 }
 
 export interface CloudAssessmentHistoryEntry {
