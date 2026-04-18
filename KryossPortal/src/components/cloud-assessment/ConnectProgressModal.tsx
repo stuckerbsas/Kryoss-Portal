@@ -43,7 +43,7 @@ function StatusLine({ ok, label, note }: { ok: boolean | null; label: string; no
   );
 }
 
-export function ConnectProgressModal({ orgId }: { orgId: string }) {
+export function ConnectProgressModal(_props: { orgId: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [result, setResult] = useState<ConnectResult | null>(null);
   const [dismissed, setDismissed] = useState(false);

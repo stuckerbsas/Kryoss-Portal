@@ -480,7 +480,7 @@ export function useComplianceDrilldown(
 export interface PowerBiConnection {
   organizationId: string;
   enabled: boolean;
-  connectionState: 'none' | 'pending' | 'connected' | 'failed' | 'disconnected';
+  connectionState: 'none' | 'pending' | 'connected' | 'failed' | 'disconnected' | 'unavailable';
   lastVerifiedAt: string | null;
   errorMessage: string | null;
   updatedAt: string;
