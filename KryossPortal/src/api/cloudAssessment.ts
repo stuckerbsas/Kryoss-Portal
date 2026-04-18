@@ -475,6 +475,79 @@ export function useComplianceDrilldown(
   });
 }
 
+// ── Power BI Governance types (CA-9) ──
+
+export interface PowerBiConnection {
+  organizationId: string;
+  enabled: boolean;
+  connectionState: 'none' | 'pending' | 'connected' | 'failed' | 'disconnected';
+  lastVerifiedAt: string | null;
+  errorMessage: string | null;
+  updatedAt: string;
+}
+
+export interface PowerBiConnectInstructions {
+  appId: string;
+  tenantSettingsUrl: string;
+  requiredPermissions: string[];
+  instructions: string[];
+}
+
+// ── Power BI Governance hooks (CA-9) ──
+
+export function usePowerBiConnection(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['powerbi-connection', organizationId],
+    queryFn: () =>
+      apiFetch<PowerBiConnection>(
+        `/v2/cloud-assessment/powerbi/connection?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+export function usePowerBiConnect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ organizationId }: { organizationId: string }) =>
+      apiFetch<PowerBiConnectInstructions>('/v2/cloud-assessment/powerbi/connect', {
+        method: 'POST',
+        body: JSON.stringify({ organizationId }),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['powerbi-connection', variables.organizationId] });
+    },
+  });
+}
+
+export function usePowerBiVerify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ organizationId }: { organizationId: string }) =>
+      apiFetch<{ connected: boolean; error?: string }>('/v2/cloud-assessment/powerbi/verify', {
+        method: 'POST',
+        body: JSON.stringify({ organizationId }),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['powerbi-connection', variables.organizationId] });
+    },
+  });
+}
+
+export function usePowerBiDisconnect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ organizationId }: { organizationId: string }) =>
+      apiFetch<void>(
+        `/v2/cloud-assessment/powerbi/connection?organizationId=${organizationId}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['powerbi-connection', variables.organizationId] });
+    },
+  });
+}
+
 // POST /v2/cloud-assessment/suggestions/{id}/dismiss
 export function useDismissSuggestion() {
   const qc = useQueryClient();
