@@ -9,4 +9,5 @@ public class M365Config
     public string ClientId { get; set; } = "";
     public string ClientSecret { get; set; } = "";
     public string PortalBaseUrl { get; set; } = "https://zealous-dune-0ac672d10.6.azurestaticapps.net";
+    public string CallbackBaseUrl { get; set; } = "https://func-kryoss.azurewebsites.net";
 }
