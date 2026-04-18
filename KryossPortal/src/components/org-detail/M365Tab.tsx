@@ -174,6 +174,23 @@ function ConnectForm({ orgId }: { orgId: string }) {
         description="Connect a Microsoft 365 / Entra ID tenant to audit 50 cloud security checks across Conditional Access, MFA, Intune, DLP, and more."
       />
 
+      {/* Unified connect recommendation */}
+      <Card className="max-w-2xl mx-auto border-blue-200 bg-blue-50/30">
+        <CardContent className="py-4 text-center space-y-2">
+          <p className="text-sm font-medium">Recommended: Use Cloud Assessment</p>
+          <p className="text-xs text-muted-foreground">
+            For full cloud security scanning (M365 + Azure + Power BI) with a single login,
+            go to Cloud Assessment and click "Connect Cloud Services".
+          </p>
+          <a
+            href={`/organizations/${orgId}/cloud-assessment`}
+            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline font-medium"
+          >
+            Go to Cloud Assessment →
+          </a>
+        </CardContent>
+      </Card>
+
       {/* One-click consent button */}
       <Card className="max-w-2xl mx-auto">
         <CardHeader>
