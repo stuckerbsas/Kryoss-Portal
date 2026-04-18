@@ -386,6 +386,95 @@ export function useSetFindingStatus() {
   });
 }
 
+// ── Compliance framework types (CA-8) ──
+
+export interface ComplianceFramework {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  version: string | null;
+  authority: string | null;
+  docUrl: string | null;
+  controlCount: number;
+}
+
+export interface ComplianceFrameworkScore {
+  frameworkId: string;
+  frameworkCode: string;
+  frameworkName: string;
+  totalControls: number;
+  coveredControls: number;
+  passingControls: number;
+  failingControls: number;
+  unmappedControls: number;
+  scorePct: number;
+  grade: string | null;
+  computedAt: string;
+}
+
+export interface ComplianceControlDetail {
+  controlCode: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  priority: string | null;
+  status: 'passing' | 'failing' | 'unmapped' | 'no_data';
+  mappedFindings: Array<{
+    area: string;
+    service: string;
+    feature: string;
+    findingStatus: string | null;
+    coverage: string;
+  }>;
+}
+
+export interface ComplianceDrilldown {
+  framework: ComplianceFramework;
+  controls: ComplianceControlDetail[];
+}
+
+// ── Compliance framework hooks (CA-8) ──
+
+export function useComplianceFrameworks() {
+  return useQuery({
+    queryKey: ['compliance-frameworks'],
+    queryFn: () =>
+      apiFetch<ComplianceFramework[]>('/v2/cloud-assessment/compliance/frameworks'),
+  });
+}
+
+export function useComplianceScores(
+  organizationId: string | undefined,
+  scanId?: string,
+) {
+  return useQuery({
+    queryKey: ['compliance-scores', organizationId, scanId],
+    queryFn: () => {
+      const params = new URLSearchParams({ organizationId: organizationId! });
+      if (scanId) params.set('scanId', scanId);
+      return apiFetch<ComplianceFrameworkScore[]>(
+        `/v2/cloud-assessment/compliance/scores?${params.toString()}`,
+      );
+    },
+    enabled: !!organizationId,
+  });
+}
+
+export function useComplianceDrilldown(
+  frameworkCode: string | undefined,
+  scanId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ['compliance-drilldown', frameworkCode, scanId],
+    queryFn: () =>
+      apiFetch<ComplianceDrilldown>(
+        `/v2/cloud-assessment/compliance/framework/${frameworkCode}?scanId=${scanId}`,
+      ),
+    enabled: !!frameworkCode && !!scanId,
+  });
+}
+
 // POST /v2/cloud-assessment/suggestions/{id}/dismiss
 export function useDismissSuggestion() {
   const qc = useQueryClient();
