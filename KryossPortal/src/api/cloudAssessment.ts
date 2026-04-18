@@ -548,6 +548,19 @@ export function usePowerBiDisconnect() {
   });
 }
 
+// ── Unified cloud connect hook (CA-10) ──
+
+export function useUnifiedCloudConnectUrl(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['cloud-connect-url', organizationId],
+    queryFn: () =>
+      apiFetch<{ url: string }>(
+        `/v2/cloud/connect-url?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
 // POST /v2/cloud-assessment/suggestions/{id}/dismiss
 export function useDismissSuggestion() {
   const qc = useQueryClient();
