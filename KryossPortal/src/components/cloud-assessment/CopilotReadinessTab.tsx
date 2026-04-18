@@ -8,7 +8,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { BrainCircuit, ShieldCheck, Share2, Users, FileCheck, Globe, Lock } from 'lucide-react';
+import { BrainCircuit, ShieldCheck, Share2, FileCheck, Globe, Lock } from 'lucide-react';
 
 const DIMENSIONS = [
   { key: 'd1Labels', label: 'D1 — Sensitivity Labels', icon: FileCheck, desc: 'File labeling coverage across SharePoint' },
