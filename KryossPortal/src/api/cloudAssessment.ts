@@ -779,7 +779,7 @@ export function useSetOrgIndustry() {
 export interface ConnectionStatus {
   graph: 'connected' | 'not_connected';
   azure: 'connected' | 'not_connected' | 'partial';
-  powerBi: 'connected' | 'not_connected';
+  powerBi: 'connected' | 'not_connected' | 'unavailable';
   azureSubscriptionCount: number;
   connectionPercentage: number;
 }

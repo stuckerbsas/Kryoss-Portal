@@ -33,8 +33,13 @@ public class ConsentOrchestrator : IConsentOrchestrator
             .Select(s => s.ConsentState)
             .ToListAsync();
 
-        var pbiConnected = await _db.CloudAssessmentPowerBiConnections
-            .AnyAsync(p => p.OrganizationId == orgId && p.ConnectionState == "connected");
+        var pbiRow = await _db.CloudAssessmentPowerBiConnections
+            .Where(p => p.OrganizationId == orgId)
+            .Select(p => p.ConnectionState)
+            .FirstOrDefaultAsync();
+
+        // "connected", "unavailable", or "not_connected"
+        var pbiStatus = pbiRow ?? "not_connected";
 
         var azureStatus = azureSubs.Count == 0
             ? "not_connected"
@@ -46,17 +51,17 @@ public class ConsentOrchestrator : IConsentOrchestrator
 
         var azureSubCount = azureSubs.Count(s => s == "connected");
 
-        // graph=34%, azure=33%, powerbi=33%
+        // graph=34%, azure=33%, powerbi=33% (unavailable counts as done — tenant has no PBI)
         var pct = 0;
         if (graphConnected) pct += 34;
         if (azureStatus is "connected" or "partial") pct += 33;
-        if (pbiConnected) pct += 33;
+        if (pbiStatus is "connected" or "unavailable") pct += 33;
 
         return new ConnectionStatusResult
         {
             Graph = graphConnected ? "connected" : "not_connected",
             Azure = azureStatus,
-            PowerBi = pbiConnected ? "connected" : "not_connected",
+            PowerBi = pbiStatus,
             AzureSubscriptionCount = azureSubCount,
             ConnectionPercentage = pct
         };

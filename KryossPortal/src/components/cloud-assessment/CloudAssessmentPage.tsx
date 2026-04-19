@@ -364,15 +364,22 @@ function ConnectionBanner({
   const graphOk = status.graph === 'connected';
   const azureOk = status.azure === 'connected';
   const pbiOk = status.powerBi === 'connected';
+  const pbiNA = status.powerBi === 'unavailable';
+  const pbiDone = pbiOk || pbiNA;
 
   if (!graphOk) return null;
 
-  if (graphOk && azureOk && pbiOk) {
+  if (graphOk && azureOk && pbiDone) {
     return (
       <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-2">
         <div className="flex items-center gap-2 text-sm text-green-800">
           <CheckCircle2 className="h-4 w-4" />
           <span className="font-medium">All cloud services connected</span>
+          {pbiNA && (
+            <Badge variant="secondary" className="bg-gray-100 text-gray-500 text-xs">
+              Power BI N/A
+            </Badge>
+          )}
           <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">
             {status.connectionPercentage}%
           </Badge>
@@ -395,7 +402,7 @@ function ConnectionBanner({
 
   const missing: Array<{ label: string; step: number }> = [];
   if (!azureOk) missing.push({ label: 'Azure', step: 1 });
-  if (!pbiOk) missing.push({ label: 'Power BI', step: 2 });
+  if (!pbiDone) missing.push({ label: 'Power BI', step: 2 });
 
   return (
     <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
