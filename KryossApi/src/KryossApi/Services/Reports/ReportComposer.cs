@@ -24,7 +24,7 @@ public class ReportComposer : IReportComposer
         var detail = $"{data.TotalMachines} {(options.IsSpanish ? "dispositivos" : "devices")} · {data.Org.Name}";
 
         ReportHelpers.AppendHtmlHead(sb, $"{reportTitle} - {data.Org.Name}", data.Branding,
-            isOrgReport: true, htmlLang: options.Lang, user: data.UserInfo, detail: detail);
+            isOrgReport: true, htmlLang: options.Lang, user: null, detail: detail);
 
         int pageNum = 0;
         foreach (var block in blocks)
