@@ -58,8 +58,9 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        // Consent callback is a browser redirect from Microsoft — no Bearer token
-        if (path.Contains("/consent-callback", StringComparison.OrdinalIgnoreCase))
+        // OAuth callbacks are browser redirects from Microsoft — no Bearer token
+        if (path.Contains("/consent-callback", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("/connect-callback", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
