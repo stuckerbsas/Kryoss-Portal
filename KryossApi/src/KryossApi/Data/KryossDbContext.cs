@@ -592,7 +592,7 @@ public class KryossDbContext : DbContext
             e.Property(x => x.PropertiesJson).HasColumnName("properties_json");
             e.Property(x => x.RiskFlags).HasColumnName("risk_flags");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
-            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Scan).WithMany(s => s.AzureResources).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.ScanId, x.ResourceType }).HasDatabaseName("ix_car_scan");
             e.HasIndex(x => new { x.ScanId, x.SubscriptionId }).HasDatabaseName("ix_car_subscription");
         });
