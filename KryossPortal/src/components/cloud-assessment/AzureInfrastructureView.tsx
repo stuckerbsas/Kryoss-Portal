@@ -85,6 +85,20 @@ function statusBadge(status: string) {
   return <Badge variant="secondary" className={entry?.color ?? 'bg-gray-100 text-gray-500'}>{entry?.label ?? status}</Badge>;
 }
 
+const SERVICE_LABELS: Record<string, string> = {
+  arm: 'Azure Resource Manager',
+  'defender-cloud': 'Defender for Cloud',
+  storage: 'Azure Storage',
+  keyvault: 'Key Vault',
+  network: 'Network Security',
+  compute: 'Compute',
+  policy: 'Azure Policy',
+};
+
+function serviceLabel(service: string): string {
+  return SERVICE_LABELS[service.toLowerCase()] ?? service.charAt(0).toUpperCase() + service.slice(1);
+}
+
 function priorityBadge(priority: string) {
   const key = priority.toLowerCase();
   const map: Record<string, { color: string; label: string }> = {
@@ -435,7 +449,7 @@ function FindingsTable({ findings }: FindingsTableProps) {
             {findings.map((f, i) => (
               <TableRow key={`${f.service}-${f.feature}-${i}`}>
                 <TableCell className="text-sm font-medium whitespace-nowrap">
-                  {f.service}
+                  {serviceLabel(f.service)}
                 </TableCell>
                 <TableCell className="text-sm">{f.feature}</TableCell>
                 <TableCell>{statusBadge(f.status)}</TableCell>

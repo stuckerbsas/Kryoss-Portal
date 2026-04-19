@@ -112,6 +112,37 @@ function priorityBadge(priority: string) {
   return <Badge variant="secondary" className={entry?.color ?? 'bg-gray-100 text-gray-500'}>{entry?.label ?? priority}</Badge>;
 }
 
+const SERVICE_LABELS: Record<string, string> = {
+  entra: 'Entra ID',
+  intune: 'Intune',
+  'defender-endpoint': 'Defender for Endpoint',
+  'defender-cloud': 'Defender for Cloud',
+  purview: 'Purview',
+  sharepoint: 'SharePoint',
+  onedrive: 'OneDrive',
+  exchange: 'Exchange Online',
+  teams: 'Teams',
+  m365: 'Microsoft 365',
+  email: 'Email',
+  mail_flow: 'Mail Flow',
+  arm: 'Azure Resource Manager',
+  storage: 'Azure Storage',
+  keyvault: 'Key Vault',
+  network: 'Network Security',
+  compute: 'Compute',
+  policy: 'Azure Policy',
+  powerbi: 'Power BI',
+  productivity: 'Productivity',
+  licensing: 'Licensing',
+  office: 'Office Apps',
+  identity: 'Identity',
+  copilot: 'Copilot',
+};
+
+function serviceLabel(service: string): string {
+  return SERVICE_LABELS[service.toLowerCase()] ?? service.charAt(0).toUpperCase() + service.slice(1);
+}
+
 const PIPELINE_LABELS: Record<string, string> = {
   identity: 'Identity',
   endpoint: 'Endpoint',
@@ -450,7 +481,7 @@ export function OverviewTab({ orgId }: OverviewTabProps) {
                     {topFindings.map((f, i) => (
                       <TableRow key={`${f.area}-${f.service}-${f.feature}-${i}`}>
                         <TableCell className="text-sm capitalize">{f.area}</TableCell>
-                        <TableCell className="text-sm font-medium whitespace-nowrap">{f.service}</TableCell>
+                        <TableCell className="text-sm font-medium whitespace-nowrap">{serviceLabel(f.service)}</TableCell>
                         <TableCell className="text-sm">{f.feature}</TableCell>
                         <TableCell>{priorityBadge(f.priority)}</TableCell>
                         <TableCell className="text-sm text-muted-foreground max-w-md">
