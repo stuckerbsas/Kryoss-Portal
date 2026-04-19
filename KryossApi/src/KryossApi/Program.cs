@@ -3,6 +3,7 @@ using KryossApi.Infrastructure;
 using KryossApi.Middleware;
 using KryossApi.Services;
 using KryossApi.Services.CloudAssessment;
+using KryossApi.Services.Reports;
 using KryossApi.Services.CloudAssessment.Helpers;
 using KryossApi.Services.CopilotReadiness;
 using Microsoft.Azure.Functions.Worker;
@@ -61,6 +62,7 @@ builder.Services.AddScoped<IEvaluationService, EvaluationService>();
 builder.Services.AddScoped<IActlogService, ActlogService>();
 builder.Services.AddScoped<ICryptoService, CryptoService>();
 builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<IReportDataLoader, ReportDataLoader>();
 builder.Services.AddScoped<ExternalScanService>();
 builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
 builder.Services.AddScoped<ICopilotReadinessService, CopilotReadinessService>();
@@ -68,6 +70,7 @@ builder.Services.AddScoped<ICloudAssessmentService, CloudAssessmentService>();
 builder.Services.AddScoped<IBenchmarkService, BenchmarkService>();
 builder.Services.AddScoped<IFindingStatusService, FindingStatusService>();
 builder.Services.AddScoped<IConsentOrchestrator, ConsentOrchestrator>();
+builder.Services.AddScoped<ICloudAssessmentReportService, CloudAssessmentReportService>();
 
 // ── M365 multi-tenant admin consent config ──
 builder.Services.AddSingleton(new M365Config
