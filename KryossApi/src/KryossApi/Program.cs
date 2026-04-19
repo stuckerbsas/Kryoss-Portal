@@ -63,6 +63,7 @@ builder.Services.AddScoped<IActlogService, ActlogService>();
 builder.Services.AddScoped<ICryptoService, CryptoService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IReportDataLoader, ReportDataLoader>();
+builder.Services.AddScoped<IReportComposer, ReportComposer>();
 builder.Services.AddScoped<ExternalScanService>();
 builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
 builder.Services.AddScoped<ICopilotReadinessService, CopilotReadinessService>();

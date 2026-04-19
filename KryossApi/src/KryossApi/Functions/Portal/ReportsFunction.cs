@@ -2,27 +2,32 @@ using System.Net;
 using KryossApi.Data;
 using KryossApi.Middleware;
 using KryossApi.Services;
+using KryossApi.Services.Reports;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace KryossApi.Functions.Portal;
 
-/// <summary>
-/// Generate and serve assessment reports (HTML).
-/// Supports: technical, executive, presales report types.
-/// </summary>
 [RequirePermission("reports:read")]
 public class ReportsFunction
 {
     private readonly IReportService _reports;
+    private readonly IReportComposer _composer;
     private readonly IActlogService _actlog;
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
 
-    public ReportsFunction(IReportService reports, IActlogService actlog, KryossDbContext db, ICurrentUserService user)
+    private static readonly HashSet<string> _composerTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "c-level", "technical", "preventa", "preventas", "presales", "presales-opener",
+        "monthly", "monthly-briefing", "framework", "proposal"
+    };
+
+    public ReportsFunction(IReportService reports, IReportComposer composer, IActlogService actlog, KryossDbContext db, ICurrentUserService user)
     {
         _reports = reports;
+        _composer = composer;
         _actlog = actlog;
         _db = db;
         _user = user;
@@ -82,7 +87,36 @@ public class ReportsFunction
 
         try
         {
-            var html = await _reports.GenerateOrgReportAsync(orgId, reportType, frameworkCode, lang, tone);
+            string html;
+
+            if (_composerTypes.Contains(reportType))
+            {
+                if (reportType == "framework" && string.IsNullOrEmpty(frameworkCode))
+                {
+                    var badReq = req.CreateResponse(HttpStatusCode.BadRequest);
+                    await badReq.WriteAsJsonAsync(new { error = "Framework report requires ?framework= parameter" });
+                    return badReq;
+                }
+
+                string? frameworkName = null;
+                if (!string.IsNullOrEmpty(frameworkCode))
+                {
+                    var fw = await _db.Frameworks.FirstOrDefaultAsync(f => f.Code == frameworkCode && f.IsActive);
+                    frameworkName = fw?.Name;
+                }
+
+                var reportOptions = new ReportOptions(
+                    Lang: lang,
+                    FrameworkCode: frameworkCode,
+                    FrameworkName: frameworkName,
+                    Tone: tone
+                );
+                html = await _composer.GenerateAsync(orgId, reportType, reportOptions);
+            }
+            else
+            {
+                html = await _reports.GenerateOrgReportAsync(orgId, reportType, frameworkCode, lang, tone);
+            }
 
             await _actlog.LogAsync("INFO", "reports", "org_report.generated",
                 $"Generated {reportType} org report for {orgId}",
