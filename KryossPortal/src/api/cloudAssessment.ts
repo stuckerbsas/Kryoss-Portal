@@ -795,6 +795,40 @@ export function useConnectionStatus(organizationId: string | undefined) {
   });
 }
 
+export interface DisconnectResult {
+  disconnected: boolean;
+  deleted: {
+    cloudAssessmentScans: number;
+    copilotReadinessScans: number;
+    azureSubscriptions: number;
+    powerBiConnections: number;
+    m365Tenants: number;
+    findingStatuses: number;
+    suggestions: number;
+  };
+}
+
+export function useCloudDisconnect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ organizationId }: { organizationId: string }) =>
+      apiFetch<DisconnectResult>(
+        `/v2/cloud-assessment/disconnect?organizationId=${organizationId}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['cloud-assessment', variables.organizationId] });
+      qc.invalidateQueries({ queryKey: ['cloud-assessment-history', variables.organizationId] });
+      qc.invalidateQueries({ queryKey: ['connection-status', variables.organizationId] });
+      qc.invalidateQueries({ queryKey: ['azure-subscriptions', variables.organizationId] });
+      qc.invalidateQueries({ queryKey: ['powerbi-connection', variables.organizationId] });
+      qc.invalidateQueries({ queryKey: ['cloud-assessment-finding-statuses', variables.organizationId] });
+      qc.invalidateQueries({ queryKey: ['cloud-assessment-suggestions', variables.organizationId] });
+      qc.invalidateQueries({ queryKey: ['remediation-stats', variables.organizationId] });
+    },
+  });
+}
+
 // POST /v2/cloud-assessment/suggestions/{id}/dismiss
 export function useDismissSuggestion() {
   const qc = useQueryClient();

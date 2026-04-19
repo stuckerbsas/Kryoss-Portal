@@ -15,17 +15,20 @@ public class CloudAssessmentFunction
     private readonly ICurrentUserService _user;
     private readonly ICloudAssessmentService _service;
     private readonly IFindingStatusService _statusService;
+    private readonly IConsentOrchestrator _consent;
 
     public CloudAssessmentFunction(
         KryossDbContext db,
         ICurrentUserService user,
         ICloudAssessmentService service,
-        IFindingStatusService statusService)
+        IFindingStatusService statusService,
+        IConsentOrchestrator consent)
     {
         _db = db;
         _user = user;
         _service = service;
         _statusService = statusService;
+        _consent = consent;
     }
 
     /// <summary>
@@ -221,7 +224,7 @@ public class CloudAssessmentFunction
     [Function("CloudAssessment_Detail")]
     [RequirePermission("assessment:read")]
     public async Task<HttpResponseData> Detail(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/{scanId}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/{scanId:guid}")] HttpRequestData req,
         string scanId)
     {
         if (!Guid.TryParse(scanId, out var scanGuid))
@@ -418,6 +421,369 @@ public class CloudAssessmentFunction
         return response;
     }
 
+    /// <summary>
+    /// List active compliance frameworks.
+    /// GET /v2/cloud-assessment/compliance/frameworks
+    /// </summary>
+    [Function("CloudAssessment_ComplianceFrameworks")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> GetComplianceFrameworks(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/compliance/frameworks")] HttpRequestData req)
+    {
+        var frameworks = await _db.CloudAssessmentFrameworks
+            .Where(f => f.Active)
+            .OrderBy(f => f.Code)
+            .Select(f => new
+            {
+                f.Id, f.Code, f.Name, f.Description, f.Version, f.Authority, f.DocUrl,
+                ControlCount = f.Controls.Count
+            })
+            .ToListAsync();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(frameworks);
+        return response;
+    }
+
+    /// <summary>
+    /// Get per-framework compliance scores for latest scan.
+    /// GET /v2/cloud-assessment/compliance/scores?organizationId={guid}[&scanId={guid}]
+    /// </summary>
+    [Function("CloudAssessment_ComplianceScores")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> GetComplianceScores(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/compliance/scores")] HttpRequestData req)
+    {
+        var orgId = ResolveOrgId(req);
+        if (orgId is null)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+            return bad;
+        }
+
+        var accessDenied = await RequireOrgAccess(req, orgId.Value);
+        if (accessDenied is not null) return accessDenied;
+
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        Guid? scanId = Guid.TryParse(query["scanId"], out var sid) ? sid : null;
+
+        // Resolve scan: explicit or latest completed for org.
+        if (!scanId.HasValue)
+        {
+            scanId = await _db.CloudAssessmentScans
+                .Where(s => s.OrganizationId == orgId.Value && s.Status == "completed")
+                .OrderByDescending(s => s.CreatedAt)
+                .Select(s => s.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        if (!scanId.HasValue || scanId == Guid.Empty)
+        {
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(Array.Empty<object>());
+            return response;
+        }
+
+        var scores = await _db.CloudAssessmentFrameworkScores
+            .Where(s => s.ScanId == scanId.Value)
+            .Join(_db.CloudAssessmentFrameworks, s => s.FrameworkId, f => f.Id, (s, f) => new
+            {
+                s.FrameworkId,
+                FrameworkCode = f.Code,
+                FrameworkName = f.Name,
+                s.TotalControls, s.CoveredControls, s.PassingControls, s.FailingControls,
+                s.UnmappedControls, s.ScorePct, s.Grade, s.ComputedAt
+            })
+            .OrderByDescending(x => x.ScorePct)
+            .ToListAsync();
+
+        var resp = req.CreateResponse(HttpStatusCode.OK);
+        await resp.WriteAsJsonAsync(scores);
+        return resp;
+    }
+
+    /// <summary>
+    /// Drill down into a specific framework's controls and their mapped findings.
+    /// GET /v2/cloud-assessment/compliance/framework/{code}?scanId={guid}
+    /// </summary>
+    [Function("CloudAssessment_ComplianceDrilldown")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> GetComplianceDrilldown(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/compliance/framework/{code}")] HttpRequestData req,
+        string code)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        if (!Guid.TryParse(query["scanId"], out var scanId))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "scanId query parameter required" });
+            return bad;
+        }
+
+        var framework = await _db.CloudAssessmentFrameworks
+            .FirstOrDefaultAsync(f => f.Code == code && f.Active);
+
+        if (framework is null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = $"Framework '{code}' not found" });
+            return notFound;
+        }
+
+        // Load controls with their mappings.
+        var controls = await _db.CloudAssessmentFrameworkControls
+            .Where(c => c.FrameworkId == framework.Id)
+            .OrderBy(c => c.Category).ThenBy(c => c.ControlCode)
+            .Select(c => new
+            {
+                c.ControlCode, c.Title, c.Category, c.Priority,
+                Mappings = c.Mappings.Select(m => new
+                {
+                    m.Area, m.Service, m.Feature, m.Coverage, m.Rationale
+                }).ToList()
+            })
+            .ToListAsync();
+
+        // Load findings for this scan to resolve statuses.
+        var findings = await _db.CloudAssessmentFindings
+            .Where(f => f.ScanId == scanId)
+            .Select(f => new { f.Area, f.Service, f.Feature, f.Status, f.Priority })
+            .ToListAsync();
+
+        var findingLookup = findings
+            .GroupBy(f => $"{f.Area}|{f.Service}|{f.Feature}")
+            .ToDictionary(
+                g => g.Key,
+                g => g.First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        // Enrich controls with finding status.
+        var enriched = controls.Select(c =>
+        {
+            var mappedFindings = c.Mappings.Select(m =>
+            {
+                var key = $"{m.Area}|{m.Service}|{m.Feature}";
+                findingLookup.TryGetValue(key, out var finding);
+                return new
+                {
+                    m.Area, m.Service, m.Feature, m.Coverage, m.Rationale,
+                    FindingStatus = finding?.Status,
+                    FindingPriority = finding?.Priority
+                };
+            }).ToList();
+
+            string controlStatus = mappedFindings.Count == 0
+                ? "unmapped"
+                : mappedFindings.Any(f => f.FindingStatus != null &&
+                    (f.FindingStatus.Equals("action_required", StringComparison.OrdinalIgnoreCase) ||
+                     f.FindingStatus.Equals("Action Required", StringComparison.OrdinalIgnoreCase)))
+                    ? "failing"
+                    : mappedFindings.Any(f => f.FindingStatus != null)
+                        ? "passing"
+                        : "no_data";
+
+            return new
+            {
+                c.ControlCode, c.Title, c.Category, c.Priority,
+                Status = controlStatus,
+                MappedFindings = mappedFindings
+            };
+        }).ToList();
+
+        var resp = req.CreateResponse(HttpStatusCode.OK);
+        await resp.WriteAsJsonAsync(new
+        {
+            Framework = new
+            {
+                framework.Id, framework.Code, framework.Name, framework.Description,
+                framework.Version, framework.Authority, framework.DocUrl,
+                ControlCount = controls.Count
+            },
+            Controls = enriched
+        });
+        return resp;
+    }
+
+    /// <summary>
+    /// Copilot Readiness Lens: D1-D6 scores + dimension-filtered findings.
+    /// GET /v2/cloud-assessment/copilot-lens/{scanId}
+    /// </summary>
+    [Function("CloudAssessment_CopilotLens")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> CopilotLens(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/copilot-lens/{scanId:guid}")] HttpRequestData req,
+        string scanId)
+    {
+        if (!Guid.TryParse(scanId, out var scanGuid))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Invalid scanId" });
+            return bad;
+        }
+
+        var scan = await _db.CloudAssessmentScans
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == scanGuid);
+
+        if (scan is null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = "Scan not found" });
+            return notFound;
+        }
+
+        var accessDenied = await RequireOrgAccess(req, scan.OrganizationId);
+        if (accessDenied is not null) return accessDenied;
+
+        var findings = await _db.CloudAssessmentFindings
+            .AsNoTracking()
+            .Where(f => f.ScanId == scanGuid)
+            .Select(f => new
+            {
+                f.Id, f.Area, f.Service, f.Feature,
+                f.Status, f.Priority, f.Observation, f.Recommendation,
+                f.LinkText, f.LinkUrl
+            })
+            .ToListAsync();
+
+        var sharepointSites = await _db.CloudAssessmentSharepointSites
+            .AsNoTracking()
+            .Where(s => s.ScanId == scanGuid)
+            .Select(s => new
+            {
+                s.SiteUrl, s.SiteTitle, s.TotalFiles, s.LabeledFiles,
+                s.OversharedFiles, s.RiskLevel, s.TopLabels
+            })
+            .ToListAsync();
+
+        var externalUsers = await _db.CloudAssessmentExternalUsers
+            .AsNoTracking()
+            .Where(u => u.ScanId == scanGuid)
+            .Select(u => new
+            {
+                u.UserPrincipal, u.DisplayName, u.EmailDomain,
+                u.LastSignIn, u.RiskLevel, u.SitesAccessed, u.HighestPermission
+            })
+            .ToListAsync();
+
+        // D1: sensitivity labels — data area, label/sensitivity service
+        var d1Findings = findings
+            .Where(f => f.Area.Equals("data", StringComparison.OrdinalIgnoreCase) &&
+                        (f.Service.Contains("label", StringComparison.OrdinalIgnoreCase) ||
+                         f.Service.Contains("sensitivity", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        // D2: oversharing — SharePoint sites data
+        var d2Findings = findings
+            .Where(f => f.Area.Equals("data", StringComparison.OrdinalIgnoreCase) &&
+                        f.Service.Contains("sharepoint", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // D3: external — external user area/service
+        var d3Findings = findings
+            .Where(f => f.Area.Equals("data", StringComparison.OrdinalIgnoreCase) &&
+                        (f.Service.Contains("external", StringComparison.OrdinalIgnoreCase) ||
+                         f.Feature.Contains("external", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        // D4: conditional access — identity area, conditional access service/feature
+        var d4Findings = findings
+            .Where(f => f.Area.Equals("identity", StringComparison.OrdinalIgnoreCase) &&
+                        (f.Service.Contains("conditional", StringComparison.OrdinalIgnoreCase) ||
+                         f.Feature.Contains("conditional", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        // D5: zero trust — identity or endpoint, high/critical priority
+        var d5Findings = findings
+            .Where(f => (f.Area.Equals("identity", StringComparison.OrdinalIgnoreCase) ||
+                         f.Area.Equals("endpoint", StringComparison.OrdinalIgnoreCase)) &&
+                        (f.Priority.Equals("high", StringComparison.OrdinalIgnoreCase) ||
+                         f.Priority.Equals("critical", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        // D6: purview/DLP — data area, purview or dlp service
+        var d6Findings = findings
+            .Where(f => f.Area.Equals("data", StringComparison.OrdinalIgnoreCase) &&
+                        (f.Service.Contains("purview", StringComparison.OrdinalIgnoreCase) ||
+                         f.Service.Contains("dlp", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        var emptySites = sharepointSites.Take(0).ToList();
+
+        var dimensions = new[]
+        {
+            new
+            {
+                key = "d1Labels",
+                label = "Sensitivity Labels",
+                score = scan.CopilotD1Score,
+                findings = d1Findings,
+                sharepointSites = sharepointSites
+            },
+            new
+            {
+                key = "d2Oversharing",
+                label = "Oversharing Controls",
+                score = scan.CopilotD2Score,
+                findings = d2Findings,
+                sharepointSites = sharepointSites
+            },
+            new
+            {
+                key = "d3External",
+                label = "External Collaboration",
+                score = scan.CopilotD3Score,
+                findings = d3Findings,
+                sharepointSites = emptySites
+            },
+            new
+            {
+                key = "d4ConditionalAccess",
+                label = "Conditional Access",
+                score = scan.CopilotD4Score,
+                findings = d4Findings,
+                sharepointSites = emptySites
+            },
+            new
+            {
+                key = "d5ZeroTrust",
+                label = "Zero Trust Posture",
+                score = scan.CopilotD5Score,
+                findings = d5Findings,
+                sharepointSites = emptySites
+            },
+            new
+            {
+                key = "d6Purview",
+                label = "Purview & DLP",
+                score = scan.CopilotD6Score,
+                findings = d6Findings,
+                sharepointSites = emptySites
+            }
+        };
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            scanId = scan.Id,
+            scores = new
+            {
+                d1Labels = scan.CopilotD1Score,
+                d2Oversharing = scan.CopilotD2Score,
+                d3External = scan.CopilotD3Score,
+                d4ConditionalAccess = scan.CopilotD4Score,
+                d5ZeroTrust = scan.CopilotD5Score,
+                d6Purview = scan.CopilotD6Score,
+                overall = scan.CopilotOverall,
+                verdict = scan.CopilotVerdict
+            },
+            externalUsers,
+            dimensions
+        });
+        return response;
+    }
+
     // ── Helpers ──
 
     private Guid? ResolveOrgId(HttpRequestData req)
@@ -453,6 +819,135 @@ public class CloudAssessmentFunction
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns cloud connection status for an organization.
+    /// GET /v2/cloud-assessment/connection-status?organizationId={id}
+    /// </summary>
+    [Function("CloudAssessment_ConnectionStatus")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> ConnectionStatus(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/connection-status")] HttpRequestData req)
+    {
+        if (!Guid.TryParse(req.Query["organizationId"], out var orgId))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
+            return bad;
+        }
+
+        if (!_user.IsAdmin)
+        {
+            var orgBelongsToFranchise = _user.FranchiseId.HasValue &&
+                await _db.Organizations.AnyAsync(o => o.Id == orgId && o.FranchiseId == _user.FranchiseId.Value);
+            var orgBelongsToUser = _user.OrganizationId.HasValue && orgId == _user.OrganizationId.Value;
+            if (!orgBelongsToFranchise && !orgBelongsToUser)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
+        var status = await _consent.GetConnectionStatusAsync(orgId);
+        var ok = req.CreateResponse(HttpStatusCode.OK);
+        await ok.WriteAsJsonAsync(status);
+        return ok;
+    }
+
+    /// <summary>
+    /// Disconnect all cloud services and delete all scan data for an organization.
+    /// DELETE /v2/cloud-assessment/disconnect?organizationId={id}
+    /// </summary>
+    [Function("CloudAssessment_Disconnect")]
+    [RequirePermission("assessment:create")]
+    public async Task<HttpResponseData> Disconnect(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "v2/cloud-assessment/disconnect")] HttpRequestData req)
+    {
+        var orgId = ResolveOrgId(req);
+        if (orgId is null)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId is required" });
+            return bad;
+        }
+
+        var accessDenied = await RequireOrgAccess(req, orgId.Value);
+        if (accessDenied is not null) return accessDenied;
+
+        // Delete scan-level rows (cascades to findings, metrics, licenses, adoption,
+        // wasted licenses, sharepoint sites, external users, mail domains, mailbox risks,
+        // shared mailboxes, azure resources, framework scores, benchmark comparisons,
+        // powerbi workspaces/gateways/capacities/activities).
+        var caScans = await _db.CloudAssessmentScans
+            .Where(s => s.OrganizationId == orgId.Value)
+            .ToListAsync();
+        _db.CloudAssessmentScans.RemoveRange(caScans);
+
+        // Org-level tables (no scan FK).
+        var azureSubs = await _db.CloudAssessmentAzureSubscriptions
+            .Where(s => s.OrganizationId == orgId.Value)
+            .ToListAsync();
+        _db.CloudAssessmentAzureSubscriptions.RemoveRange(azureSubs);
+
+        var pbiConns = await _db.CloudAssessmentPowerBiConnections
+            .Where(p => p.OrganizationId == orgId.Value)
+            .ToListAsync();
+        _db.CloudAssessmentPowerBiConnections.RemoveRange(pbiConns);
+
+        var findingStatuses = await _db.CloudAssessmentFindingStatuses
+            .Where(f => f.OrganizationId == orgId.Value)
+            .ToListAsync();
+        _db.CloudAssessmentFindingStatuses.RemoveRange(findingStatuses);
+
+        var suggestions = await _db.CloudAssessmentSuggestions
+            .Where(s => s.OrganizationId == orgId.Value)
+            .ToListAsync();
+        _db.CloudAssessmentSuggestions.RemoveRange(suggestions);
+
+        // Legacy Copilot Readiness scans (cascades to metrics, findings, sharepoint, external users).
+        var crScans = await _db.CopilotReadinessScans
+            .Where(s => s.OrganizationId == orgId.Value)
+            .ToListAsync();
+        _db.CopilotReadinessScans.RemoveRange(crScans);
+
+        // M365 tenant (cascades to m365_findings).
+        var tenants = await _db.M365Tenants
+            .Where(t => t.OrganizationId == orgId.Value)
+            .ToListAsync();
+        _db.M365Tenants.RemoveRange(tenants);
+
+        await _db.SaveChangesAsync();
+
+        _db.Actlog.Add(new Data.Entities.Actlog
+        {
+            Timestamp = DateTime.UtcNow,
+            Severity = "warn",
+            Module = "cloud-assessment",
+            Action = "disconnect.all",
+            EntityType = "Organization",
+            EntityId = orgId.Value.ToString(),
+            Message = $"All cloud data disconnected: {caScans.Count} CA scans, {crScans.Count} CR scans, {azureSubs.Count} Azure subs, {pbiConns.Count} PBI conns, {tenants.Count} tenants deleted"
+        });
+        await _db.SaveChangesAsync();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            disconnected = true,
+            deleted = new
+            {
+                cloudAssessmentScans = caScans.Count,
+                copilotReadinessScans = crScans.Count,
+                azureSubscriptions = azureSubs.Count,
+                powerBiConnections = pbiConns.Count,
+                m365Tenants = tenants.Count,
+                findingStatuses = findingStatuses.Count,
+                suggestions = suggestions.Count
+            }
+        });
+        return response;
     }
 }
 

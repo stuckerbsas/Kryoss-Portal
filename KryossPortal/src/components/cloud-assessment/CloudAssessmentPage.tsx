@@ -4,6 +4,7 @@ import {
   useCloudAssessmentDetail,
   useAzureSubscriptions,
   useConnectionStatus,
+  useCloudDisconnect,
   useSetFindingStatus,
   type CloudAssessmentFinding,
   type FindingRemediationStatus,
@@ -20,7 +21,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Cloud, ExternalLink, CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import { Cloud, ExternalLink, CheckCircle2, AlertTriangle, X, Loader2, Unlink } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { OverviewTab } from './OverviewTab';
 import { ConnectAzureCard } from './ConnectAzureCard';
 import { AzureSubscriptionsList } from './AzureSubscriptionsList';
@@ -258,12 +268,93 @@ function AzureTab({
   );
 }
 
+function DisconnectDialog({
+  orgId,
+  open,
+  onOpenChange,
+}: {
+  orgId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const disconnect = useCloudDisconnect();
+
+  const handleDisconnect = () => {
+    disconnect.mutate(
+      { organizationId: orgId },
+      {
+        onSuccess: (data) => {
+          const d = data.deleted;
+          toast.success(
+            `Disconnected: ${d.cloudAssessmentScans} scans, ${d.m365Tenants} tenants, ${d.azureSubscriptions} Azure subs deleted`,
+          );
+          onOpenChange(false);
+        },
+        onError: (err: any) => {
+          toast.error(`Disconnect failed: ${err.message}`);
+        },
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-700">
+            <Unlink className="h-5 w-5" />
+            Disconnect All Cloud Services
+          </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            This will permanently delete all cloud assessment data for this organization:
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1 ml-2">
+          <li>All Cloud Assessment scans and findings</li>
+          <li>All Copilot Readiness scans (legacy)</li>
+          <li>Azure subscription connections</li>
+          <li>Power BI connections</li>
+          <li>M365 tenant connection</li>
+          <li>Remediation statuses and suggestions</li>
+        </ul>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          This action cannot be undone. You will need to re-connect and re-scan.
+        </div>
+        <div className="flex justify-end gap-2 mt-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={disconnect.isPending}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleDisconnect}
+            disabled={disconnect.isPending}
+          >
+            {disconnect.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Disconnecting...
+              </>
+            ) : (
+              <>
+                <Unlink className="mr-2 h-4 w-4" />
+                Disconnect Everything
+              </>
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ConnectionBanner({
   orgId,
   onOpenWizard,
+  onDisconnect,
 }: {
   orgId: string;
   onOpenWizard: (step: number) => void;
+  onDisconnect: () => void;
 }) {
   const { data: status } = useConnectionStatus(orgId);
   const [dismissed, setDismissed] = useState(false);
@@ -286,9 +377,18 @@ function ConnectionBanner({
             {status.connectionPercentage}%
           </Badge>
         </div>
-        <button onClick={() => setDismissed(true)} className="text-green-600 hover:text-green-800">
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onDisconnect}
+            className="text-red-500 hover:text-red-700 text-xs flex items-center gap-1"
+          >
+            <Unlink className="h-3 w-3" />
+            Disconnect
+          </button>
+          <button onClick={() => setDismissed(true)} className="text-green-600 hover:text-green-800">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     );
   }
@@ -316,9 +416,18 @@ function ConnectionBanner({
           ))} for deeper coverage.
         </span>
       </div>
-      <button onClick={() => setDismissed(true)} className="text-amber-600 hover:text-amber-800 ml-2">
-        <X className="h-4 w-4" />
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onDisconnect}
+          className="text-red-500 hover:text-red-700 text-xs flex items-center gap-1"
+        >
+          <Unlink className="h-3 w-3" />
+          Disconnect
+        </button>
+        <button onClick={() => setDismissed(true)} className="text-amber-600 hover:text-amber-800 ml-1">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -328,6 +437,7 @@ export function CloudAssessmentPage() {
   const { data: summary } = useCloudAssessment(orgId);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   const latestScanId = summary && 'id' in summary ? summary.id : undefined;
   const hasAzureScanData =
@@ -346,7 +456,8 @@ export function CloudAssessmentPage() {
   return (
     <div className="space-y-4">
       <ConnectProgressModal orgId={orgId} />
-      <ConnectionBanner orgId={orgId} onOpenWizard={openWizard} />
+      <ConnectionBanner orgId={orgId} onOpenWizard={openWizard} onDisconnect={() => setDisconnectOpen(true)} />
+      <DisconnectDialog orgId={orgId} open={disconnectOpen} onOpenChange={setDisconnectOpen} />
       <ConnectCloudWizard
         orgId={orgId}
         open={wizardOpen}

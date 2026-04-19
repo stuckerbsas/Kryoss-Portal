@@ -3,6 +3,7 @@ using KryossApi.Infrastructure;
 using KryossApi.Middleware;
 using KryossApi.Services;
 using KryossApi.Services.CloudAssessment;
+using KryossApi.Services.CloudAssessment.Helpers;
 using KryossApi.Services.CopilotReadiness;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
@@ -52,6 +53,7 @@ builder.Services.AddDbContext<KryossDbContext>((sp, options) =>
 // NonceCache is a SINGLETON — the whole point is in-process state that
 // outlives individual requests. See NonceCache.cs for multi-instance notes.
 builder.Services.AddSingleton<INonceCache, NonceCache>();
+builder.Services.AddSingleton<IDnsLookup, DnsLookup>();
 builder.Services.AddScoped<IHwidVerifier, HwidVerifier>();
 builder.Services.AddScoped<IPlatformResolver, PlatformResolver>();
 builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
@@ -63,7 +65,9 @@ builder.Services.AddScoped<ExternalScanService>();
 builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
 builder.Services.AddScoped<ICopilotReadinessService, CopilotReadinessService>();
 builder.Services.AddScoped<ICloudAssessmentService, CloudAssessmentService>();
+builder.Services.AddScoped<IBenchmarkService, BenchmarkService>();
 builder.Services.AddScoped<IFindingStatusService, FindingStatusService>();
+builder.Services.AddScoped<IConsentOrchestrator, ConsentOrchestrator>();
 
 // ── M365 multi-tenant admin consent config ──
 builder.Services.AddSingleton(new M365Config

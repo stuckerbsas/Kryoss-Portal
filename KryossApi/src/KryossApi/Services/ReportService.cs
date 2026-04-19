@@ -46,7 +46,12 @@ public class ReportService : IReportService
             .Select(g => g.OrderByDescending(r => r.CompletedAt).First().Id)
             .ToListAsync();
 
-        if (latestRunIds.Count == 0)
+        // Cloud-only report types (m365 = Copilot Readiness) don't require
+        // endpoint assessment runs — their data lives in separate tables.
+        // All other report types still require completed runs.
+        var isCloudOnlyReport = reportType == "m365";
+
+        if (latestRunIds.Count == 0 && !isCloudOnlyReport)
             throw new InvalidOperationException($"No completed assessment runs found for organization {orgId}");
 
         var runs = await _db.AssessmentRuns
@@ -207,6 +212,7 @@ public class ReportService : IReportService
         if (reportType == "m365")
         {
             copilotScan = await _db.CopilotReadinessScans
+                .AsSplitQuery()
                 .Include(s => s.Findings)
                 .Include(s => s.Metrics)
                 .Include(s => s.SharepointSites)
@@ -214,6 +220,9 @@ public class ReportService : IReportService
                 .Where(s => s.OrganizationId == orgId)
                 .OrderByDescending(s => s.CreatedAt)
                 .FirstOrDefaultAsync();
+
+            if (copilotScan == null)
+                throw new InvalidOperationException($"No Copilot Readiness scan found for organization {orgId}. Run an assessment first.");
         }
 
         // Monthly briefing needs historical trend data — pull the average

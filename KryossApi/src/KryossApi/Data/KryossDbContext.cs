@@ -83,6 +83,34 @@ public class KryossDbContext : DbContext
     public DbSet<CloudAssessmentFindingStatus> CloudAssessmentFindingStatuses => Set<CloudAssessmentFindingStatus>();
     public DbSet<CloudAssessmentSuggestion> CloudAssessmentSuggestions => Set<CloudAssessmentSuggestion>();
 
+    // CA-9: Power BI Governance
+    public DbSet<CloudAssessmentPowerBiConnection> CloudAssessmentPowerBiConnections => Set<CloudAssessmentPowerBiConnection>();
+    public DbSet<CloudAssessmentPowerBiWorkspace> CloudAssessmentPowerBiWorkspaces => Set<CloudAssessmentPowerBiWorkspace>();
+    public DbSet<CloudAssessmentPowerBiGateway> CloudAssessmentPowerBiGateways => Set<CloudAssessmentPowerBiGateway>();
+    public DbSet<CloudAssessmentPowerBiCapacity> CloudAssessmentPowerBiCapacities => Set<CloudAssessmentPowerBiCapacity>();
+    public DbSet<CloudAssessmentPowerBiActivitySummary> CloudAssessmentPowerBiActivitySummaries => Set<CloudAssessmentPowerBiActivitySummary>();
+
+    // CA-11: Unified scan — SharePoint sites + external users (Copilot Readiness data)
+    public DbSet<CloudAssessmentSharepointSite> CloudAssessmentSharepointSites => Set<CloudAssessmentSharepointSite>();
+    public DbSet<CloudAssessmentExternalUser> CloudAssessmentExternalUsers => Set<CloudAssessmentExternalUser>();
+
+    // CA-10: Mail Flow & Email Security
+    public DbSet<CloudAssessmentMailDomain> CloudAssessmentMailDomains => Set<CloudAssessmentMailDomain>();
+    public DbSet<CloudAssessmentMailboxRisk> CloudAssessmentMailboxRisks => Set<CloudAssessmentMailboxRisk>();
+    public DbSet<CloudAssessmentSharedMailbox> CloudAssessmentSharedMailboxes => Set<CloudAssessmentSharedMailbox>();
+
+    // CA-11: Benchmarks
+    public DbSet<CloudAssessmentIndustryBenchmark> CloudAssessmentIndustryBenchmarks => Set<CloudAssessmentIndustryBenchmark>();
+    public DbSet<CloudAssessmentBenchmarkComparison> CloudAssessmentBenchmarkComparisons => Set<CloudAssessmentBenchmarkComparison>();
+    public DbSet<CloudAssessmentFranchiseAggregate> CloudAssessmentFranchiseAggregates => Set<CloudAssessmentFranchiseAggregate>();
+    public DbSet<CloudAssessmentGlobalAggregate> CloudAssessmentGlobalAggregates => Set<CloudAssessmentGlobalAggregate>();
+
+    // CA-8: Compliance frameworks
+    public DbSet<CloudAssessmentFramework> CloudAssessmentFrameworks => Set<CloudAssessmentFramework>();
+    public DbSet<CloudAssessmentFrameworkControl> CloudAssessmentFrameworkControls => Set<CloudAssessmentFrameworkControl>();
+    public DbSet<CloudAssessmentFindingControlMapping> CloudAssessmentFindingControlMappings => Set<CloudAssessmentFindingControlMapping>();
+    public DbSet<CloudAssessmentFrameworkScore> CloudAssessmentFrameworkScores => Set<CloudAssessmentFrameworkScore>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // ── Auth ──
@@ -461,6 +489,52 @@ public class KryossDbContext : DbContext
             e.HasMany(x => x.Licenses).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Adoptions).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.WastedLicenses).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.SharepointSites).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.ExternalUsers).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.MailDomains).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.MailboxRisks).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.SharedMailboxes).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            // Copilot Readiness D1-D6 columns
+            e.Property(x => x.CopilotD1Score).HasColumnName("copilot_d1_score");
+            e.Property(x => x.CopilotD2Score).HasColumnName("copilot_d2_score");
+            e.Property(x => x.CopilotD3Score).HasColumnName("copilot_d3_score");
+            e.Property(x => x.CopilotD4Score).HasColumnName("copilot_d4_score");
+            e.Property(x => x.CopilotD5Score).HasColumnName("copilot_d5_score");
+            e.Property(x => x.CopilotD6Score).HasColumnName("copilot_d6_score");
+            e.Property(x => x.CopilotOverall).HasColumnName("copilot_overall");
+            e.Property(x => x.CopilotVerdict).HasColumnName("copilot_verdict");
+        });
+
+        mb.Entity<CloudAssessmentSharepointSite>(e =>
+        {
+            e.ToTable("cloud_assessment_sharepoint_sites");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.SiteUrl).HasColumnName("site_url");
+            e.Property(x => x.SiteTitle).HasColumnName("site_title");
+            e.Property(x => x.TotalFiles).HasColumnName("total_files");
+            e.Property(x => x.LabeledFiles).HasColumnName("labeled_files");
+            e.Property(x => x.OversharedFiles).HasColumnName("overshared_files");
+            e.Property(x => x.RiskLevel).HasColumnName("risk_level");
+            e.Property(x => x.TopLabels).HasColumnName("top_labels");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        mb.Entity<CloudAssessmentExternalUser>(e =>
+        {
+            e.ToTable("cloud_assessment_external_users");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.UserPrincipal).HasColumnName("user_principal");
+            e.Property(x => x.DisplayName).HasColumnName("display_name");
+            e.Property(x => x.EmailDomain).HasColumnName("email_domain");
+            e.Property(x => x.LastSignIn).HasColumnName("last_sign_in");
+            e.Property(x => x.RiskLevel).HasColumnName("risk_level");
+            e.Property(x => x.SitesAccessed).HasColumnName("sites_accessed");
+            e.Property(x => x.HighestPermission).HasColumnName("highest_permission");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
 
         mb.Entity<CloudAssessmentFinding>(e =>
@@ -586,6 +660,316 @@ public class KryossDbContext : DbContext
             e.HasIndex(x => new { x.OrganizationId, x.ScanId });
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── CA-9: Power BI Governance ──
+        mb.Entity<CloudAssessmentPowerBiConnection>(e =>
+        {
+            e.ToTable("cloud_assessment_powerbi_connection");
+            e.HasKey(x => x.OrganizationId);
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.ConnectionState).HasColumnName("connection_state").HasMaxLength(20);
+            e.Property(x => x.ErrorMessage).HasColumnName("error_message");
+            e.Property(x => x.LastVerifiedAt).HasColumnName("last_verified_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+        });
+
+        mb.Entity<CloudAssessmentPowerBiWorkspace>(e =>
+        {
+            e.ToTable("cloud_assessment_powerbi_workspaces");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.WorkspaceId).HasColumnName("workspace_id").HasMaxLength(50);
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(500);
+            e.Property(x => x.Type).HasColumnName("type").HasMaxLength(30);
+            e.Property(x => x.State).HasColumnName("state").HasMaxLength(30);
+            e.Property(x => x.IsOnDedicatedCapacity).HasColumnName("is_on_dedicated_capacity");
+            e.Property(x => x.CapacityId).HasColumnName("capacity_id").HasMaxLength(50);
+            e.Property(x => x.HasWorkspaceLevelSettings).HasColumnName("has_workspace_level_settings");
+            e.Property(x => x.MemberCount).HasColumnName("member_count");
+            e.Property(x => x.AdminCount).HasColumnName("admin_count");
+            e.Property(x => x.ExternalUserCount).HasColumnName("external_user_count");
+            e.Property(x => x.DatasetCount).HasColumnName("dataset_count");
+            e.Property(x => x.ReportCount).HasColumnName("report_count");
+            e.Property(x => x.DashboardCount).HasColumnName("dashboard_count");
+            e.Property(x => x.DataflowCount).HasColumnName("dataflow_count");
+            e.Property(x => x.LastUpdatedDate).HasColumnName("last_updated_date");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ScanId).HasDatabaseName("ix_powerbi_ws_scan");
+        });
+
+        mb.Entity<CloudAssessmentPowerBiGateway>(e =>
+        {
+            e.ToTable("cloud_assessment_powerbi_gateways");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.GatewayId).HasColumnName("gateway_id").HasMaxLength(50);
+            e.Property(x => x.Name).HasColumnName("name").HasMaxLength(500);
+            e.Property(x => x.Type).HasColumnName("type").HasMaxLength(30);
+            e.Property(x => x.PublicKeyValid).HasColumnName("public_key_valid");
+            e.Property(x => x.Status).HasColumnName("status").HasMaxLength(30);
+            e.Property(x => x.Version).HasColumnName("version").HasMaxLength(50);
+            e.Property(x => x.ContactInformation).HasColumnName("contact_information").HasMaxLength(500);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ScanId).HasDatabaseName("ix_powerbi_gw_scan");
+        });
+
+        mb.Entity<CloudAssessmentPowerBiCapacity>(e =>
+        {
+            e.ToTable("cloud_assessment_powerbi_capacities");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.CapacityId).HasColumnName("capacity_id").HasMaxLength(50);
+            e.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(500);
+            e.Property(x => x.Sku).HasColumnName("sku").HasMaxLength(50);
+            e.Property(x => x.Region).HasColumnName("region").HasMaxLength(50);
+            e.Property(x => x.State).HasColumnName("state").HasMaxLength(30);
+            e.Property(x => x.UsagePct).HasColumnName("usage_pct").HasColumnType("decimal(5,2)");
+            e.Property(x => x.AdminCount).HasColumnName("admin_count");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ScanId).HasDatabaseName("ix_powerbi_cap_scan");
+        });
+
+        mb.Entity<CloudAssessmentPowerBiActivitySummary>(e =>
+        {
+            e.ToTable("cloud_assessment_powerbi_activity_summary");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.ActivitiesTotal).HasColumnName("activities_total");
+            e.Property(x => x.UniqueUsers).HasColumnName("unique_users");
+            e.Property(x => x.ViewReportCount).HasColumnName("view_report_count");
+            e.Property(x => x.EditReportCount).HasColumnName("edit_report_count");
+            e.Property(x => x.CreateDatasetCount).HasColumnName("create_dataset_count");
+            e.Property(x => x.DeleteCount).HasColumnName("delete_count");
+            e.Property(x => x.ShareExternalCount).HasColumnName("share_external_count");
+            e.Property(x => x.ExportCount).HasColumnName("export_count");
+            e.Property(x => x.PeriodDays).HasColumnName("period_days");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ScanId).HasDatabaseName("ix_powerbi_act_scan");
+        });
+
+        // ── CA-8: Compliance Frameworks ──
+        mb.Entity<CloudAssessmentFramework>(e =>
+        {
+            e.ToTable("cloud_assessment_frameworks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Code).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Version).HasMaxLength(30);
+            e.Property(x => x.Authority).HasMaxLength(200);
+            e.Property(x => x.DocUrl).HasColumnName("doc_url").HasMaxLength(500);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.Code).IsUnique();
+        });
+
+        mb.Entity<CloudAssessmentFrameworkControl>(e =>
+        {
+            e.ToTable("cloud_assessment_framework_controls");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.FrameworkId).HasColumnName("framework_id");
+            e.Property(x => x.ControlCode).HasColumnName("control_code").HasMaxLength(50).IsRequired();
+            e.Property(x => x.Title).HasMaxLength(500).IsRequired();
+            e.Property(x => x.Category).HasMaxLength(100);
+            e.Property(x => x.Priority).HasMaxLength(10);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Framework).WithMany(f => f.Controls).HasForeignKey(x => x.FrameworkId);
+            e.HasIndex(x => new { x.FrameworkId, x.ControlCode }).IsUnique();
+        });
+
+        mb.Entity<CloudAssessmentFindingControlMapping>(e =>
+        {
+            e.ToTable("cloud_assessment_finding_control_mappings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Area).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Service).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Feature).HasMaxLength(200).IsRequired();
+            e.Property(x => x.FrameworkControlId).HasColumnName("framework_control_id");
+            e.Property(x => x.Coverage).HasMaxLength(20).IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.FrameworkControl).WithMany(c => c.Mappings).HasForeignKey(x => x.FrameworkControlId);
+            e.HasIndex(x => new { x.Area, x.Service, x.Feature });
+            e.HasIndex(x => x.FrameworkControlId);
+        });
+
+        mb.Entity<CloudAssessmentFrameworkScore>(e =>
+        {
+            e.ToTable("cloud_assessment_framework_scores");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.FrameworkId).HasColumnName("framework_id");
+            e.Property(x => x.TotalControls).HasColumnName("total_controls");
+            e.Property(x => x.CoveredControls).HasColumnName("covered_controls");
+            e.Property(x => x.PassingControls).HasColumnName("passing_controls");
+            e.Property(x => x.FailingControls).HasColumnName("failing_controls");
+            e.Property(x => x.UnmappedControls).HasColumnName("unmapped_controls");
+            e.Property(x => x.ScorePct).HasColumnName("score_pct").HasColumnType("decimal(5,2)");
+            e.Property(x => x.Grade).HasMaxLength(5);
+            e.Property(x => x.ComputedAt).HasColumnName("computed_at");
+            e.HasOne(x => x.Scan).WithMany(s => s.FrameworkScores).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Framework).WithMany().HasForeignKey(x => x.FrameworkId);
+            e.HasIndex(x => x.ScanId);
+        });
+
+        // ── CA-10: Mail Flow & Email Security ──
+        mb.Entity<CloudAssessmentMailDomain>(e =>
+        {
+            e.ToTable("cloud_assessment_mail_domains");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.Domain).HasColumnName("domain").HasMaxLength(255).IsRequired();
+            e.Property(x => x.IsDefault).HasColumnName("is_default");
+            e.Property(x => x.IsVerified).HasColumnName("is_verified");
+            e.Property(x => x.SpfRecord).HasColumnName("spf_record");
+            e.Property(x => x.SpfValid).HasColumnName("spf_valid");
+            e.Property(x => x.SpfMechanism).HasColumnName("spf_mechanism").HasMaxLength(20);
+            e.Property(x => x.SpfLookupCount).HasColumnName("spf_lookup_count");
+            e.Property(x => x.SpfWarnings).HasColumnName("spf_warnings");
+            e.Property(x => x.DkimS1Present).HasColumnName("dkim_s1_present");
+            e.Property(x => x.DkimS2Present).HasColumnName("dkim_s2_present");
+            e.Property(x => x.DkimSelectors).HasColumnName("dkim_selectors");
+            e.Property(x => x.DmarcRecord).HasColumnName("dmarc_record");
+            e.Property(x => x.DmarcValid).HasColumnName("dmarc_valid");
+            e.Property(x => x.DmarcPolicy).HasColumnName("dmarc_policy").HasMaxLength(20);
+            e.Property(x => x.DmarcSubdomainPolicy).HasColumnName("dmarc_subdomain_policy").HasMaxLength(20);
+            e.Property(x => x.DmarcPct).HasColumnName("dmarc_pct");
+            e.Property(x => x.DmarcRua).HasColumnName("dmarc_rua").HasMaxLength(500);
+            e.Property(x => x.DmarcRuf).HasColumnName("dmarc_ruf").HasMaxLength(500);
+            e.Property(x => x.MtaStsRecord).HasColumnName("mta_sts_record");
+            e.Property(x => x.MtaStsPolicy).HasColumnName("mta_sts_policy").HasMaxLength(20);
+            e.Property(x => x.BimiPresent).HasColumnName("bimi_present");
+            e.Property(x => x.Score).HasColumnName("score").HasColumnType("decimal(3,1)");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany(s => s.MailDomains).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ScanId).HasDatabaseName("ix_ca_mail_domains_scan");
+            e.HasIndex(x => new { x.ScanId, x.Domain }).IsUnique().HasDatabaseName("ux_mail_domains_scan_domain");
+        });
+
+        mb.Entity<CloudAssessmentMailboxRisk>(e =>
+        {
+            e.ToTable("cloud_assessment_mailbox_risks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.UserPrincipalName).HasColumnName("user_principal_name").HasMaxLength(500).IsRequired();
+            e.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(500);
+            e.Property(x => x.RiskType).HasColumnName("risk_type").HasMaxLength(50).IsRequired();
+            e.Property(x => x.RiskDetail).HasColumnName("risk_detail");
+            e.Property(x => x.ForwardTarget).HasColumnName("forward_target").HasMaxLength(500);
+            e.Property(x => x.Severity).HasColumnName("severity").HasMaxLength(20);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany(s => s.MailboxRisks).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ScanId).HasDatabaseName("ix_ca_mailbox_risks_scan");
+            e.HasIndex(x => new { x.ScanId, x.UserPrincipalName, x.RiskType }).IsUnique().HasDatabaseName("ux_mailbox_risks_scan_upn_type");
+        });
+
+        mb.Entity<CloudAssessmentSharedMailbox>(e =>
+        {
+            e.ToTable("cloud_assessment_shared_mailboxes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.MailboxUpn).HasColumnName("mailbox_upn").HasMaxLength(500).IsRequired();
+            e.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(500);
+            e.Property(x => x.DelegatesCount).HasColumnName("delegates_count");
+            e.Property(x => x.FullAccessUsers).HasColumnName("full_access_users");
+            e.Property(x => x.SendAsUsers).HasColumnName("send_as_users");
+            e.Property(x => x.HasPasswordEnabled).HasColumnName("has_password_enabled");
+            e.Property(x => x.LastActivity).HasColumnName("last_activity");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Scan).WithMany(s => s.SharedMailboxes).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ScanId).HasDatabaseName("ix_ca_shared_mailboxes_scan");
+            e.HasIndex(x => new { x.ScanId, x.MailboxUpn }).IsUnique().HasDatabaseName("ux_shared_mailboxes_scan_upn");
+        });
+
+        // ── CA-11: Benchmarks ──
+        mb.Entity<CloudAssessmentIndustryBenchmark>(e =>
+        {
+            e.ToTable("cloud_assessment_industry_benchmarks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.IndustryCode).HasColumnName("industry_code").HasMaxLength(30).IsRequired();
+            e.Property(x => x.EmployeeBand).HasColumnName("employee_band").HasMaxLength(20);
+            e.Property(x => x.MetricKey).HasColumnName("metric_key").HasMaxLength(100).IsRequired();
+            e.Property(x => x.BaselineValue).HasColumnName("baseline_value").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile25).HasColumnName("percentile_25").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile50).HasColumnName("percentile_50").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile75).HasColumnName("percentile_75").HasColumnType("decimal(10,2)");
+            e.Property(x => x.SampleSize).HasColumnName("sample_size");
+            e.Property(x => x.Source).HasColumnName("source").HasMaxLength(100);
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.IndustryCode, x.EmployeeBand, x.MetricKey }).IsUnique().HasDatabaseName("UQ_industry_benchmarks");
+            e.HasIndex(x => new { x.IndustryCode, x.MetricKey }).HasDatabaseName("ix_industry_benchmarks_lookup");
+        });
+
+        mb.Entity<CloudAssessmentBenchmarkComparison>(e =>
+        {
+            e.ToTable("cloud_assessment_benchmark_comparisons");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.MetricKey).HasColumnName("metric_key").HasMaxLength(100).IsRequired();
+            e.Property(x => x.OrgValue).HasColumnName("org_value").HasColumnType("decimal(10,2)");
+            e.Property(x => x.FranchiseAvg).HasColumnName("franchise_avg").HasColumnType("decimal(10,2)");
+            e.Property(x => x.FranchisePercentile).HasColumnName("franchise_percentile").HasColumnType("decimal(5,2)");
+            e.Property(x => x.FranchiseSampleSize).HasColumnName("franchise_sample_size");
+            e.Property(x => x.IndustryBaseline).HasColumnName("industry_baseline").HasColumnType("decimal(10,2)");
+            e.Property(x => x.IndustryP25).HasColumnName("industry_p25").HasColumnType("decimal(10,2)");
+            e.Property(x => x.IndustryP50).HasColumnName("industry_p50").HasColumnType("decimal(10,2)");
+            e.Property(x => x.IndustryP75).HasColumnName("industry_p75").HasColumnType("decimal(10,2)");
+            e.Property(x => x.IndustryPercentile).HasColumnName("industry_percentile").HasColumnType("decimal(5,2)");
+            e.Property(x => x.GlobalAvg).HasColumnName("global_avg").HasColumnType("decimal(10,2)");
+            e.Property(x => x.GlobalPercentile).HasColumnName("global_percentile").HasColumnType("decimal(5,2)");
+            e.Property(x => x.GlobalSampleSize).HasColumnName("global_sample_size");
+            e.Property(x => x.Verdict).HasColumnName("verdict").HasMaxLength(30);
+            e.Property(x => x.ComputedAt).HasColumnName("computed_at");
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.ScanId, x.MetricKey }).HasDatabaseName("ix_benchmark_scan");
+        });
+
+        mb.Entity<CloudAssessmentFranchiseAggregate>(e =>
+        {
+            e.ToTable("cloud_assessment_franchise_aggregates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.FranchiseId).HasColumnName("franchise_id");
+            e.Property(x => x.MetricKey).HasColumnName("metric_key").HasMaxLength(100).IsRequired();
+            e.Property(x => x.AvgValue).HasColumnName("avg_value").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile25).HasColumnName("percentile_25").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile50).HasColumnName("percentile_50").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile75).HasColumnName("percentile_75").HasColumnType("decimal(10,2)");
+            e.Property(x => x.SampleSize).HasColumnName("sample_size");
+            e.Property(x => x.RefreshedAt).HasColumnName("refreshed_at");
+            e.HasOne(x => x.Franchise).WithMany().HasForeignKey(x => x.FranchiseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.FranchiseId, x.MetricKey }).IsUnique().HasDatabaseName("UQ_franchise_aggregates");
+        });
+
+        mb.Entity<CloudAssessmentGlobalAggregate>(e =>
+        {
+            e.ToTable("cloud_assessment_global_aggregates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.MetricKey).HasColumnName("metric_key").HasMaxLength(100).IsRequired();
+            e.Property(x => x.IndustryCode).HasColumnName("industry_code").HasMaxLength(30);
+            e.Property(x => x.EmployeeBand).HasColumnName("employee_band").HasMaxLength(20);
+            e.Property(x => x.AvgValue).HasColumnName("avg_value").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile25).HasColumnName("percentile_25").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile50).HasColumnName("percentile_50").HasColumnType("decimal(10,2)");
+            e.Property(x => x.Percentile75).HasColumnName("percentile_75").HasColumnType("decimal(10,2)");
+            e.Property(x => x.SampleSize).HasColumnName("sample_size");
+            e.Property(x => x.RefreshedAt).HasColumnName("refreshed_at");
+            e.HasIndex(x => new { x.MetricKey, x.IndustryCode, x.EmployeeBand }).HasDatabaseName("ix_global_aggregates_lookup");
+        });
+
+        // Organization CA-11 columns + Franchise opt-in.
+        mb.Entity<Organization>(e =>
+        {
+            e.Property(x => x.IndustryCode).HasColumnName("industry_code").HasMaxLength(30);
+            e.Property(x => x.IndustrySubcode).HasColumnName("industry_subcode").HasMaxLength(50);
+            e.Property(x => x.EmployeeCountBand).HasColumnName("employee_count_band").HasMaxLength(20);
+        });
+
+        mb.Entity<Franchise>(e =>
+        {
+            e.Property(x => x.BenchmarkOptIn).HasColumnName("benchmark_opt_in");
         });
     }
 }

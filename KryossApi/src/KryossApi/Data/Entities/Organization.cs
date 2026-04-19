@@ -20,6 +20,11 @@ public class Organization : IAuditable
     public DateTime? ProtocolAuditEnabledAt { get; set; }
     public string? ProtocolAuditEnabledBy { get; set; }
 
+    // CA-11: Industry tagging for benchmark comparisons.
+    public string? IndustryCode { get; set; }
+    public string? IndustrySubcode { get; set; }
+    public string? EmployeeCountBand { get; set; }
+
     // Audit
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }

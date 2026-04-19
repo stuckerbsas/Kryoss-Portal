@@ -17,6 +17,9 @@ public class Franchise : IAuditable
     public string? BrandColorPrimary { get; set; }
     public string? BrandColorAccent { get; set; }
 
+    // CA-11: Franchise-level opt-in for contributing anonymized data to global benchmarks.
+    public bool BenchmarkOptIn { get; set; } = true;
+
     // Audit
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }

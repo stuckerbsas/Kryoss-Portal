@@ -15,6 +15,16 @@ public class CloudAssessmentScan
     public DateTime? CompletedAt { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    // Copilot Readiness D1-D6 scores (computed from same scan data)
+    public decimal? CopilotD1Score { get; set; }
+    public decimal? CopilotD2Score { get; set; }
+    public decimal? CopilotD3Score { get; set; }
+    public decimal? CopilotD4Score { get; set; }
+    public decimal? CopilotD5Score { get; set; }
+    public decimal? CopilotD6Score { get; set; }
+    public decimal? CopilotOverall { get; set; }
+    public string? CopilotVerdict { get; set; }
+
     public Organization Organization { get; set; } = null!;
     public M365Tenant? Tenant { get; set; }
     public ICollection<CloudAssessmentFinding> Findings { get; set; } = [];
@@ -23,6 +33,12 @@ public class CloudAssessmentScan
     public ICollection<CloudAssessmentAdoption> Adoptions { get; set; } = [];
     public ICollection<CloudAssessmentWastedLicense> WastedLicenses { get; set; } = [];
     public ICollection<CloudAssessmentAzureResource> AzureResources { get; set; } = [];
+    public ICollection<CloudAssessmentFrameworkScore> FrameworkScores { get; set; } = [];
+    public ICollection<CloudAssessmentSharepointSite> SharepointSites { get; set; } = [];
+    public ICollection<CloudAssessmentExternalUser> ExternalUsers { get; set; } = [];
+    public ICollection<CloudAssessmentMailDomain> MailDomains { get; set; } = [];
+    public ICollection<CloudAssessmentMailboxRisk> MailboxRisks { get; set; } = [];
+    public ICollection<CloudAssessmentSharedMailbox> SharedMailboxes { get; set; } = [];
 }
 
 public class CloudAssessmentFinding
@@ -168,5 +184,183 @@ public class CloudAssessmentSuggestion
     public Guid? DismissedBy { get; set; }
 
     public Organization Organization { get; set; } = null!;
+    public CloudAssessmentScan Scan { get; set; } = null!;
+}
+
+public class CloudAssessmentFramework
+{
+    public Guid Id { get; set; }
+    public string Code { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public string? Description { get; set; }
+    public string? Version { get; set; }
+    public string? Authority { get; set; }
+    public string? DocUrl { get; set; }
+    public bool Active { get; set; } = true;
+    public DateTime CreatedAt { get; set; }
+
+    public ICollection<CloudAssessmentFrameworkControl> Controls { get; set; } = [];
+}
+
+public class CloudAssessmentFrameworkControl
+{
+    public Guid Id { get; set; }
+    public Guid FrameworkId { get; set; }
+    public string ControlCode { get; set; } = null!;
+    public string Title { get; set; } = null!;
+    public string? Description { get; set; }
+    public string? Category { get; set; }
+    public string? Priority { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public CloudAssessmentFramework Framework { get; set; } = null!;
+    public ICollection<CloudAssessmentFindingControlMapping> Mappings { get; set; } = [];
+}
+
+public class CloudAssessmentFindingControlMapping
+{
+    public Guid Id { get; set; }
+    public string Area { get; set; } = null!;
+    public string Service { get; set; } = null!;
+    public string Feature { get; set; } = null!;
+    public Guid FrameworkControlId { get; set; }
+    public string Coverage { get; set; } = null!;
+    public string? Rationale { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public CloudAssessmentFrameworkControl FrameworkControl { get; set; } = null!;
+}
+
+public class CloudAssessmentFrameworkScore
+{
+    public Guid Id { get; set; }
+    public Guid ScanId { get; set; }
+    public Guid FrameworkId { get; set; }
+    public int TotalControls { get; set; }
+    public int CoveredControls { get; set; }
+    public int PassingControls { get; set; }
+    public int FailingControls { get; set; }
+    public int UnmappedControls { get; set; }
+    public decimal ScorePct { get; set; }
+    public string? Grade { get; set; }
+    public DateTime ComputedAt { get; set; }
+
+    public CloudAssessmentScan Scan { get; set; } = null!;
+    public CloudAssessmentFramework Framework { get; set; } = null!;
+}
+
+public class CloudAssessmentSharepointSite
+{
+    public long Id { get; set; }
+    public Guid ScanId { get; set; }
+    public string SiteUrl { get; set; } = null!;
+    public string? SiteTitle { get; set; }
+    public int TotalFiles { get; set; }
+    public int LabeledFiles { get; set; }
+    public int OversharedFiles { get; set; }
+    public string? RiskLevel { get; set; }
+    public string? TopLabels { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public CloudAssessmentScan Scan { get; set; } = null!;
+}
+
+public class CloudAssessmentExternalUser
+{
+    public long Id { get; set; }
+    public Guid ScanId { get; set; }
+    public string UserPrincipal { get; set; } = null!;
+    public string? DisplayName { get; set; }
+    public string? EmailDomain { get; set; }
+    public DateTime? LastSignIn { get; set; }
+    public string? RiskLevel { get; set; }
+    public int SitesAccessed { get; set; }
+    public string? HighestPermission { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public CloudAssessmentScan Scan { get; set; } = null!;
+}
+
+/// <summary>
+/// CA-10 Mail Flow: per-domain email security posture (SPF / DKIM / DMARC /
+/// MTA-STS / BIMI). Populated by the MailFlowPipeline in Task 2. Rows are
+/// scan-scoped and cascade-delete with the parent scan.
+/// JSON columns (SpfWarnings, DkimSelectors) store serialized string arrays.
+/// </summary>
+public class CloudAssessmentMailDomain
+{
+    public Guid Id { get; set; }
+    public Guid ScanId { get; set; }
+    public string Domain { get; set; } = null!;
+    public bool IsDefault { get; set; }
+    public bool IsVerified { get; set; }
+    // SPF
+    public string? SpfRecord { get; set; }
+    public bool? SpfValid { get; set; }
+    public string? SpfMechanism { get; set; }
+    public int? SpfLookupCount { get; set; }
+    public string? SpfWarnings { get; set; }
+    // DKIM
+    public bool? DkimS1Present { get; set; }
+    public bool? DkimS2Present { get; set; }
+    public string? DkimSelectors { get; set; }
+    // DMARC
+    public string? DmarcRecord { get; set; }
+    public bool? DmarcValid { get; set; }
+    public string? DmarcPolicy { get; set; }
+    public string? DmarcSubdomainPolicy { get; set; }
+    public int? DmarcPct { get; set; }
+    public string? DmarcRua { get; set; }
+    public string? DmarcRuf { get; set; }
+    // MTA-STS
+    public string? MtaStsRecord { get; set; }
+    public string? MtaStsPolicy { get; set; }
+    // BIMI
+    public bool? BimiPresent { get; set; }
+    // Aggregate
+    public decimal? Score { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public CloudAssessmentScan Scan { get; set; } = null!;
+}
+
+/// <summary>
+/// CA-10 Mail Flow: mailbox-level risk findings (external forwarding rules,
+/// auto-forward tenant setting, shared-mailbox password enabled, orphaned
+/// shared mailboxes). Scan-scoped, cascade-delete.
+/// </summary>
+public class CloudAssessmentMailboxRisk
+{
+    public Guid Id { get; set; }
+    public Guid ScanId { get; set; }
+    public string UserPrincipalName { get; set; } = null!;
+    public string? DisplayName { get; set; }
+    public string RiskType { get; set; } = null!;
+    public string? RiskDetail { get; set; }
+    public string? ForwardTarget { get; set; }
+    public string? Severity { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public CloudAssessmentScan Scan { get; set; } = null!;
+}
+
+/// <summary>
+/// CA-10 Mail Flow: shared mailbox inventory with delegate permissions and
+/// activity metadata. FullAccessUsers / SendAsUsers are JSON-serialized
+/// string arrays. Scan-scoped, cascade-delete.
+/// </summary>
+public class CloudAssessmentSharedMailbox
+{
+    public Guid Id { get; set; }
+    public Guid ScanId { get; set; }
+    public string MailboxUpn { get; set; } = null!;
+    public string? DisplayName { get; set; }
+    public int? DelegatesCount { get; set; }
+    public string? FullAccessUsers { get; set; }
+    public string? SendAsUsers { get; set; }
+    public bool? HasPasswordEnabled { get; set; }
+    public DateTime? LastActivity { get; set; }
+    public DateTime CreatedAt { get; set; }
+
     public CloudAssessmentScan Scan { get; set; } = null!;
 }

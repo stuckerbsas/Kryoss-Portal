@@ -82,7 +82,11 @@ internal static class CopilotReadinessReportBuilder
         }
         else
         {
-            var metrics = copilotScan.Metrics?.ToDictionary(m => m.MetricKey, m => m.MetricValue) ?? new();
+            // Dedupe: multiple pipelines may emit the same metric key (e.g. Entra+Defender
+            // both set risky_users_high). Last writer wins — matches in-memory dict semantics.
+            var metrics = copilotScan.Metrics?
+                .GroupBy(m => m.MetricKey)
+                .ToDictionary(g => g.Key, g => g.Last().MetricValue) ?? new();
             string Mv(string k) => metrics.GetValueOrDefault(k, "—");
 
             // 6 KPI stat boxes

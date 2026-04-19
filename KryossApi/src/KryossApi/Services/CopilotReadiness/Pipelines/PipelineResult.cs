@@ -33,4 +33,11 @@ public class PipelineResult
     public Dictionary<string, string> Metrics { get; init; } = [];
     public List<SharepointSiteResult> SharepointSites { get; init; } = [];
     public List<ExternalUserResult> ExternalUsers { get; init; } = [];
+
+    /// <summary>
+    /// Typed insights bag populated by the pipeline. Used by BusinessRules
+    /// for cross-check logic. Null when not populated or pipeline failed.
+    /// Cast to the appropriate type (IdentityInsights, EndpointInsights, etc.).
+    /// </summary>
+    public object? Insights { get; set; }
 }

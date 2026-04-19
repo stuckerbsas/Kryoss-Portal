@@ -50,6 +50,9 @@
 | POST | `/v2/m365/scan` | `M365Function.Scan` | Re-run M365 security scan |
 | GET | `/v2/m365?organizationId=X` | `M365Function.Get` | Latest M365 scan results |
 | DELETE | `/v2/m365/disconnect` | `M365Function.Disconnect` | Remove M365 tenant connection |
+| GET | `/v2/cloud-assessment/connection-status?organizationId=X` | `CloudAssessmentFunction.ConnectionStatus` | Graph/Azure/PBI connection state + percentage (CA-12) |
+| GET | `/v2/cloud-assessment/copilot-lens/{scanId}` | `CloudAssessmentFunction.CopilotLens` | D1-D6 Copilot Readiness scores + filtered findings from CA scan (CA-12) |
+| * | `/v2/copilot-readiness/*` | `CopilotReadinessFunction` | **DEPRECATED** — returns HTTP 410 since CA-12 (sunset 2026-05-18). Use Cloud Assessment equivalents. |
 
 ### Agent API (v1) — additional endpoints
 

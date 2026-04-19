@@ -67,6 +67,7 @@ public static class IdentityPipeline
 
             var findings = IdentityRecommendations.Generate(insights);
             result.Findings.AddRange(findings);
+            result.Insights = insights;
 
             // Metrics (string-valued, match EntraPipeline naming for shared keys).
             var m = result.Metrics;
@@ -137,6 +138,7 @@ public static class IdentityPipeline
                     Metrics = result.Metrics,
                     SharepointSites = result.SharepointSites,
                     ExternalUsers = result.ExternalUsers,
+                    Insights = insights,
                 };
             }
 

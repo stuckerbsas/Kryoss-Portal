@@ -72,6 +72,7 @@ public static class EndpointPipeline
             await Task.WhenAll(tasks);
 
             result.Findings.AddRange(EndpointRecommendations.Generate(ins));
+            result.Insights = ins;
 
             // Metrics (string-valued, snake_case).
             var m = result.Metrics;
@@ -133,6 +134,7 @@ public static class EndpointPipeline
                     Metrics = result.Metrics,
                     SharepointSites = result.SharepointSites,
                     ExternalUsers = result.ExternalUsers,
+                    Insights = ins,
                 };
             }
 

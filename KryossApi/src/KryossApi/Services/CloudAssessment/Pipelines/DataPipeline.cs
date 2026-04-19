@@ -68,6 +68,7 @@ public static class DataPipeline
             await Task.WhenAll(tasks);
 
             result.Findings.AddRange(DataRecommendations.Generate(ins));
+            result.Insights = ins;
 
             // Metrics (string-valued, snake_case).
             var m = result.Metrics;
@@ -126,6 +127,7 @@ public static class DataPipeline
                     Metrics = result.Metrics,
                     SharepointSites = result.SharepointSites,
                     ExternalUsers = result.ExternalUsers,
+                    Insights = ins,
                 };
             }
 

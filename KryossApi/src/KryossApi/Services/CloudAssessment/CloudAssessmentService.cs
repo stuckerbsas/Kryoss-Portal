@@ -4,6 +4,7 @@ using System.Text.Json;
 using Azure.Identity;
 using KryossApi.Data;
 using KryossApi.Data.Entities;
+using KryossApi.Services.CloudAssessment.Helpers;
 using KryossApi.Services.CloudAssessment.Pipelines;
 using KryossApi.Services.CopilotReadiness.Pipelines;
 using KryossApi.Services.CopilotReadiness.Recommendations;
@@ -103,6 +104,7 @@ public class CloudAssessmentService : ICloudAssessmentService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KryossDbContext>();
         var log = scope.ServiceProvider.GetRequiredService<ILogger<CloudAssessmentService>>();
+        var dns = scope.ServiceProvider.GetRequiredService<IDnsLookup>();
 
         try
         {
@@ -139,8 +141,19 @@ public class CloudAssessmentService : ICloudAssessmentService
                     "https://management.azure.com", log);
             }
 
+            // CA-9: Power BI governance — only when connection is enabled.
+            var pbiConn = await db.CloudAssessmentPowerBiConnections
+                .FirstOrDefaultAsync(c => c.OrganizationId == scanForOrg && c.ConnectionState == "connected");
+            HttpClient? pbiHttp = null;
+            if (pbiConn != null)
+            {
+                pbiHttp = await TryCreateAuthenticatedClient(
+                    credential, "https://analysis.windows.net/powerbi/api/.default",
+                    "https://api.powerbi.com", log);
+            }
+
             AddActlog(db, "info", "scan.tokens.acquired", scanId,
-                $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null} arm={armHttp != null} azureSubs={azureSubIds.Count}");
+                $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null} arm={armHttp != null} pbi={pbiHttp != null} azureSubs={azureSubIds.Count}");
             await db.SaveChangesAsync();
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
@@ -164,8 +177,20 @@ public class CloudAssessmentService : ICloudAssessmentService
             var azureTask = TrackPipeline("azure",
                 () => AzurePipeline.RunAsync(armHttp, azureSubIds, scanId, db, log, ct),
                 scanId, db, log);
+            // CA-9: Power BI governance pipeline. Returns status="skipped" when pbiHttp is null.
+            var powerbiTask = TrackPipeline("powerbi",
+                () => PowerBiPipeline.RunAsync(pbiHttp, scanId, db, log, ct),
+                scanId, db, log);
+            // CA-11: SharePoint Deep pipeline (Copilot Readiness D1-D3 data: labels, oversharing, external users).
+            var sharepointDeepTask = TrackPipeline("sharepoint_deep",
+                () => SharePointDeepPipeline.RunAsync(graph, log, ct),
+                scanId, db, log);
+            // CA-10: Mail Flow & Email Security — per-domain DNS + mailbox forwarding + shared mailbox heuristic.
+            var mailFlowTask = TrackPipeline("mail_flow",
+                () => MailFlowPipeline.RunAsync(graph, dns, scanId, db, log, ct),
+                scanId, db, log);
 
-            try { await Task.WhenAll(identityTask, endpointTask, dataTask, productivityTask, azureTask); }
+            try { await Task.WhenAll(identityTask, endpointTask, dataTask, productivityTask, azureTask, powerbiTask, sharepointDeepTask, mailFlowTask); }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
                 log.LogError("CA scan {ScanId} hit 10-min timeout", scanId);
@@ -177,11 +202,39 @@ public class CloudAssessmentService : ICloudAssessmentService
             var dataResult = dataTask.Result;
             var productivityResult = productivityTask.Result;
             var azureResult = azureTask.Result;
+            var sharepointDeepResult = sharepointDeepTask.Result;
+            var powerbiResult = powerbiTask.Result;
+            var mailFlowResult = mailFlowTask.Result;
+
+            // CA-12: Cross-check business rules — correlational logic across pipelines.
+            // Runs after all findings are generated, mutates finding lists in-place.
+            try
+            {
+                var idIns = identityResult.Insights as Pipelines.IdentityInsights;
+                var epIns = endpointResult.Insights as Pipelines.EndpointInsights;
+                var dataIns = dataResult.Insights as Pipelines.DataInsights;
+                if (idIns is not null && epIns is not null && dataIns is not null)
+                {
+                    BusinessRules.Apply(identityResult, endpointResult, dataResult,
+                        productivityResult, idIns, epIns, dataIns);
+                    log.LogInformation("CA-12 business rules applied for scan {ScanId}", scanId);
+                }
+                else
+                {
+                    log.LogWarning("CA-12 business rules skipped — missing insights (id={Id} ep={Ep} data={Data})",
+                        idIns is not null, epIns is not null, dataIns is not null);
+                }
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "CA-12 business rules failed for scan {ScanId} — findings unchanged", scanId);
+            }
 
             // Aggregate findings + metrics by area.
             var findingCount = identityResult.Findings.Count + endpointResult.Findings.Count
                 + dataResult.Findings.Count + productivityResult.Findings.Count
-                + azureResult.Findings.Count;
+                + azureResult.Findings.Count + powerbiResult.Findings.Count
+                + mailFlowResult.Findings.Count;
 
             var allMetrics = new Dictionary<string, Dictionary<string, string>>();
             AddMetrics(allMetrics, "identity", identityResult.Metrics);
@@ -189,11 +242,17 @@ public class CloudAssessmentService : ICloudAssessmentService
             AddMetrics(allMetrics, "data", dataResult.Metrics);
             AddMetrics(allMetrics, "productivity", productivityResult.Metrics);
             AddMetrics(allMetrics, "azure", azureResult.Metrics);
+            AddMetrics(allMetrics, "powerbi", powerbiResult.Metrics);
+            AddMetrics(allMetrics, "sharepoint_deep", sharepointDeepResult.Metrics);
+            AddMetrics(allMetrics, "mail_flow", mailFlowResult.Metrics);
 
             // Per-area scores (0.0-5.0 scale matching verdict system).
             var identityScore = ComputeIdentityAreaScore(identityResult.Metrics, identityResult.Findings);
             var endpointScore = ComputeEndpointAreaScore(endpointResult.Metrics, endpointResult.Findings);
-            var dataScore = ComputeDataAreaScore(dataResult.Metrics, dataResult.Findings);
+            // Merge mail_flow findings into data-area scoring so deductions cover email hygiene.
+            var dataFindingsForScore = new List<RecommendationResult>(dataResult.Findings);
+            dataFindingsForScore.AddRange(mailFlowResult.Findings);
+            var dataScore = ComputeDataAreaScore(dataResult.Metrics, dataFindingsForScore, mailFlowResult.Metrics);
             var productivityScore = ComputeProductivityAreaScore(productivityResult.Metrics, productivityResult.Findings);
             // Azure score only computed when the pipeline actually ran. When skipped
             // (no subscriptions connected) we treat the area as absent — the overall
@@ -201,6 +260,11 @@ public class CloudAssessmentService : ICloudAssessmentService
             // areaScores/pipelineStatus JSON so the portal renders a 4-area radar.
             var azureScore = azureResult.Status != "skipped"
                 ? ComputeAzureAreaScore(azureResult.Metrics, azureResult.Findings)
+                : 0m;
+
+            // CA-9: Power BI area score (conditional, like Azure).
+            var powerbiScore = powerbiResult.Status != "skipped"
+                ? ComputePowerBiAreaScore(powerbiResult.Metrics, powerbiResult.Findings)
                 : 0m;
 
             var areaScoresDict = new Dictionary<string, decimal>
@@ -212,6 +276,8 @@ public class CloudAssessmentService : ICloudAssessmentService
             };
             if (azureResult.Status != "skipped")
                 areaScoresDict["azure"] = azureScore;
+            if (powerbiResult.Status != "skipped")
+                areaScoresDict["powerbi"] = powerbiScore;
 
             var areaScores = JsonSerializer.Serialize(areaScoresDict);
 
@@ -220,18 +286,36 @@ public class CloudAssessmentService : ICloudAssessmentService
                 ["identity"] = identityResult.Status,
                 ["endpoint"] = endpointResult.Status,
                 ["data"] = dataResult.Status,
-                ["productivity"] = productivityResult.Status
+                ["productivity"] = productivityResult.Status,
+                ["mail_flow"] = mailFlowResult.Status
             };
             if (azureResult.Status != "skipped")
                 pipelineStatusDict["azure"] = azureResult.Status;
+            if (powerbiResult.Status != "skipped")
+                pipelineStatusDict["powerbi"] = powerbiResult.Status;
 
             var pipelineStatus = JsonSerializer.Serialize(pipelineStatusDict);
 
-            // Overall = weighted average. 5-area when Azure present, 4-area otherwise.
+            // Overall = weighted average. Dynamic weights based on active areas.
+            bool hasAzure = azureResult.Status != "skipped";
+            bool hasPowerBi = powerbiResult.Status != "skipped";
             decimal overallScore;
-            if (azureResult.Status != "skipped")
+
+            if (hasAzure && hasPowerBi)
             {
-                // 5-area weights — identity 28%, data 25%, endpoint 22%, azure 15%, productivity 10%.
+                // 6-area weights.
+                overallScore = Math.Round(
+                    (identityScore * 0.22m) +
+                    (dataScore * 0.22m) +
+                    (endpointScore * 0.20m) +
+                    (azureScore * 0.14m) +
+                    (powerbiScore * 0.12m) +
+                    (productivityScore * 0.10m),
+                    2);
+            }
+            else if (hasAzure)
+            {
+                // 5-area weights.
                 overallScore = Math.Round(
                     (identityScore * 0.28m) +
                     (dataScore * 0.25m) +
@@ -240,9 +324,20 @@ public class CloudAssessmentService : ICloudAssessmentService
                     (productivityScore * 0.10m),
                     2);
             }
+            else if (hasPowerBi)
+            {
+                // 5-area weights (PBI instead of Azure).
+                overallScore = Math.Round(
+                    (identityScore * 0.28m) +
+                    (dataScore * 0.25m) +
+                    (endpointScore * 0.22m) +
+                    (powerbiScore * 0.15m) +
+                    (productivityScore * 0.10m),
+                    2);
+            }
             else
             {
-                // Existing 4-area weights (unchanged).
+                // 4-area weights.
                 overallScore = Math.Round(
                     (identityScore * 0.30m) +
                     (dataScore * 0.30m) +
@@ -265,6 +360,46 @@ public class CloudAssessmentService : ICloudAssessmentService
             // "nothing connected" from a null legacy value. JSON array, never null.
             scan.AzureSubscriptionIds = JsonSerializer.Serialize(azureSubIds);
             scan.CompletedAt = DateTime.UtcNow;
+
+            // CA-11: Compute Copilot Readiness D1-D6 from collected data.
+            try
+            {
+                var spMetrics = sharepointDeepResult.Metrics;
+                var labelPct = decimal.TryParse(spMetrics.GetValueOrDefault("label_coverage_pct", "0"), out var lp) ? lp : 0;
+                var oversharedCount = sharepointDeepResult.SharepointSites.Sum(s => s.OversharedFiles);
+                var highRiskExt = int.TryParse(spMetrics.GetValueOrDefault("high_risk_external_users", "0"), out var hre) ? hre : 0;
+                var pendingInvites = int.TryParse(spMetrics.GetValueOrDefault("pending_invitations", "0"), out var pi) ? pi : 0;
+                var caCompat = decimal.TryParse(identityResult.Metrics.GetValueOrDefault("ca_compat_score_pct", "0"), out var cc) ? cc : 0;
+
+                var entraGaps = identityResult.Findings.Count(f =>
+                    (f.Status == "action_required" || f.Status == "warning" || f.Status == "Action Required" || f.Status == "Warning") &&
+                    (f.Priority is "High" or "Medium" or "high" or "medium"));
+                var defCrit = endpointResult.Findings.Count(f =>
+                    f.Status is "Critical" or "critical");
+                var defGaps = endpointResult.Findings.Count(f =>
+                    (f.Status == "action_required" || f.Status == "warning" || f.Status == "Action Required" || f.Status == "Warning") &&
+                    (f.Priority is "High" or "Medium" or "high" or "medium"));
+                var purviewGaps = dataResult.Findings.Count(f =>
+                    (f.Status is "disabled" or "action_required" or "warning" or "Disabled" or "Action Required" or "Warning") &&
+                    (f.Priority is "High" or "high"));
+
+                var copilotScores = CopilotReadiness.ScoringEngine.Compute(
+                    labelPct, oversharedCount, highRiskExt, pendingInvites,
+                    caCompat, entraGaps, defCrit, defGaps, purviewGaps);
+
+                scan.CopilotD1Score = copilotScores.D1Labels;
+                scan.CopilotD2Score = copilotScores.D2Oversharing;
+                scan.CopilotD3Score = copilotScores.D3External;
+                scan.CopilotD4Score = copilotScores.D4ConditionalAccess;
+                scan.CopilotD5Score = copilotScores.D5ZeroTrust;
+                scan.CopilotD6Score = copilotScores.D6Purview;
+                scan.CopilotOverall = copilotScores.Overall;
+                scan.CopilotVerdict = copilotScores.Verdict;
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to compute Copilot Readiness scores for scan {ScanId}", scanId);
+            }
 
             // Persist findings — CloudAssessmentFinding has an Area column; tag per-pipeline.
             var now = DateTime.UtcNow;
@@ -293,8 +428,10 @@ public class CloudAssessmentService : ICloudAssessmentService
             AddFindings("identity", identityResult.Findings);
             AddFindings("endpoint", endpointResult.Findings);
             AddFindings("data", dataResult.Findings);
+            AddFindings("data", mailFlowResult.Findings);
             AddFindings("productivity", productivityResult.Findings);
             AddFindings("azure", azureResult.Findings);
+            AddFindings("powerbi", powerbiResult.Findings);
 
             // Persist productivity license rows.
             foreach (var lic in productivityIns.Licenses)
@@ -342,6 +479,40 @@ public class CloudAssessmentService : ICloudAssessmentService
                 });
             }
 
+            // Persist SharePoint site data (Copilot D1/D2).
+            foreach (var site in sharepointDeepResult.SharepointSites)
+            {
+                db.CloudAssessmentSharepointSites.Add(new CloudAssessmentSharepointSite
+                {
+                    ScanId = scanId,
+                    SiteUrl = site.SiteUrl,
+                    SiteTitle = site.SiteTitle,
+                    TotalFiles = site.TotalFiles,
+                    LabeledFiles = site.LabeledFiles,
+                    OversharedFiles = site.OversharedFiles,
+                    RiskLevel = site.RiskLevel,
+                    TopLabels = site.TopLabels.Count > 0 ? string.Join(", ", site.TopLabels) : null,
+                    CreatedAt = now
+                });
+            }
+
+            // Persist external users (Copilot D3).
+            foreach (var user in sharepointDeepResult.ExternalUsers)
+            {
+                db.CloudAssessmentExternalUsers.Add(new CloudAssessmentExternalUser
+                {
+                    ScanId = scanId,
+                    UserPrincipal = user.UserPrincipal,
+                    DisplayName = user.DisplayName,
+                    EmailDomain = user.EmailDomain,
+                    LastSignIn = user.LastSignIn?.UtcDateTime,
+                    RiskLevel = user.RiskLevel,
+                    SitesAccessed = user.SitesAccessed,
+                    HighestPermission = user.HighestPermission,
+                    CreatedAt = now
+                });
+            }
+
             // Persist metrics — Area column = dimension key from allMetrics.
             foreach (var (dimension, metricsDict) in allMetrics)
             {
@@ -360,8 +531,24 @@ public class CloudAssessmentService : ICloudAssessmentService
 
             await db.SaveChangesAsync();
 
+            // CA-8: Compute per-framework compliance scores from persisted findings.
+            try
+            {
+                var frameworkScores = await ComplianceScoreEngine.ComputeAsync(db, scanId);
+                if (frameworkScores.Count > 0)
+                {
+                    db.CloudAssessmentFrameworkScores.AddRange(frameworkScores);
+                    await db.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to compute compliance framework scores for scan {ScanId}", scanId);
+            }
+
             var scoreSummary = $"identityScore={identityScore} endpointScore={endpointScore} dataScore={dataScore} productivityScore={productivityScore}"
-                + (azureResult.Status != "skipped" ? $" azureScore={azureScore}" : "");
+                + (azureResult.Status != "skipped" ? $" azureScore={azureScore}" : "")
+                + (powerbiResult.Status != "skipped" ? $" powerbiScore={powerbiScore}" : "");
             AddActlog(db, "info", "scan.completed", scanId,
                 $"CA scan completed {scoreSummary} findings={findingCount} wastedLicenses={productivityIns.WastedLicenses.Count}");
             await db.SaveChangesAsync();
@@ -379,18 +566,25 @@ public class CloudAssessmentService : ICloudAssessmentService
                 log.LogWarning(ex, "Failed to compute suggestions for scan {ScanId}", scan.Id);
             }
 
-            if (azureResult.Status != "skipped")
+            // CA-11: Compute + persist benchmark comparisons (non-fatal if it fails).
+            try
             {
-                log.LogInformation(
-                    "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Productivity={Productivity} Azure={Azure} Verdict={Verdict}",
-                    scanId, identityScore, endpointScore, dataScore, productivityScore, azureScore, verdict);
+                var benchmark = scope.ServiceProvider.GetRequiredService<IBenchmarkService>();
+                await benchmark.ComputeAndPersistAsync(scan.Id, CancellationToken.None);
+                AddActlog(db, "info", "benchmarks.computed", scan.Id, $"Benchmark comparison computed for scan {scan.Id}");
+                await db.SaveChangesAsync();
             }
-            else
+            catch (Exception ex)
             {
-                log.LogInformation(
-                    "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Productivity={Productivity} Verdict={Verdict}",
-                    scanId, identityScore, endpointScore, dataScore, productivityScore, verdict);
+                log.LogWarning(ex, "Failed to compute benchmark comparison for scan {ScanId}", scan.Id);
             }
+
+            log.LogInformation(
+                "Cloud Assessment scan {ScanId} completed. Identity={Identity} Endpoint={Endpoint} Data={Data} Productivity={Productivity} Azure={Azure} PowerBI={PowerBI} Verdict={Verdict}",
+                scanId, identityScore, endpointScore, dataScore, productivityScore,
+                hasAzure ? azureScore : "skipped",
+                hasPowerBi ? powerbiScore : "skipped",
+                verdict);
         }
         catch (Exception ex)
         {
@@ -465,7 +659,18 @@ public class CloudAssessmentService : ICloudAssessmentService
             scan.CompletedAt,
             scan.CreatedAt,
             scan.TenantId,
-            FindingsSummary = findingsSummary
+            FindingsSummary = findingsSummary,
+            CopilotReadiness = scan.CopilotOverall is not null ? new
+            {
+                D1Labels = scan.CopilotD1Score,
+                D2Oversharing = scan.CopilotD2Score,
+                D3External = scan.CopilotD3Score,
+                D4ConditionalAccess = scan.CopilotD4Score,
+                D5ZeroTrust = scan.CopilotD5Score,
+                D6Purview = scan.CopilotD6Score,
+                Overall = scan.CopilotOverall,
+                scan.CopilotVerdict
+            } : null
         };
     }
 
@@ -534,6 +739,60 @@ public class CloudAssessmentService : ICloudAssessmentService
             })
             .ToListAsync();
 
+        var spSites = await _db.CloudAssessmentSharepointSites
+            .Where(sp => sp.ScanId == scanId)
+            .Select(sp => new
+            {
+                sp.SiteUrl, sp.SiteTitle, sp.TotalFiles,
+                sp.LabeledFiles, sp.OversharedFiles, sp.RiskLevel, sp.TopLabels
+            })
+            .ToListAsync();
+
+        var extUsers = await _db.CloudAssessmentExternalUsers
+            .Where(eu => eu.ScanId == scanId)
+            .Select(eu => new
+            {
+                eu.UserPrincipal, eu.DisplayName, eu.EmailDomain,
+                eu.LastSignIn, eu.RiskLevel, eu.SitesAccessed, eu.HighestPermission
+            })
+            .ToListAsync();
+
+        var mailDomains = await _db.CloudAssessmentMailDomains
+            .Where(d => d.ScanId == scanId)
+            .OrderByDescending(d => d.IsDefault).ThenBy(d => d.Domain)
+            .Select(d => new
+            {
+                d.Domain, d.IsDefault, d.IsVerified,
+                d.SpfRecord, d.SpfValid, d.SpfMechanism, d.SpfLookupCount, d.SpfWarnings,
+                d.DkimS1Present, d.DkimS2Present, d.DkimSelectors,
+                d.DmarcRecord, d.DmarcValid, d.DmarcPolicy, d.DmarcSubdomainPolicy,
+                d.DmarcPct, d.DmarcRua, d.DmarcRuf,
+                d.MtaStsRecord, d.MtaStsPolicy,
+                d.BimiPresent, d.Score
+            })
+            .ToListAsync();
+
+        var mailboxRisks = await _db.CloudAssessmentMailboxRisks
+            .Where(r => r.ScanId == scanId)
+            .OrderBy(r => r.Severity).ThenBy(r => r.UserPrincipalName)
+            .Select(r => new
+            {
+                r.UserPrincipalName, r.DisplayName, r.RiskType, r.RiskDetail,
+                r.ForwardTarget, r.Severity
+            })
+            .ToListAsync();
+
+        var sharedMailboxes = await _db.CloudAssessmentSharedMailboxes
+            .Where(s => s.ScanId == scanId)
+            .OrderBy(s => s.MailboxUpn)
+            .Select(s => new
+            {
+                s.MailboxUpn, s.DisplayName, s.DelegatesCount,
+                s.FullAccessUsers, s.SendAsUsers,
+                s.HasPasswordEnabled, s.LastActivity
+            })
+            .ToListAsync();
+
         return new
         {
             scan.Id, scan.OrganizationId, scan.TenantId,
@@ -546,7 +805,23 @@ public class CloudAssessmentService : ICloudAssessmentService
             Metrics = metrics,
             Licenses = licenses,
             Adoption = adoption,
-            WastedLicenses = wastedLicenses
+            WastedLicenses = wastedLicenses,
+            SharepointSites = spSites,
+            ExternalUsers = extUsers,
+            MailDomains = mailDomains,
+            MailboxRisks = mailboxRisks,
+            SharedMailboxes = sharedMailboxes,
+            CopilotReadiness = scan.CopilotOverall is not null ? new
+            {
+                D1Labels = scan.CopilotD1Score,
+                D2Oversharing = scan.CopilotD2Score,
+                D3External = scan.CopilotD3Score,
+                D4ConditionalAccess = scan.CopilotD4Score,
+                D5ZeroTrust = scan.CopilotD5Score,
+                D6Purview = scan.CopilotD6Score,
+                Overall = scan.CopilotOverall,
+                scan.CopilotVerdict
+            } : null
         };
     }
 
@@ -661,7 +936,7 @@ public class CloudAssessmentService : ICloudAssessmentService
         var deltas = new Dictionary<string, decimal>();
         // Azure is compared when present in either scan — TryGetValue fallback keeps
         // 4-area-only scans correct (missing key → 0m, handled by the caller).
-        foreach (var key in new[] { "identity", "endpoint", "data", "productivity", "azure" })
+        foreach (var key in new[] { "identity", "endpoint", "data", "productivity", "azure", "powerbi" })
         {
             var a = areaScoresA.TryGetValue(key, out var av) ? av : 0m;
             var b = areaScoresB.TryGetValue(key, out var bv) ? bv : 0m;
@@ -825,7 +1100,8 @@ public class CloudAssessmentService : ICloudAssessmentService
     /// </summary>
     private static decimal ComputeDataAreaScore(
         Dictionary<string, string> metrics,
-        List<RecommendationResult> findings)
+        List<RecommendationResult> findings,
+        Dictionary<string, string>? mailMetrics = null)
     {
         decimal score = 5.0m;
 
@@ -891,6 +1167,23 @@ public class CloudAssessmentService : ICloudAssessmentService
         }
         if (falseLicenseCount >= 4) score -= 0.2m;
         if (falseLicenseCount == 6) score -= 0.2m; // additional — total -0.4 when all false.
+
+        // CA-10 Mail security anchor — avg per-domain score is on a 0-10 scale
+        // (SPF + DKIM + DMARC + MTA-STS + BIMI posture). Deduct when weak to
+        // reflect that email is the primary data exfiltration surface.
+        if (mailMetrics is not null)
+        {
+            if (TryGetDecimal(mailMetrics, "avg_domain_score", out var avgDomain))
+            {
+                if (avgDomain < 3m) score -= 0.4m;
+                else if (avgDomain < 5m) score -= 0.2m;
+                else if (avgDomain < 7m) score -= 0.1m;
+            }
+            if (TryGetInt(mailMetrics, "forwarding_stealth", out var stealth) && stealth > 0)
+                score -= 0.2m;
+            if (TryGetInt(mailMetrics, "forwarding_external", out var extFwd) && extFwd > 0)
+                score -= 0.1m;
+        }
 
         // Clamp to [0, 5] then round to 2 decimal places.
         if (score < 0m) score = 0m;
@@ -1023,6 +1316,41 @@ public class CloudAssessmentService : ICloudAssessmentService
         return Math.Round(score, 2);
     }
 
+    private static decimal ComputePowerBiAreaScore(
+        Dictionary<string, string> metrics,
+        List<RecommendationResult> findings)
+    {
+        decimal score = 5.0m;
+
+        var actionRequired = findings.Count(f =>
+            string.Equals(f.Status, "action_required", StringComparison.OrdinalIgnoreCase));
+        var warnings = findings.Count(f =>
+            string.Equals(f.Status, "warning", StringComparison.OrdinalIgnoreCase));
+
+        score -= Math.Min(actionRequired * 0.15m, 2.5m);
+        score -= Math.Min(warnings * 0.07m, 1.0m);
+
+        // Orphaned workspaces.
+        if (TryGetInt(metrics, "workspaces_orphaned", out var orphaned) && orphaned > 0)
+            score -= Math.Min(orphaned * 0.1m, 0.5m);
+
+        // Stale datasets.
+        if (TryGetInt(metrics, "datasets_stale_30d", out var stale) && stale > 0)
+            score -= Math.Min(stale * 0.05m, 0.4m);
+
+        // Gateways offline.
+        if (TryGetInt(metrics, "gateways_offline", out var gwOffline) && gwOffline > 0)
+            score -= Math.Min(gwOffline * 0.2m, 0.5m);
+
+        // External sharing volume.
+        if (TryGetInt(metrics, "external_shares_30d", out var extShares) && extShares > 20)
+            score -= 0.3m;
+
+        if (score < 0m) score = 0m;
+        if (score > 5m) score = 5m;
+        return Math.Round(score, 2);
+    }
+
     private static bool TryGetDecimal(Dictionary<string, string> metrics, string key, out decimal value)
     {
         value = 0m;
@@ -1109,7 +1437,10 @@ public class CloudAssessmentService : ICloudAssessmentService
     {
         var token = await credential.GetTokenAsync(
             new Azure.Core.TokenRequestContext(new[] { scope }));
-        var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        // 90-second timeout per request — prevents Graph API throttle/retry loops from
+        // hanging indefinitely when the scan-level CancellationToken doesn't propagate
+        // through Kiota's internal retry handler sleeps.
+        var http = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromSeconds(90) };
         http.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.Token);
         return http;
