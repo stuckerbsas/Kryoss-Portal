@@ -111,6 +111,10 @@ public class KryossDbContext : DbContext
     public DbSet<CloudAssessmentFindingControlMapping> CloudAssessmentFindingControlMappings => Set<CloudAssessmentFindingControlMapping>();
     public DbSet<CloudAssessmentFrameworkScore> CloudAssessmentFrameworkScores => Set<CloudAssessmentFrameworkScore>();
 
+    // Service Catalog & Franchise Billing
+    public DbSet<ServiceCatalogItem> ServiceCatalog => Set<ServiceCatalogItem>();
+    public DbSet<FranchiseServiceRate> FranchiseServiceRates => Set<FranchiseServiceRate>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // ── Auth ──
