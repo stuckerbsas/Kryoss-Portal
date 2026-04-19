@@ -12,8 +12,6 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Identity.Client;
-
 namespace KryossApi.Functions.Portal;
 
 /// <summary>
@@ -90,15 +88,9 @@ public class UnifiedCloudConnectFunction
         var redirectUri = Uri.EscapeDataString(
             $"{_m365Config.CallbackBaseUrl.TrimEnd('/')}/v2/cloud/connect-callback");
 
-        var scope = Uri.EscapeDataString(
-            "https://management.azure.com/user_impersonation offline_access");
-
-        var url = $"https://login.microsoftonline.com/common/oauth2/v2.0/authorize" +
+        var url = $"https://login.microsoftonline.com/common/adminconsent" +
             $"?client_id={Uri.EscapeDataString(_m365Config.ClientId)}" +
-            $"&response_type=code" +
             $"&redirect_uri={redirectUri}" +
-            $"&scope={scope}" +
-            $"&prompt=consent" +
             $"&state={orgId}";
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -123,8 +115,8 @@ public class UnifiedCloudConnectFunction
         var errorParam = query["error"];
         var errorDesc = query["error_description"];
         var stateParam = query["state"];
-        var code = query["code"];
         var tenantParam = query["tenant"];
+        var adminConsent = query["admin_consent"];
 
         Guid.TryParse(stateParam, out var orgId);
 
@@ -138,11 +130,11 @@ public class UnifiedCloudConnectFunction
         }
 
         // Validate required params
-        if (string.IsNullOrWhiteSpace(code) || orgId == Guid.Empty || string.IsNullOrWhiteSpace(tenantParam))
+        if (orgId == Guid.Empty || string.IsNullOrWhiteSpace(tenantParam))
         {
             var slug = await ResolveOrgSlug(orgId);
             return Redirect(req, BuildPortalRedirect(slug, "cloud-assessment",
-                $"error={Uri.EscapeDataString("Invalid callback parameters: code, state, and tenant are required")}"));
+                $"error={Uri.EscapeDataString("Invalid callback parameters: state and tenant are required")}"));
         }
 
         // Verify org exists
@@ -162,32 +154,7 @@ public class UnifiedCloudConnectFunction
 
         try
         {
-            // Step 1: Exchange auth code for ARM delegated token via MSAL
-            string armToken;
-            try
-            {
-                var redirectUri = $"{_m365Config.CallbackBaseUrl.TrimEnd('/')}/v2/cloud/connect-callback";
-                var cca = ConfidentialClientApplicationBuilder
-                    .Create(_m365Config.ClientId)
-                    .WithClientSecret(_m365Config.ClientSecret)
-                    .WithAuthority($"https://login.microsoftonline.com/{tenantParam}/v2.0")
-                    .WithRedirectUri(redirectUri)
-                    .Build();
-
-                var authResult = await cca.AcquireTokenByAuthorizationCode(
-                    new[] { "https://management.azure.com/user_impersonation" }, code)
-                    .ExecuteAsync();
-
-                armToken = authResult.AccessToken;
-            }
-            catch (MsalException ex)
-            {
-                _log.LogWarning("MSAL token exchange failed for org {OrgId}: {Error}", orgId, ex.Message);
-                return Redirect(req, BuildPortalRedirect(orgSlug, "cloud-assessment",
-                    $"error={Uri.EscapeDataString($"Token exchange failed: {ex.Message}")}"));
-            }
-
-            // Step 2: Create/update M365Tenant row (consent flow — no per-customer creds)
+            // Step 1: Create/update M365Tenant row (admin consent granted all app permissions)
             var existingTenant = await _db.M365Tenants
                 .FirstOrDefaultAsync(t => t.OrganizationId == orgId);
 
@@ -229,13 +196,13 @@ public class UnifiedCloudConnectFunction
             });
             await _db.SaveChangesAsync();
 
-            // Step 3: Auto-assign Azure Reader on all subscriptions
-            await TryAutoAssignAzureReader(armToken, tenantParam, orgId, results);
+            // Step 2: Auto-assign Azure Reader on all subscriptions (client credentials)
+            await TryAutoAssignAzureReader(tenantParam, orgId, results);
 
-            // Step 4: Verify Power BI admin API access
+            // Step 3: Verify Power BI admin API access
             await TryVerifyPowerBi(tenantParam, orgId, results);
 
-            // Step 5: Start cloud assessment scan
+            // Step 4: Start cloud assessment scan
             try
             {
                 var scanId = await _caService.StartScanAsync(orgId, m365TenantDbId);
@@ -290,12 +257,28 @@ public class UnifiedCloudConnectFunction
 
     // ── Helper: TryAutoAssignAzureReader ──
 
-    private async Task TryAutoAssignAzureReader(string armToken, string tenantId, Guid orgId, ConnectResults results)
+    private async Task TryAutoAssignAzureReader(string tenantId, Guid orgId, ConnectResults results)
     {
         try
         {
+            // Acquire ARM token via client credentials (requires ARM app permission on app registration)
+            AccessToken armTokenResult;
+            try
+            {
+                var credential = new ClientSecretCredential(tenantId, _m365Config.ClientId, _m365Config.ClientSecret);
+                armTokenResult = await credential.GetTokenAsync(
+                    new TokenRequestContext(new[] { "https://management.azure.com/.default" }),
+                    CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                results.AzureNote = $"ARM token acquisition failed — add Azure Reader role manually: {ex.Message}";
+                _log.LogWarning("ARM client credentials failed for org {OrgId}: {Error}", orgId, ex.Message);
+                return;
+            }
+
             using var http = new HttpClient { BaseAddress = new Uri("https://management.azure.com") };
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", armToken);
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", armTokenResult.Token);
 
             // List subscriptions
             using var subsResp = await http.GetAsync("/subscriptions?api-version=2022-12-01");
