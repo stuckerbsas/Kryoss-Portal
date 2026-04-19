@@ -98,7 +98,7 @@ public class UnifiedCloudConnectFunction
             $"&response_type=code" +
             $"&redirect_uri={redirectUri}" +
             $"&scope={scope}" +
-            $"&prompt=admin_consent" +
+            $"&prompt=consent" +
             $"&state={orgId}";
 
         var response = req.CreateResponse(HttpStatusCode.OK);
