@@ -289,6 +289,7 @@ function DisconnectDialog({
             `Disconnected: ${d.cloudAssessmentScans} scans, ${d.m365Tenants} tenants, ${d.azureSubscriptions} Azure subs deleted`,
           );
           onOpenChange(false);
+          setTimeout(() => window.location.reload(), 500);
         },
         onError: (err: any) => {
           toast.error(`Disconnect failed: ${err.message}`);

@@ -141,16 +141,8 @@ public class CloudAssessmentService : ICloudAssessmentService
                     "https://management.azure.com", log);
             }
 
-            // CA-9: Power BI governance — only when connection is enabled.
-            var pbiConn = await db.CloudAssessmentPowerBiConnections
-                .FirstOrDefaultAsync(c => c.OrganizationId == scanForOrg && c.ConnectionState == "connected");
+            // CA-9: Power BI governance — disabled until PBI licensing available in test environment.
             HttpClient? pbiHttp = null;
-            if (pbiConn != null)
-            {
-                pbiHttp = await TryCreateAuthenticatedClient(
-                    credential, "https://analysis.windows.net/powerbi/api/.default",
-                    "https://api.powerbi.com", log);
-            }
 
             AddActlog(db, "info", "scan.tokens.acquired", scanId,
                 $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null} arm={armHttp != null} pbi={pbiHttp != null} azureSubs={azureSubIds.Count}");

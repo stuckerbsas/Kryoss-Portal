@@ -310,8 +310,8 @@ public class UnifiedCloudConnectFunction
             // Discover Azure subscriptions with delegated ARM token
             await TryAutoAssignAzureReader(armToken, tenantId, orgId, results);
 
-            // Verify Power BI
-            await TryVerifyPowerBi(tenantId, orgId, results);
+            // Power BI — disabled until PBI licensing available in test environment.
+            // await TryVerifyPowerBi(tenantId, orgId, results);
 
             // Start scan
             var m365Tenant = await _db.M365Tenants
