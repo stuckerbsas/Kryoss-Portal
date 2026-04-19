@@ -70,35 +70,32 @@ function formatDate(s: string | null): string {
 }
 
 function statusBadge(status: string) {
-  const colors: Record<string, string> = {
-    Success: 'bg-green-100 text-green-800',
-    'Action Required': 'bg-red-100 text-red-800',
-    Warning: 'bg-amber-100 text-amber-800',
-    Critical: 'bg-red-200 text-red-900',
-    Disabled: 'bg-gray-100 text-gray-600',
-    'Not Licensed': 'bg-gray-100 text-gray-600',
-    Insight: 'bg-blue-100 text-blue-800',
+  const key = status.toLowerCase();
+  const map: Record<string, { color: string; label: string }> = {
+    success:         { color: 'bg-green-100 text-green-800', label: 'Success' },
+    action_required: { color: 'bg-red-100 text-red-800',    label: 'Action Required' },
+    warning:         { color: 'bg-amber-100 text-amber-800', label: 'Warning' },
+    critical:        { color: 'bg-red-200 text-red-900',    label: 'Critical' },
+    disabled:        { color: 'bg-gray-100 text-gray-600',  label: 'Disabled' },
+    not_licensed:    { color: 'bg-gray-100 text-gray-600',  label: 'Not Licensed' },
+    insight:         { color: 'bg-blue-100 text-blue-800',  label: 'Insight' },
+    informational:   { color: 'bg-blue-100 text-blue-800',  label: 'Informational' },
   };
-  return (
-    <Badge variant="secondary" className={colors[status] ?? 'bg-gray-100 text-gray-500'}>
-      {status}
-    </Badge>
-  );
+  const entry = map[key];
+  return <Badge variant="secondary" className={entry?.color ?? 'bg-gray-100 text-gray-500'}>{entry?.label ?? status}</Badge>;
 }
 
 function priorityBadge(priority: string) {
-  const colors: Record<string, string> = {
-    Critical: 'bg-red-100 text-red-800',
-    High: 'bg-orange-100 text-orange-800',
-    Medium: 'bg-amber-100 text-amber-800',
-    Low: 'bg-blue-100 text-blue-800',
-    Informational: 'bg-gray-100 text-gray-600',
+  const key = priority.toLowerCase();
+  const map: Record<string, { color: string; label: string }> = {
+    critical:      { color: 'bg-red-100 text-red-800',    label: 'Critical' },
+    high:          { color: 'bg-orange-100 text-orange-800', label: 'High' },
+    medium:        { color: 'bg-amber-100 text-amber-800', label: 'Medium' },
+    low:           { color: 'bg-blue-100 text-blue-800',  label: 'Low' },
+    informational: { color: 'bg-gray-100 text-gray-600',  label: 'Informational' },
   };
-  return (
-    <Badge variant="secondary" className={colors[priority] ?? 'bg-gray-100 text-gray-500'}>
-      {priority}
-    </Badge>
-  );
+  const entry = map[key];
+  return <Badge variant="secondary" className={entry?.color ?? 'bg-gray-100 text-gray-500'}>{entry?.label ?? priority}</Badge>;
 }
 
 // Donut palette — keeps Kryoss primary green first, then the category greys/accents

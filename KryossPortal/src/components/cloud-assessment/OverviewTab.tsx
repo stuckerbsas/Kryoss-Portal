@@ -100,14 +100,16 @@ function formatDate(s: string | null): string {
 }
 
 function priorityBadge(priority: string) {
-  const colors: Record<string, string> = {
-    'Critical': 'bg-red-100 text-red-800',
-    'High': 'bg-orange-100 text-orange-800',
-    'Medium': 'bg-amber-100 text-amber-800',
-    'Low': 'bg-blue-100 text-blue-800',
-    'Informational': 'bg-gray-100 text-gray-600',
+  const key = priority.toLowerCase();
+  const map: Record<string, { color: string; label: string }> = {
+    critical:      { color: 'bg-red-100 text-red-800',    label: 'Critical' },
+    high:          { color: 'bg-orange-100 text-orange-800', label: 'High' },
+    medium:        { color: 'bg-amber-100 text-amber-800', label: 'Medium' },
+    low:           { color: 'bg-blue-100 text-blue-800',  label: 'Low' },
+    informational: { color: 'bg-gray-100 text-gray-600',  label: 'Informational' },
   };
-  return <Badge variant="secondary" className={colors[priority] ?? 'bg-gray-100 text-gray-500'}>{priority}</Badge>;
+  const entry = map[key];
+  return <Badge variant="secondary" className={entry?.color ?? 'bg-gray-100 text-gray-500'}>{entry?.label ?? priority}</Badge>;
 }
 
 const PIPELINE_LABELS: Record<string, string> = {

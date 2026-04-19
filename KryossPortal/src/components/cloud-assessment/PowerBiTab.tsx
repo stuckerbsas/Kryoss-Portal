@@ -252,15 +252,17 @@ function KpiCard({ label, value, warn }: { label: string; value: number; warn?: 
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    success: 'bg-green-100 text-green-800',
-    action_required: 'bg-red-100 text-red-800',
-    warning: 'bg-amber-100 text-amber-800',
-    insight: 'bg-blue-100 text-blue-800',
-    disabled: 'bg-gray-100 text-gray-600',
+  const map: Record<string, { color: string; label: string }> = {
+    success:         { color: 'bg-green-100 text-green-800', label: 'Success' },
+    action_required: { color: 'bg-red-100 text-red-800',    label: 'Action Required' },
+    warning:         { color: 'bg-amber-100 text-amber-800', label: 'Warning' },
+    insight:         { color: 'bg-blue-100 text-blue-800',  label: 'Insight' },
+    informational:   { color: 'bg-blue-100 text-blue-800',  label: 'Informational' },
+    disabled:        { color: 'bg-gray-100 text-gray-600',  label: 'Disabled' },
+    not_licensed:    { color: 'bg-gray-100 text-gray-600',  label: 'Not Licensed' },
   };
-  const label = status === 'action_required' ? 'Action Required' : status.charAt(0).toUpperCase() + status.slice(1);
-  return <Badge variant="secondary" className={colors[status.toLowerCase()] ?? 'bg-gray-100'}>{label}</Badge>;
+  const entry = map[status.toLowerCase()];
+  return <Badge variant="secondary" className={entry?.color ?? 'bg-gray-100 text-gray-500'}>{entry?.label ?? status}</Badge>;
 }
 
 export function PowerBiTab({
