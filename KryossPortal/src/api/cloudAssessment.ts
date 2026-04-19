@@ -774,6 +774,27 @@ export function useSetOrgIndustry() {
   });
 }
 
+// ── Connection status (CA-12) ──
+
+export interface ConnectionStatus {
+  graph: 'connected' | 'not_connected';
+  azure: 'connected' | 'not_connected' | 'partial';
+  powerBi: 'connected' | 'not_connected';
+  azureSubscriptionCount: number;
+  connectionPercentage: number;
+}
+
+export function useConnectionStatus(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['connection-status', organizationId],
+    queryFn: () =>
+      apiFetch<ConnectionStatus>(
+        `/v2/cloud-assessment/connection-status?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
 // POST /v2/cloud-assessment/suggestions/{id}/dismiss
 export function useDismissSuggestion() {
   const qc = useQueryClient();

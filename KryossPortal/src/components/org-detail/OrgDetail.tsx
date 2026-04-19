@@ -28,7 +28,6 @@ const tabs = [
   { label: 'Ports', to: 'ports', end: false, permission: 'machines:read' },
   { label: 'Threats', to: 'threats', end: false, permission: 'machines:read' },
   { label: 'External Scan', to: 'external-scan', end: false, permission: 'assessment:read' },
-  { label: 'M365 / Cloud', to: 'm365', end: false, permission: 'assessment:read' },
   { label: 'Cloud Assessment', to: 'cloud-assessment', end: false, permission: 'assessment:read' },
   { label: 'Protocol Usage', to: 'protocol-usage', end: false, permission: 'assessment:read' },
 ] as const;

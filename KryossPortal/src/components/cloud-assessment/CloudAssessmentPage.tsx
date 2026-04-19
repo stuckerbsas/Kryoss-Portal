@@ -3,6 +3,7 @@ import {
   useCloudAssessment,
   useCloudAssessmentDetail,
   useAzureSubscriptions,
+  useConnectionStatus,
   useSetFindingStatus,
   type CloudAssessmentFinding,
   type FindingRemediationStatus,
@@ -11,6 +12,7 @@ import { useOrgParam } from '@/hooks/useOrgParam';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Select,
@@ -19,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Cloud, ExternalLink } from 'lucide-react';
+import { Cloud, ExternalLink, CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import { OverviewTab } from './OverviewTab';
 import { ConnectAzureCard } from './ConnectAzureCard';
 import { AzureSubscriptionsList } from './AzureSubscriptionsList';
@@ -29,6 +31,7 @@ import { ComplianceTab } from './ComplianceTab';
 import { PowerBiTab } from './PowerBiTab';
 import { CopilotReadinessTab } from './CopilotReadinessTab';
 import { ConnectProgressModal } from './ConnectProgressModal';
+import { ConnectCloudWizard } from './ConnectCloudWizard';
 import { DataTab } from './DataTab';
 import { BenchmarksTab } from './BenchmarksTab';
 
@@ -256,9 +259,76 @@ function AzureTab({
   );
 }
 
+function ConnectionBanner({
+  orgId,
+  onOpenWizard,
+}: {
+  orgId: string;
+  onOpenWizard: (step: number) => void;
+}) {
+  const { data: status } = useConnectionStatus(orgId);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!status || dismissed) return null;
+
+  const graphOk = status.graph === 'connected';
+  const azureOk = status.azure === 'connected';
+  const pbiOk = status.powerBi === 'connected';
+
+  if (!graphOk) return null;
+
+  if (graphOk && azureOk && pbiOk) {
+    return (
+      <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-2">
+        <div className="flex items-center gap-2 text-sm text-green-800">
+          <CheckCircle2 className="h-4 w-4" />
+          <span className="font-medium">All cloud services connected</span>
+          <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">
+            {status.connectionPercentage}%
+          </Badge>
+        </div>
+        <button onClick={() => setDismissed(true)} className="text-green-600 hover:text-green-800">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+
+  const missing: Array<{ label: string; step: number }> = [];
+  if (!azureOk) missing.push({ label: 'Azure', step: 1 });
+  if (!pbiOk) missing.push({ label: 'Power BI', step: 2 });
+
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      <div className="flex items-center gap-2 text-sm text-amber-800">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span>
+          <span className="font-medium">Enhance your scan:</span>{' '}
+          Connect {missing.map((m, i) => (
+            <span key={m.label}>
+              {i > 0 && ' | '}
+              <button
+                onClick={() => onOpenWizard(m.step)}
+                className="underline hover:text-amber-900 font-medium"
+              >
+                {m.label}
+              </button>
+            </span>
+          ))} for deeper coverage.
+        </span>
+      </div>
+      <button onClick={() => setDismissed(true)} className="text-amber-600 hover:text-amber-800 ml-2">
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 export function CloudAssessmentPage() {
   const { orgId } = useOrgParam();
   const { data: summary } = useCloudAssessment(orgId);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
 
   const latestScanId = summary && 'id' in summary ? summary.id : undefined;
   const hasAzureScanData =
@@ -267,11 +337,23 @@ export function CloudAssessmentPage() {
     summary.areaScores != null &&
     summary.areaScores['azure'] != null;
 
+  const openWizard = (step: number) => {
+    setWizardStep(step);
+    setWizardOpen(true);
+  };
+
   if (!orgId) return null;
 
   return (
     <div className="space-y-4">
       <ConnectProgressModal orgId={orgId} />
+      <ConnectionBanner orgId={orgId} onOpenWizard={openWizard} />
+      <ConnectCloudWizard
+        orgId={orgId}
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        initialStep={wizardStep}
+      />
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
         <TabsTrigger value="overview">Overview</TabsTrigger>
