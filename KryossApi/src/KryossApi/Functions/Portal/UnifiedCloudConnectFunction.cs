@@ -12,6 +12,8 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Identity.Client;
+
 namespace KryossApi.Functions.Portal;
 
 /// <summary>
@@ -101,10 +103,9 @@ public class UnifiedCloudConnectFunction
     // ── Endpoint 2: GET /v2/cloud/connect-callback ──
 
     /// <summary>
-    /// Browser redirect callback from Microsoft after admin consent + auth code grant.
-    /// Exchanges code for ARM token, creates M365Tenant, auto-assigns Azure Reader,
-    /// verifies PBI, starts cloud assessment scan, redirects to portal.
-    /// No auth required (browser redirect from Microsoft).
+    /// Two-phase browser redirect callback:
+    /// Phase 1: /adminconsent returns admin_consent=True + tenant → save M365, redirect to /authorize for ARM
+    /// Phase 2: /authorize returns code → exchange for ARM token, discover subs, verify PBI, start scan
     /// </summary>
     [Function("Cloud_ConnectCallback")]
     public async Task<HttpResponseData> ConnectCallback(
@@ -115,170 +116,237 @@ public class UnifiedCloudConnectFunction
         var errorParam = query["error"];
         var errorDesc = query["error_description"];
         var stateParam = query["state"];
+        var code = query["code"];
         var tenantParam = query["tenant"];
         var adminConsent = query["admin_consent"];
-
-        Guid.TryParse(stateParam, out var orgId);
 
         // Handle consent denial from Microsoft
         if (!string.IsNullOrEmpty(errorParam))
         {
-            var slug = await ResolveOrgSlug(orgId);
-            var redirectUrl = BuildPortalRedirect(slug, "cloud-assessment",
-                $"error={Uri.EscapeDataString(errorDesc ?? errorParam)}");
-            return Redirect(req, redirectUrl);
+            // State could be "orgId" or "orgId|tenantId"
+            var orgIdForError = ParseOrgIdFromState(stateParam);
+            var slug = await ResolveOrgSlug(orgIdForError);
+            return Redirect(req, BuildPortalRedirect(slug, "cloud-assessment",
+                $"error={Uri.EscapeDataString(errorDesc ?? errorParam)}"));
         }
 
-        // Validate required params
+        // Phase 1: /adminconsent callback (has admin_consent param, no code)
+        if (!string.IsNullOrEmpty(adminConsent))
+            return await HandleAdminConsentCallback(req, stateParam, tenantParam);
+
+        // Phase 2: /authorize callback (has code)
+        if (!string.IsNullOrEmpty(code))
+            return await HandleAuthCodeCallback(req, stateParam, code);
+
+        var fallbackSlug = await ResolveOrgSlug(ParseOrgIdFromState(stateParam));
+        return Redirect(req, BuildPortalRedirect(fallbackSlug, "cloud-assessment",
+            $"error={Uri.EscapeDataString("Invalid callback: missing admin_consent and code")}"));
+    }
+
+    // ── Phase 1: Admin consent granted → save M365 tenant, redirect to /authorize for ARM ──
+
+    private async Task<HttpResponseData> HandleAdminConsentCallback(
+        HttpRequestData req, string? stateParam, string? tenantParam)
+    {
+        var orgId = ParseOrgIdFromState(stateParam);
+
         if (orgId == Guid.Empty || string.IsNullOrWhiteSpace(tenantParam))
         {
             var slug = await ResolveOrgSlug(orgId);
             return Redirect(req, BuildPortalRedirect(slug, "cloud-assessment",
-                $"error={Uri.EscapeDataString("Invalid callback parameters: state and tenant are required")}"));
+                $"error={Uri.EscapeDataString("Invalid admin consent callback: state and tenant required")}"));
         }
 
-        // Verify org exists
         var org = await _db.Organizations
             .Where(o => o.Id == orgId)
             .Select(o => new { o.Id, o.Name })
             .FirstOrDefaultAsync();
 
         if (org is null)
-        {
             return Redirect(req, BuildPortalRedirect("unknown", "cloud-assessment",
                 $"error={Uri.EscapeDataString("Organization not found")}"));
+
+        // Save M365 tenant
+        var existingTenant = await _db.M365Tenants
+            .FirstOrDefaultAsync(t => t.OrganizationId == orgId);
+
+        if (existingTenant is null)
+        {
+            _db.M365Tenants.Add(new M365Tenant
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                TenantId = tenantParam,
+                Status = "active",
+                CreatedAt = DateTime.UtcNow,
+                ConsentGrantedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            existingTenant.TenantId = tenantParam;
+            existingTenant.Status = "active";
+            existingTenant.ConsentGrantedAt = DateTime.UtcNow;
         }
 
+        _db.Actlog.Add(new Actlog
+        {
+            Timestamp = DateTime.UtcNow,
+            Severity = "info",
+            Module = "cloud-assessment",
+            Action = "unified.connect.m365",
+            EntityType = "Organization",
+            EntityId = orgId.ToString(),
+            Message = $"Unified connect phase 1: M365 tenant {tenantParam} consent granted"
+        });
+        await _db.SaveChangesAsync();
+
+        // Redirect to /authorize for ARM delegated token
+        var redirectUri = Uri.EscapeDataString(
+            $"{_m365Config.CallbackBaseUrl.TrimEnd('/')}/v2/cloud/connect-callback");
+        var scope = Uri.EscapeDataString(
+            "https://management.azure.com/user_impersonation offline_access");
+        var armState = $"{orgId}|{tenantParam}";
+
+        var authorizeUrl = $"https://login.microsoftonline.com/{tenantParam}/oauth2/v2.0/authorize" +
+            $"?client_id={Uri.EscapeDataString(_m365Config.ClientId)}" +
+            $"&response_type=code" +
+            $"&redirect_uri={redirectUri}" +
+            $"&scope={scope}" +
+            $"&state={Uri.EscapeDataString(armState)}";
+
+        _log.LogInformation("Phase 1 complete for org {OrgId}, redirecting to /authorize for ARM token", orgId);
+        return Redirect(req, authorizeUrl);
+    }
+
+    // ── Phase 2: Auth code received → exchange for ARM token, discover subs, PBI, scan ──
+
+    private async Task<HttpResponseData> HandleAuthCodeCallback(
+        HttpRequestData req, string? stateParam, string code)
+    {
+        var (orgId, tenantId) = ParseCompositeState(stateParam);
+
+        if (orgId == Guid.Empty || string.IsNullOrWhiteSpace(tenantId))
+        {
+            var slug = await ResolveOrgSlug(orgId);
+            return Redirect(req, BuildPortalRedirect(slug, "cloud-assessment",
+                $"error={Uri.EscapeDataString("Invalid auth code callback: missing orgId or tenantId in state")}"));
+        }
+
+        var org = await _db.Organizations
+            .Where(o => o.Id == orgId)
+            .Select(o => new { o.Id, o.Name })
+            .FirstOrDefaultAsync();
+
+        if (org is null)
+            return Redirect(req, BuildPortalRedirect("unknown", "cloud-assessment",
+                $"error={Uri.EscapeDataString("Organization not found")}"));
+
         var orgSlug = GenerateSlug(org.Name);
-        var results = new ConnectResults();
+        var results = new ConnectResults { M365Connected = true };
 
         try
         {
-            // Step 1: Create/update M365Tenant row (admin consent granted all app permissions)
-            var existingTenant = await _db.M365Tenants
-                .FirstOrDefaultAsync(t => t.OrganizationId == orgId);
-
-            Guid m365TenantDbId;
-            if (existingTenant is null)
-            {
-                var tenant = new M365Tenant
-                {
-                    Id = Guid.NewGuid(),
-                    OrganizationId = orgId,
-                    TenantId = tenantParam,
-                    Status = "active",
-                    CreatedAt = DateTime.UtcNow,
-                    ConsentGrantedAt = DateTime.UtcNow
-                };
-                _db.M365Tenants.Add(tenant);
-                m365TenantDbId = tenant.Id;
-            }
-            else
-            {
-                existingTenant.TenantId = tenantParam;
-                existingTenant.Status = "active";
-                existingTenant.ConsentGrantedAt = DateTime.UtcNow;
-                m365TenantDbId = existingTenant.Id;
-            }
-
-            results.M365Connected = true;
-            await _db.SaveChangesAsync();
-
-            _db.Actlog.Add(new Actlog
-            {
-                Timestamp = DateTime.UtcNow,
-                Severity = "info",
-                Module = "cloud-assessment",
-                Action = "unified.connect.m365",
-                EntityType = "Organization",
-                EntityId = orgId.ToString(),
-                Message = $"Unified connect: M365 tenant {tenantParam} connected"
-            });
-            await _db.SaveChangesAsync();
-
-            // Step 2: Auto-assign Azure Reader on all subscriptions (client credentials)
-            await TryAutoAssignAzureReader(tenantParam, orgId, results);
-
-            // Step 3: Verify Power BI admin API access
-            await TryVerifyPowerBi(tenantParam, orgId, results);
-
-            // Step 4: Start cloud assessment scan
+            // Exchange code for ARM delegated token
+            string armToken;
             try
             {
-                var scanId = await _caService.StartScanAsync(orgId, m365TenantDbId);
-                results.ScanId = scanId;
+                var redirectUri = $"{_m365Config.CallbackBaseUrl.TrimEnd('/')}/v2/cloud/connect-callback";
+                var cca = ConfidentialClientApplicationBuilder
+                    .Create(_m365Config.ClientId)
+                    .WithClientSecret(_m365Config.ClientSecret)
+                    .WithAuthority($"https://login.microsoftonline.com/{tenantId}/v2.0")
+                    .WithRedirectUri(redirectUri)
+                    .Build();
+
+                var authResult = await cca.AcquireTokenByAuthorizationCode(
+                    new[] { "https://management.azure.com/user_impersonation" }, code)
+                    .ExecuteAsync();
+
+                armToken = authResult.AccessToken;
             }
-            catch (Exception ex)
+            catch (MsalException ex)
             {
-                _log.LogWarning("Cloud assessment scan failed for org {OrgId}: {Error}", orgId, ex.Message);
+                _log.LogWarning("ARM token exchange failed for org {OrgId}: {Error}", orgId, ex.Message);
+                results.AzureNote = $"ARM token exchange failed: {ex.Message}";
+                return await BuildFinalRedirect(req, orgId, orgSlug, tenantId, results);
             }
 
-            _db.Actlog.Add(new Actlog
+            // Discover Azure subscriptions with delegated ARM token
+            await TryAutoAssignAzureReader(armToken, tenantId, orgId, results);
+
+            // Verify Power BI
+            await TryVerifyPowerBi(tenantId, orgId, results);
+
+            // Start scan
+            var m365Tenant = await _db.M365Tenants
+                .FirstOrDefaultAsync(t => t.OrganizationId == orgId);
+            if (m365Tenant is not null)
             {
-                Timestamp = DateTime.UtcNow,
-                Severity = "info",
-                Module = "cloud-assessment",
-                Action = "unified.connect.completed",
-                EntityType = "Organization",
-                EntityId = orgId.ToString(),
-                Message = $"Unified connect completed: m365={results.M365Connected}, azureSubs={results.AzureSubsConnected}, azureRbacFailed={results.AzureRbacFailed}, pbi={results.PbiConnected}"
-            });
-            await _db.SaveChangesAsync();
+                try
+                {
+                    var scanId = await _caService.StartScanAsync(orgId, m365Tenant.Id);
+                    results.ScanId = scanId;
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning("Cloud assessment scan failed for org {OrgId}: {Error}", orgId, ex.Message);
+                }
+            }
 
-            // Build success redirect with all status params
-            var queryParams = new List<string>
-            {
-                "cloud_connected=true",
-                $"m365={results.M365Connected.ToString().ToLowerInvariant()}",
-                $"azure_subs={results.AzureSubsConnected}",
-                $"azure_rbac_failed={results.AzureRbacFailed.ToString().ToLowerInvariant()}",
-                $"pbi={results.PbiConnected.ToString().ToLowerInvariant()}"
-            };
-
-            if (results.ScanId.HasValue)
-                queryParams.Add($"scan_id={results.ScanId.Value}");
-
-            if (!string.IsNullOrEmpty(results.PbiNote))
-                queryParams.Add($"pbi_note={Uri.EscapeDataString(results.PbiNote)}");
-
-            if (!string.IsNullOrEmpty(results.AzureNote))
-                queryParams.Add($"azure_note={Uri.EscapeDataString(results.AzureNote)}");
-
-            return Redirect(req, BuildPortalRedirect(orgSlug, "cloud-assessment",
-                string.Join("&", queryParams)));
+            return await BuildFinalRedirect(req, orgId, orgSlug, tenantId, results);
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Unified cloud connect failed for org {OrgId}", orgId);
+            _log.LogError(ex, "Unified cloud connect phase 2 failed for org {OrgId}", orgId);
             return Redirect(req, BuildPortalRedirect(orgSlug, "cloud-assessment",
                 $"error={Uri.EscapeDataString($"Unexpected error: {ex.Message}")}"));
         }
     }
 
+    private async Task<HttpResponseData> BuildFinalRedirect(
+        HttpRequestData req, Guid orgId, string orgSlug, string tenantId, ConnectResults results)
+    {
+        _db.Actlog.Add(new Actlog
+        {
+            Timestamp = DateTime.UtcNow,
+            Severity = "info",
+            Module = "cloud-assessment",
+            Action = "unified.connect.completed",
+            EntityType = "Organization",
+            EntityId = orgId.ToString(),
+            Message = $"Unified connect completed: m365={results.M365Connected}, azureSubs={results.AzureSubsConnected}, azureRbacFailed={results.AzureRbacFailed}, pbi={results.PbiConnected}"
+        });
+        await _db.SaveChangesAsync();
+
+        var queryParams = new List<string>
+        {
+            "cloud_connected=true",
+            $"m365={results.M365Connected.ToString().ToLowerInvariant()}",
+            $"azure_subs={results.AzureSubsConnected}",
+            $"azure_rbac_failed={results.AzureRbacFailed.ToString().ToLowerInvariant()}",
+            $"pbi={results.PbiConnected.ToString().ToLowerInvariant()}"
+        };
+
+        if (results.ScanId.HasValue)
+            queryParams.Add($"scan_id={results.ScanId.Value}");
+        if (!string.IsNullOrEmpty(results.PbiNote))
+            queryParams.Add($"pbi_note={Uri.EscapeDataString(results.PbiNote)}");
+        if (!string.IsNullOrEmpty(results.AzureNote))
+            queryParams.Add($"azure_note={Uri.EscapeDataString(results.AzureNote)}");
+
+        return Redirect(req, BuildPortalRedirect(orgSlug, "cloud-assessment",
+            string.Join("&", queryParams)));
+    }
+
     // ── Helper: TryAutoAssignAzureReader ──
 
-    private async Task TryAutoAssignAzureReader(string tenantId, Guid orgId, ConnectResults results)
+    private async Task TryAutoAssignAzureReader(string armToken, string tenantId, Guid orgId, ConnectResults results)
     {
         try
         {
-            // Acquire ARM token via client credentials (requires ARM app permission on app registration)
-            AccessToken armTokenResult;
-            try
-            {
-                var credential = new ClientSecretCredential(tenantId, _m365Config.ClientId, _m365Config.ClientSecret);
-                armTokenResult = await credential.GetTokenAsync(
-                    new TokenRequestContext(new[] { "https://management.azure.com/.default" }),
-                    CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                results.AzureNote = $"ARM token acquisition failed — add Azure Reader role manually: {ex.Message}";
-                _log.LogWarning("ARM client credentials failed for org {OrgId}: {Error}", orgId, ex.Message);
-                return;
-            }
-
             using var http = new HttpClient { BaseAddress = new Uri("https://management.azure.com") };
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", armTokenResult.Token);
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", armToken);
 
             // List subscriptions
             using var subsResp = await http.GetAsync("/subscriptions?api-version=2022-12-01");
@@ -538,6 +606,24 @@ public class UnifiedCloudConnectFunction
             _log.LogInformation("SPN resolve failed for tenant {TenantId}: {Error}", customerTenantId, ex.Message);
             return null;
         }
+    }
+
+    // ── Helper: state parsing ──
+
+    private static Guid ParseOrgIdFromState(string? state)
+    {
+        if (string.IsNullOrWhiteSpace(state)) return Guid.Empty;
+        var parts = state.Split('|');
+        return Guid.TryParse(parts[0], out var id) ? id : Guid.Empty;
+    }
+
+    private static (Guid OrgId, string? TenantId) ParseCompositeState(string? state)
+    {
+        if (string.IsNullOrWhiteSpace(state)) return (Guid.Empty, null);
+        var parts = state.Split('|');
+        var orgId = Guid.TryParse(parts[0], out var id) ? id : Guid.Empty;
+        var tenantId = parts.Length > 1 ? parts[1] : null;
+        return (orgId, tenantId);
     }
 
     // ── Helper: UserCanAccessOrg ──
