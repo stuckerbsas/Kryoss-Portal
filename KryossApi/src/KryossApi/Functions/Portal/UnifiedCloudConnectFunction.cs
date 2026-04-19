@@ -89,11 +89,16 @@ public class UnifiedCloudConnectFunction
 
         var redirectUri = Uri.EscapeDataString(
             $"{_m365Config.CallbackBaseUrl.TrimEnd('/')}/v2/cloud/connect-callback");
+        var scope = Uri.EscapeDataString(
+            "https://graph.microsoft.com/.default offline_access");
 
-        var url = $"https://login.microsoftonline.com/common/adminconsent" +
+        var url = $"https://login.microsoftonline.com/common/oauth2/v2.0/authorize" +
             $"?client_id={Uri.EscapeDataString(_m365Config.ClientId)}" +
+            $"&response_type=code" +
             $"&redirect_uri={redirectUri}" +
-            $"&state={orgId}";
+            $"&scope={scope}" +
+            $"&prompt=consent" +
+            $"&state={Uri.EscapeDataString($"graph|{orgId}")}";
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { url });
@@ -104,8 +109,8 @@ public class UnifiedCloudConnectFunction
 
     /// <summary>
     /// Two-phase browser redirect callback:
-    /// Phase 1: /adminconsent returns admin_consent=True + tenant → save M365, redirect to /authorize for ARM
-    /// Phase 2: /authorize returns code → exchange for ARM token, discover subs, verify PBI, start scan
+    /// Phase 1: state="graph|{orgId}" → exchange code for Graph token (proves consent), save M365, redirect to /authorize for ARM
+    /// Phase 2: state="arm|{orgId}|{tenantId}" → exchange code for ARM token, discover subs, verify PBI, start scan
     /// </summary>
     [Function("Cloud_ConnectCallback")]
     public async Task<HttpResponseData> ConnectCallback(
@@ -117,44 +122,49 @@ public class UnifiedCloudConnectFunction
         var errorDesc = query["error_description"];
         var stateParam = query["state"];
         var code = query["code"];
-        var tenantParam = query["tenant"];
-        var adminConsent = query["admin_consent"];
 
         // Handle consent denial from Microsoft
         if (!string.IsNullOrEmpty(errorParam))
         {
-            // State could be "orgId" or "orgId|tenantId"
             var orgIdForError = ParseOrgIdFromState(stateParam);
             var slug = await ResolveOrgSlug(orgIdForError);
             return Redirect(req, BuildPortalRedirect(slug, "cloud-assessment",
                 $"error={Uri.EscapeDataString(errorDesc ?? errorParam)}"));
         }
 
-        // Phase 1: /adminconsent callback (has admin_consent param, no code)
-        if (!string.IsNullOrEmpty(adminConsent))
-            return await HandleAdminConsentCallback(req, stateParam, tenantParam);
+        if (string.IsNullOrEmpty(code) || string.IsNullOrWhiteSpace(stateParam))
+        {
+            var fallbackSlug = await ResolveOrgSlug(ParseOrgIdFromState(stateParam));
+            return Redirect(req, BuildPortalRedirect(fallbackSlug, "cloud-assessment",
+                $"error={Uri.EscapeDataString("Invalid callback: missing code or state")}"));
+        }
 
-        // Phase 2: /authorize callback (has code)
-        if (!string.IsNullOrEmpty(code))
+        // Route by state prefix
+        if (stateParam.StartsWith("graph|"))
+            return await HandleGraphConsentCallback(req, stateParam, code);
+
+        if (stateParam.StartsWith("arm|"))
             return await HandleAuthCodeCallback(req, stateParam, code);
 
-        var fallbackSlug = await ResolveOrgSlug(ParseOrgIdFromState(stateParam));
-        return Redirect(req, BuildPortalRedirect(fallbackSlug, "cloud-assessment",
-            $"error={Uri.EscapeDataString("Invalid callback: missing admin_consent and code")}"));
+        var slug2 = await ResolveOrgSlug(ParseOrgIdFromState(stateParam));
+        return Redirect(req, BuildPortalRedirect(slug2, "cloud-assessment",
+            $"error={Uri.EscapeDataString("Invalid callback state")}"));
     }
 
-    // ── Phase 1: Admin consent granted → save M365 tenant, redirect to /authorize for ARM ──
+    // ── Phase 1: Graph consent code → exchange token, extract tenant, save M365, redirect to ARM ──
 
-    private async Task<HttpResponseData> HandleAdminConsentCallback(
-        HttpRequestData req, string? stateParam, string? tenantParam)
+    private async Task<HttpResponseData> HandleGraphConsentCallback(
+        HttpRequestData req, string stateParam, string code)
     {
-        var orgId = ParseOrgIdFromState(stateParam);
+        // state = "graph|{orgId}"
+        var parts = stateParam.Split('|');
+        var orgId = parts.Length > 1 && Guid.TryParse(parts[1], out var id) ? id : Guid.Empty;
 
-        if (orgId == Guid.Empty || string.IsNullOrWhiteSpace(tenantParam))
+        if (orgId == Guid.Empty)
         {
             var slug = await ResolveOrgSlug(orgId);
             return Redirect(req, BuildPortalRedirect(slug, "cloud-assessment",
-                $"error={Uri.EscapeDataString("Invalid admin consent callback: state and tenant required")}"));
+                $"error={Uri.EscapeDataString("Invalid Graph callback: missing orgId in state")}"));
         }
 
         var org = await _db.Organizations
@@ -166,6 +176,32 @@ public class UnifiedCloudConnectFunction
             return Redirect(req, BuildPortalRedirect("unknown", "cloud-assessment",
                 $"error={Uri.EscapeDataString("Organization not found")}"));
 
+        // Exchange code for Graph token to extract tenant ID
+        string tenantId;
+        try
+        {
+            var redirectUri = $"{_m365Config.CallbackBaseUrl.TrimEnd('/')}/v2/cloud/connect-callback";
+            var cca = ConfidentialClientApplicationBuilder
+                .Create(_m365Config.ClientId)
+                .WithClientSecret(_m365Config.ClientSecret)
+                .WithAuthority("https://login.microsoftonline.com/common/v2.0")
+                .WithRedirectUri(redirectUri)
+                .Build();
+
+            var authResult = await cca.AcquireTokenByAuthorizationCode(
+                new[] { "https://graph.microsoft.com/.default" }, code)
+                .ExecuteAsync();
+
+            tenantId = authResult.TenantId;
+        }
+        catch (MsalException ex)
+        {
+            _log.LogWarning("Graph token exchange failed for org {OrgId}: {Error}", orgId, ex.Message);
+            var slug = GenerateSlug(org.Name);
+            return Redirect(req, BuildPortalRedirect(slug, "cloud-assessment",
+                $"error={Uri.EscapeDataString($"Graph consent failed: {ex.Message}")}"));
+        }
+
         // Save M365 tenant
         var existingTenant = await _db.M365Tenants
             .FirstOrDefaultAsync(t => t.OrganizationId == orgId);
@@ -176,7 +212,7 @@ public class UnifiedCloudConnectFunction
             {
                 Id = Guid.NewGuid(),
                 OrganizationId = orgId,
-                TenantId = tenantParam,
+                TenantId = tenantId,
                 Status = "active",
                 CreatedAt = DateTime.UtcNow,
                 ConsentGrantedAt = DateTime.UtcNow
@@ -184,7 +220,7 @@ public class UnifiedCloudConnectFunction
         }
         else
         {
-            existingTenant.TenantId = tenantParam;
+            existingTenant.TenantId = tenantId;
             existingTenant.Status = "active";
             existingTenant.ConsentGrantedAt = DateTime.UtcNow;
         }
@@ -194,28 +230,27 @@ public class UnifiedCloudConnectFunction
             Timestamp = DateTime.UtcNow,
             Severity = "info",
             Module = "cloud-assessment",
-            Action = "unified.connect.m365",
+            Action = "unified.connect.graph",
             EntityType = "Organization",
             EntityId = orgId.ToString(),
-            Message = $"Unified connect phase 1: M365 tenant {tenantParam} consent granted"
+            Message = $"Unified connect phase 1: Graph consent for tenant {tenantId}"
         });
         await _db.SaveChangesAsync();
 
         // Redirect to /authorize for ARM delegated token
-        var redirectUri = Uri.EscapeDataString(
+        var armRedirectUri = Uri.EscapeDataString(
             $"{_m365Config.CallbackBaseUrl.TrimEnd('/')}/v2/cloud/connect-callback");
-        var scope = Uri.EscapeDataString(
+        var armScope = Uri.EscapeDataString(
             "https://management.azure.com/user_impersonation offline_access");
-        var armState = $"{orgId}|{tenantParam}";
 
-        var authorizeUrl = $"https://login.microsoftonline.com/{tenantParam}/oauth2/v2.0/authorize" +
+        var authorizeUrl = $"https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize" +
             $"?client_id={Uri.EscapeDataString(_m365Config.ClientId)}" +
             $"&response_type=code" +
-            $"&redirect_uri={redirectUri}" +
-            $"&scope={scope}" +
-            $"&state={Uri.EscapeDataString(armState)}";
+            $"&redirect_uri={armRedirectUri}" +
+            $"&scope={armScope}" +
+            $"&state={Uri.EscapeDataString($"arm|{orgId}|{tenantId}")}";
 
-        _log.LogInformation("Phase 1 complete for org {OrgId}, redirecting to /authorize for ARM token", orgId);
+        _log.LogInformation("Phase 1 complete for org {OrgId}, tenant {TenantId}, redirecting for ARM token", orgId, tenantId);
         return Redirect(req, authorizeUrl);
     }
 
@@ -224,7 +259,7 @@ public class UnifiedCloudConnectFunction
     private async Task<HttpResponseData> HandleAuthCodeCallback(
         HttpRequestData req, string? stateParam, string code)
     {
-        var (orgId, tenantId) = ParseCompositeState(stateParam);
+        var (orgId, tenantId) = ParseArmState(stateParam);
 
         if (orgId == Guid.Empty || string.IsNullOrWhiteSpace(tenantId))
         {
@@ -609,20 +644,25 @@ public class UnifiedCloudConnectFunction
     }
 
     // ── Helper: state parsing ──
+    // State formats: "graph|{orgId}" or "arm|{orgId}|{tenantId}"
 
     private static Guid ParseOrgIdFromState(string? state)
     {
         if (string.IsNullOrWhiteSpace(state)) return Guid.Empty;
         var parts = state.Split('|');
-        return Guid.TryParse(parts[0], out var id) ? id : Guid.Empty;
+        // Try index 1 (prefixed format: "graph|orgId" or "arm|orgId|tid")
+        if (parts.Length > 1 && Guid.TryParse(parts[1], out var id1)) return id1;
+        // Fallback: try index 0 (bare orgId)
+        return Guid.TryParse(parts[0], out var id0) ? id0 : Guid.Empty;
     }
 
-    private static (Guid OrgId, string? TenantId) ParseCompositeState(string? state)
+    private static (Guid OrgId, string? TenantId) ParseArmState(string? state)
     {
         if (string.IsNullOrWhiteSpace(state)) return (Guid.Empty, null);
         var parts = state.Split('|');
-        var orgId = Guid.TryParse(parts[0], out var id) ? id : Guid.Empty;
-        var tenantId = parts.Length > 1 ? parts[1] : null;
+        // "arm|{orgId}|{tenantId}"
+        var orgId = parts.Length > 1 && Guid.TryParse(parts[1], out var id) ? id : Guid.Empty;
+        var tenantId = parts.Length > 2 ? parts[2] : null;
         return (orgId, tenantId);
     }
 
