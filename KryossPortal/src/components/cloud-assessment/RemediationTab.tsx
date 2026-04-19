@@ -7,6 +7,7 @@ import {
   useRemediationStats,
   useSetFindingStatus,
   useDismissSuggestion,
+  useCloudAssessmentDetail,
   type FindingRemediationStatus,
   type RemediationSuggestion,
 } from '@/api/cloudAssessment';
@@ -41,6 +42,33 @@ import {
 // ── Helpers ──
 
 type FindingStatus = FindingRemediationStatus['status'];
+
+const SERVICE_LABELS: Record<string, string> = {
+  entra: 'Entra ID',
+  intune: 'Intune',
+  'defender-endpoint': 'Defender for Endpoint',
+  'defender-cloud': 'Defender for Cloud',
+  purview: 'Purview',
+  sharepoint: 'SharePoint',
+  onedrive: 'OneDrive',
+  exchange: 'Exchange Online',
+  teams: 'Teams',
+  m365: 'Microsoft 365',
+  email: 'Email',
+  mail_flow: 'Mail Flow',
+  arm: 'Azure Resource Manager',
+  storage: 'Azure Storage',
+  keyvault: 'Key Vault',
+  network: 'Network Security',
+  compute: 'Compute',
+  policy: 'Azure Policy',
+  powerbi: 'Power BI',
+  productivity: 'Productivity',
+  licensing: 'Licensing',
+  office: 'Office Apps',
+  identity: 'Identity',
+  copilot: 'Copilot',
+};
 
 const STATUS_LABELS: Record<FindingStatus, string> = {
   open: 'Open',
@@ -314,9 +342,10 @@ function FixModal({ open, finding, onClose }: FixModalProps) {
 
 interface RemediationTabProps {
   orgId: string;
+  scanId?: string;
 }
 
-export function RemediationTab({ orgId }: RemediationTabProps) {
+export function RemediationTab({ orgId, scanId }: RemediationTabProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [fixModalOpen, setFixModalOpen] = useState(false);
   const [fixModalFinding, setFixModalFinding] = useState<FindingRemediationStatus | null>(null);
@@ -327,6 +356,16 @@ export function RemediationTab({ orgId }: RemediationTabProps) {
     data: findings,
     isLoading: findingsLoading,
   } = useFindingStatuses(orgId, undefined, statusFilter === 'all' ? undefined : statusFilter);
+  const { data: scanDetail } = useCloudAssessmentDetail(scanId);
+
+  const recommendationMap = new Map<string, string>();
+  if (scanDetail?.findings) {
+    for (const f of scanDetail.findings) {
+      if (f.recommendation) {
+        recommendationMap.set(`${f.area}|${f.service}|${f.feature}`, f.recommendation);
+      }
+    }
+  }
 
   const openFixModal = (finding: FindingRemediationStatus) => {
     setFixModalFinding(finding);
@@ -438,6 +477,7 @@ export function RemediationTab({ orgId }: RemediationTabProps) {
                   <TableHead>Area</TableHead>
                   <TableHead>Service</TableHead>
                   <TableHead>Feature</TableHead>
+                  <TableHead>Recommended Action</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead>Notes</TableHead>
@@ -449,8 +489,13 @@ export function RemediationTab({ orgId }: RemediationTabProps) {
                 {findings.map((f) => (
                   <TableRow key={f.id}>
                     <TableCell className="text-sm capitalize whitespace-nowrap">{f.area}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">{f.service}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">{SERVICE_LABELS[f.service.toLowerCase()] ?? f.service}</TableCell>
                     <TableCell className="text-sm">{f.feature}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[240px]">
+                      <div className="truncate" title={recommendationMap.get(`${f.area}|${f.service}|${f.feature}`) ?? undefined}>
+                        {recommendationMap.get(`${f.area}|${f.service}|${f.feature}`) ?? '—'}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <InlineStatusSelect finding={f} orgId={orgId} />
                     </TableCell>

@@ -538,7 +538,7 @@ export function CloudAssessmentPage() {
       <TabsContent value="copilot"><CopilotReadinessTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="compliance"><ComplianceTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="benchmarks"><BenchmarksTab orgId={orgId} scanId={latestScanId} /></TabsContent>
-      <TabsContent value="remediation"><RemediationTab orgId={orgId} /></TabsContent>
+      <TabsContent value="remediation"><RemediationTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       </Tabs>
     </div>
   );
