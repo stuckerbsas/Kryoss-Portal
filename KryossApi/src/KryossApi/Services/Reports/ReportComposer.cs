@@ -31,11 +31,16 @@ public class ReportComposer : IReportComposer
         {
             var html = block.Render(data, options);
             if (string.IsNullOrEmpty(html)) continue;
-            pageNum++;
-            var footer = RenderPageFooter(data, options, pageNum);
-            var lastClose = html.LastIndexOf("</div>");
-            if (lastClose >= 0)
-                html = html.Insert(lastClose, footer);
+
+            bool isCover = html.Contains("<div class='cover'>");
+            if (!isCover)
+            {
+                pageNum++;
+                var footer = RenderPageFooter(data, options, pageNum);
+                var lastClose = html.LastIndexOf("</div>");
+                if (lastClose >= 0)
+                    html = html.Insert(lastClose, footer);
+            }
             sb.Append(html);
         }
 
