@@ -41,7 +41,10 @@
 | GET | `/v2/dashboard/machine/{id}` | `DashboardFunction.Machine` | Per-machine dashboard |
 | GET/POST | `/v2/assessment-profiles` | `AssessmentProfilesFunction` | Assessment templates |
 | GET | `/v2/reports/{runId}` | `ReportsFunction.Generate` | **DEPRECATED** — returns HTTP 410 since 2026-04-15 |
-| GET | `/v2/reports/org/{orgId}?type=c-level\|technical\|executive\|preventas&tone=opener\|detailed&framework=...&lang=en\|es` | `ReportsFunction.GenerateOrg` | Org-wide HTML report (4-type baseline, Brand 2025, Big 4 light) |
+| GET | `/v2/reports/org/{orgId}?type=c-level\|technical\|executive\|preventas\|framework\|proposal\|monthly&tone=opener\|detailed&framework=...&lang=en\|es` | `ReportsFunction.GenerateOrg` | Org-wide HTML report (7-type unified system via ReportComposer, legacy types fall back to ReportService) |
+| GET | `/v2/service-catalog` | `ServiceCatalogFunction.List` | List active service catalog items (14 remediation categories) |
+| GET | `/v2/franchise-rates/{franchiseId}` | `ServiceCatalogFunction.GetRate` | Get franchise hourly rate + margin |
+| PATCH | `/v2/franchise-rates/{franchiseId}` | `ServiceCatalogFunction.SetRate` | Set franchise hourly rate + margin (admin:write) |
 | GET | `/v2/inventory/hardware?organizationId=X` | `InventoryFunction.Hardware` | Org-level hardware inventory (all machines) |
 | GET | `/v2/inventory/software?organizationId=X` | `InventoryFunction.Software` | Org-level software inventory (600+ commercial app detection) |
 | GET | `/v2/hygiene?organizationId=X` | `HygieneFunction.Get` | AD hygiene findings for portal |
@@ -98,7 +101,22 @@ src/KryossApi/
 │   ├── CryptoService.cs             <- RSA keygen, AES-GCM decrypt
 │   ├── EnrollmentService.cs         <- Code redemption, machine registration
 │   ├── EvaluationService.cs         <- SERVER-SIDE PASS/FAIL eval vs check_json
-│   ├── ReportService.cs             <- HTML report rendering (Brand 2025, framework gauges, AD hygiene)
+│   ├── ReportService.cs             <- Legacy HTML report rendering (executive, presales)
+│   ├── Reports/                     <- Unified Report System (compositional blocks)
+│   │   ├── IReportBlock.cs          <- IReportBlock + IReportRecipe interfaces
+│   │   ├── ReportOptions.cs         <- Lang, FrameworkCode, Tone
+│   │   ├── ReportData.cs            <- Unified data model (endpoint + cloud + hygiene + benchmarks)
+│   │   ├── ReportHelpers.cs         <- 22 static HTML helpers extracted from ReportService
+│   │   ├── ReportStyles.cs          <- CSS generation
+│   │   ├── ReportDataLoader.cs      <- Loads all data for a report
+│   │   ├── ReportComposer.cs        <- Orchestrator: resolves recipe, renders blocks
+│   │   ├── Blocks/ (17 blocks)      <- CoverBlock, SemaforoBlock, KpiBlock, CtaBlock, AssetMatrixBlock,
+│   │   │                               TopFindingsBlock, IronSixBlock, RiskScoreBlock, ThreatVectorsBlock,
+│   │   │                               MethodologyBlock, CloudPostureBlock, FrameworkGaugeBlock,
+│   │   │                               GapAnalysisBlock, ServiceCatalogBlock, TimelineBlock,
+│   │   │                               ScoreTrendBlock, DeltaBlock
+│   │   └── Recipes/ (7 recipes)     <- CLevelRecipe, TechnicalRecipe, PreventaOpenerRecipe,
+│   │                                   PreventaDetailedRecipe, FrameworkRecipe, ProposalRecipe, MonthlyRecipe
 │   ├── BinaryPatcher.cs             <- UTF-16LE sentinel replacement in agent .exe binary
 │   ├── ActlogService.cs             <- Audit logging
 │   ├── CurrentUserService.cs        <- Request-scoped user context
@@ -139,7 +157,8 @@ src/KryossApi/
 - **`CryptoService`** — Generates RSA-2048 keypairs per org (private → Key Vault, public → `org_crypto_keys`). Decrypts agent payload envelopes (AES-GCM with RSA-wrapped key).
 - **`EnrollmentService`** — Validates enrollment code, creates `machines` row, assigns API key, returns public key to agent. Supports `maxUses` on enrollment codes (multi-use). Auto-creates a default assessment if the org doesn't have one. Handles re-enrollment: reuses existing machine row by hostname match.
 - **`EvaluationService`** — **This is the scoring engine.** Takes `control_results[]` + raw snapshot, loads `control_defs.check_json` for each, evaluates PASS/WARN/FAIL, writes `control_results` rows, computes and persists per-framework scores in `run_framework_scores`. Now also persists all ~25 hardware fields from agent payload.
-- **`ReportService`** — Renders the 3 report types (technical/executive/presales) with Brand 2025 redesign: framework score gauges, AD hygiene section, hardware/software summary. Self-contained HTML, Montserrat font, no external deps.
+- **`ReportService`** — Legacy renderer for executive/presales types. Being replaced by the Unified Report System.
+- **`ReportComposer`** — **New unified report orchestrator.** Resolves recipe by type string, loads data via `ReportDataLoader`, renders 17 composable blocks into self-contained HTML. 7 report types: C-Level, Technical, Preventa Opener/Detailed, Framework Compliance, Business Proposal (auto-pricing from service catalog), Monthly Progress. Cloud sections conditional (omitted when no M365/Azure). Spec: `docs/superpowers/specs/2026-04-19-unified-report-system-design.md`.
 - **`BinaryPatcher`** — Replaces UTF-16LE sentinel strings in the compiled agent .exe to produce org-specific binaries. Sentinels: `@@KRYOSS_ENROLL:` (64 chars), `@@KRYOSS_APIURL:` (256 chars), `@@KRYOSS_ORGNAM:` (128 chars), `@@KRYOSS_MSPNAM:` (128 chars), `@@CLRPRI:` (32 chars), `@@CLRACC:` (32 chars). Called by `AgentDownloadFunction`.
 - **`InventoryFunction`** — Org-level hardware and software inventory. Software endpoint includes 600+ commercial application detection list for normalizing `DisplayName` registry values into recognized products.
 - **CloudAssessment pipelines** — `Services/CloudAssessment/Pipelines/{Identity,Endpoint,Data,Productivity,Azure}Pipeline.cs` + `Services/CloudAssessment/Recommendations/{Identity,Endpoint,Data,Productivity,Azure}Recommendations.cs`. CA-6 Subsession B added `Services/CloudAssessment/Pipelines/AzurePipeline.cs` (+ `AzureInsights.cs`) and `Services/CloudAssessment/Recommendations/AzureRecommendations.cs` for Azure infrastructure auditing (resources, Defender for Cloud, public exposure, NSG, Key Vault, VM audits).
