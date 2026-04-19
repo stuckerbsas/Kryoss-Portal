@@ -8,7 +8,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { BrainCircuit, ShieldCheck, Share2, FileCheck, Globe, Lock } from 'lucide-react';
+import { BrainCircuit, ShieldCheck, Share2, FileCheck, Globe, Lock, Loader2 } from 'lucide-react';
 
 const DIMENSIONS = [
   { key: 'd1Labels', label: 'D1 — Sensitivity Labels', icon: FileCheck, desc: 'File labeling coverage across SharePoint' },
@@ -201,8 +201,19 @@ export function CopilotReadinessTab({
   orgId: string;
   scanId: string | undefined;
 }) {
-  const { data: summary } = useCloudAssessment(orgId);
-  const { data: detail } = useCloudAssessmentDetail(scanId);
+  const { data: summary, isLoading: summaryLoading } = useCloudAssessment(orgId);
+  const { data: detail, isLoading: detailLoading } = useCloudAssessmentDetail(scanId);
+
+  if (summaryLoading || detailLoading) {
+    return (
+      <Card>
+        <CardContent className="py-16 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading Copilot Readiness…</span>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const scores = summary && 'copilotReadiness' in summary
     ? (summary as any).copilotReadiness as CopilotReadinessScores | null

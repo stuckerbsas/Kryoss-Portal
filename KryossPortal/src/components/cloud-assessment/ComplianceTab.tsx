@@ -15,7 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Loader2, ShieldCheck } from 'lucide-react';
 
 const GRADE_COLORS: Record<string, string> = {
   'A+': 'bg-green-100 text-green-800',
@@ -103,8 +103,9 @@ function DrilldownView({
   if (isLoading) {
     return (
       <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Loading controls...
+        <CardContent className="py-16 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading controls…</span>
         </CardContent>
       </Card>
     );
@@ -206,8 +207,9 @@ export function ComplianceTab({
   if (isLoading) {
     return (
       <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Loading compliance data...
+        <CardContent className="py-16 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading compliance data…</span>
         </CardContent>
       </Card>
     );

@@ -153,13 +153,24 @@ function AreaInlineStatusSelect({
 
 export function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | undefined }) {
   const { orgId } = useOrgParam();
-  const { data: detail } = useCloudAssessmentDetail(scanId);
+  const { data: detail, isLoading } = useCloudAssessmentDetail(scanId);
 
   if (!scanId) {
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
           Run a scan from the Overview tab to see findings for this area.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-16 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading findings…</span>
         </CardContent>
       </Card>
     );

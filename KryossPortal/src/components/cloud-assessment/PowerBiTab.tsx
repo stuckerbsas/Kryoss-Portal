@@ -277,8 +277,9 @@ export function PowerBiTab({
   if (isLoading) {
     return (
       <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Loading...
+        <CardContent className="py-16 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading Power BI data…</span>
         </CardContent>
       </Card>
     );

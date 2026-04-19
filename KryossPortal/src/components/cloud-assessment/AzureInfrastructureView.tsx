@@ -612,8 +612,9 @@ export function AzureInfrastructureView({
   if (isLoading || !detail) {
     return (
       <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Loading Azure infrastructure posture…
+        <CardContent className="py-16 flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Loading Azure infrastructure posture…</span>
         </CardContent>
       </Card>
     );
