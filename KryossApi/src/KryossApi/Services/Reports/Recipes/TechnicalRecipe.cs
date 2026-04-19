@@ -1,7 +1,22 @@
+using KryossApi.Services.Reports.Blocks;
+
 namespace KryossApi.Services.Reports.Recipes;
 
 public class TechnicalRecipe : IReportRecipe
 {
-    public string ReportTitle(ReportOptions options) => options.IsSpanish ? "Informe Técnico" : "Technical Report";
-    public IEnumerable<IReportBlock> GetBlocks(ReportData data) { yield break; }
+    public string ReportTitle(ReportOptions options) =>
+        options.FrameworkName != null
+            ? $"{options.FrameworkName} {(options.IsSpanish ? "Informe Técnico" : "Technical Report")}"
+            : (options.IsSpanish ? "Informe Técnico de Seguridad" : "Security Technical Report");
+
+    public IEnumerable<IReportBlock> GetBlocks(ReportData data)
+    {
+        yield return new CoverBlock("technical");
+        yield return new AssetMatrixBlock();
+        yield return new TopFindingsBlock(topN: 10);
+        yield return new IronSixBlock();
+        if (data.HasCloudData)
+            yield return new CloudPostureBlock(compact: false);
+        yield return new GapAnalysisBlock();
+    }
 }
