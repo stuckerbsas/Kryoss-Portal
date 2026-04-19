@@ -16,6 +16,10 @@ public class CtaBlock : IReportBlock
         var sb = new StringBuilder();
         var es = options.IsSpanish;
 
+        sb.AppendLine("<div class='page'>");
+        ReportHelpers.AppendPageHeader(sb, es ? "Decisiones Ejecutivas" : "Executive Decisions", data.Branding);
+        sb.AppendLine("<div class='pb'>");
+
         var capitalSin = CapitalSinDetector.Detect(
             data.Runs, data.Hygiene, data.Enrichment,
             data.M365Connected, data.M365Findings, options.Lang);
@@ -92,6 +96,8 @@ public class CtaBlock : IReportBlock
                 n++;
             }
         }
+
+        sb.AppendLine("</div></div>");
 
         return sb.ToString();
     }

@@ -16,6 +16,10 @@ public class KpiBlock : IReportBlock
         var sb = new StringBuilder();
         var es = options.IsSpanish;
 
+        sb.AppendLine("<div class='page'>");
+        ReportHelpers.AppendPageHeader(sb, es ? "Indicadores Clave" : "Key Performance Indicators", data.Branding);
+        sb.AppendLine("<div class='pb'>");
+
         var runs      = data.Runs;
         var avgScore  = data.AvgScore;
         var allResults = data.ControlResults;
@@ -113,6 +117,7 @@ public class KpiBlock : IReportBlock
         }
 
         sb.AppendLine("</div>");
+        sb.AppendLine("</div></div>");
 
         return sb.ToString();
     }

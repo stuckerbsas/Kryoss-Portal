@@ -14,6 +14,10 @@ public class SemaforoBlock : IReportBlock
         var sb = new StringBuilder();
         var es = options.IsSpanish;
 
+        sb.AppendLine("<div class='page'>");
+        ReportHelpers.AppendPageHeader(sb, es ? "Postura de Riesgo" : "Risk Posture", data.Branding);
+        sb.AppendLine("<div class='pb'>");
+
         var capitalSin = CapitalSinDetector.Detect(
             data.Runs, data.Hygiene, data.Enrichment,
             data.M365Connected, data.M365Findings, options.Lang);
@@ -57,6 +61,7 @@ public class SemaforoBlock : IReportBlock
         sb.AppendLine($"<div style='font-size:28px;font-weight:900;color:{postureColor};line-height:1;margin-bottom:6px'>{ReportHelpers.HtmlEncode(postureLabel)}</div>");
         sb.AppendLine($"<div style='font-size:12px;color:#334155;line-height:1.55;max-width:160mm;margin:0 auto'>{ReportHelpers.HtmlEncode(postureNarrative)}</div>");
         sb.AppendLine("</div>");
+        sb.AppendLine("</div></div>");
 
         return sb.ToString();
     }
