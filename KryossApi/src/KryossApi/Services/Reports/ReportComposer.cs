@@ -26,10 +26,47 @@ public class ReportComposer : IReportComposer
         ReportHelpers.AppendHtmlHead(sb, $"{reportTitle} - {data.Org.Name}", data.Branding,
             isOrgReport: true, htmlLang: options.Lang, user: data.UserInfo, detail: detail);
 
+        int pageNum = 0;
         foreach (var block in blocks)
-            sb.Append(block.Render(data, options));
+        {
+            var html = block.Render(data, options);
+            if (string.IsNullOrEmpty(html)) continue;
+            pageNum++;
+            var footer = RenderPageFooter(data, options, pageNum);
+            var lastClose = html.LastIndexOf("</div>");
+            if (lastClose >= 0)
+                html = html.Insert(lastClose, footer);
+            sb.Append(html);
+        }
 
         sb.AppendLine("</body></html>");
+        return sb.ToString();
+    }
+
+    private static string RenderPageFooter(ReportData data, ReportOptions options, int pageNum)
+    {
+        var es = options.IsSpanish;
+        var user = data.UserInfo;
+        var date = data.ScanDate.ToString(es ? "dd/MM/yyyy" : "yyyy-MM-dd");
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<div class='page-footer'>");
+        sb.AppendLine("<div class='pf-left'>");
+        if (!string.IsNullOrEmpty(user.FullName))
+            sb.AppendLine($"<div>{ReportHelpers.HtmlEncode(es ? "Preparado por" : "Prepared by")}: {ReportHelpers.HtmlEncode(user.FullName)}</div>");
+        var contactParts = new List<string>();
+        if (!string.IsNullOrEmpty(user.Phone))
+            contactParts.Add($"Tel: {ReportHelpers.HtmlEncode(user.Phone)}");
+        if (!string.IsNullOrEmpty(user.Email))
+            contactParts.Add($"Mail: {ReportHelpers.HtmlEncode(user.Email)}");
+        if (contactParts.Count > 0)
+            sb.AppendLine($"<div>{string.Join(" &middot; ", contactParts)}</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='pf-right'>");
+        sb.AppendLine($"<div>{date}</div>");
+        sb.AppendLine($"<div>{(es ? "Página" : "Page")} {pageNum}</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div>");
         return sb.ToString();
     }
 

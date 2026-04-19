@@ -29,7 +29,7 @@ public static class ReportStyles
         .grade-F { background: #C0392B; }
 
         /* Pages */
-        .page { width: 210mm; margin: 0 auto 20px; background: #fff; overflow: hidden; page-break-after: always; }
+        .page { width: 210mm; margin: 0 auto 20px; background: #fff; overflow: hidden; page-break-after: always; position: relative; }
 
         /* Unified page header — dark band + ribbon gradient layered behind
            the logo (echoes the cover art), eyebrow + page title on the left,
@@ -216,6 +216,16 @@ public static class ReportStyles
         /* Footer */
         .footer { text-align: center; padding: 20px; color: #999; font-size: 11px; border-top: 1px solid #eee; margin-top: 20px; }
 
+        /* Page footer (contact + page number) */
+        .page-footer {
+            position: absolute; bottom: 6mm; left: 10%; right: 8mm;
+            display: flex; justify-content: space-between; align-items: flex-end;
+            font-size: 7.5pt; color: #94A3B8; line-height: 1.4;
+            border-top: 0.5pt solid #E2E8F0; padding-top: 2mm;
+        }
+        .pf-left { text-align: left; }
+        .pf-right { text-align: right; }
+
         @media print { .page { margin: 0; box-shadow: none; } body { background: #fff; } }
         """;
 
@@ -246,7 +256,7 @@ public static class ReportStyles
         .grade-F { background: #C0392B; }
 
         /* Pages */
-        .page { width: 210mm; margin: 0 auto 20px; background: #fff; overflow: hidden; page-break-after: always; }
+        .page { width: 210mm; margin: 0 auto 20px; background: #fff; overflow: hidden; page-break-after: always; position: relative; }
 
         /* Unified page header (same as org reports — single source of
            truth for the baseline visual across all report types). */
@@ -428,6 +438,16 @@ public static class ReportStyles
 
         /* Footer */
         .footer { text-align: center; padding: 20px; color: #999; font-size: 11px; border-top: 1px solid #eee; margin-top: 20px; }
+
+        /* Page footer (contact + page number) */
+        .page-footer {
+            position: absolute; bottom: 6mm; left: 10%; right: 8mm;
+            display: flex; justify-content: space-between; align-items: flex-end;
+            font-size: 7.5pt; color: #94A3B8; line-height: 1.4;
+            border-top: 0.5pt solid #E2E8F0; padding-top: 2mm;
+        }
+        .pf-left { text-align: left; }
+        .pf-right { text-align: right; }
 
         @media print { .page { margin: 0; box-shadow: none; } body { background: #fff; } }
         """;
