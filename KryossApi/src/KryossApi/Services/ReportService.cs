@@ -3801,7 +3801,7 @@ public class ReportService : IReportService
 // INTERNAL DTOS
 // ======================================================================
 
-internal class OrgControlResult
+public class OrgControlResult
 {
     public int ControlDefId { get; set; }
     public Guid RunId { get; set; }
@@ -3814,7 +3814,7 @@ internal class OrgControlResult
     public string? Remediation { get; set; }
 }
 
-internal class ReportBranding
+public class ReportBranding
 {
     public string CompanyName { get; set; } = "TeamLogic IT";
     public string PrimaryColor { get; set; } = "#006536";
@@ -3822,7 +3822,7 @@ internal class ReportBranding
     public string? LogoUrl { get; set; }
 }
 
-internal class FrameworkScoreDto
+public class FrameworkScoreDto
 {
     public string Code { get; set; } = null!;
     public string Name { get; set; } = null!;
@@ -3831,7 +3831,7 @@ internal class FrameworkScoreDto
     public short FailCount { get; set; }
 }
 
-internal class HygieneScanDto
+public class HygieneScanDto
 {
     public DateTime ScannedAt { get; set; }
     public int TotalMachines { get; set; }
@@ -3845,7 +3845,7 @@ internal class HygieneScanDto
     public List<AdHygieneFinding> Findings { get; set; } = [];
 }
 
-internal class OrgEnrichment
+public class OrgEnrichment
 {
     public List<MachineDisk> Disks { get; set; } = [];
     public List<MachinePort> Ports { get; set; } = [];
@@ -3856,7 +3856,7 @@ internal class OrgEnrichment
 /// Identity of the portal user that generated the report. Shown in the
 /// Executive One-Pager footer so the C-level reader knows who to call back.
 /// </summary>
-internal class ReportUserInfo
+public class ReportUserInfo
 {
     public string? FullName { get; set; }
     public string? Email { get; set; }
