@@ -642,6 +642,138 @@ export function useUnifiedCloudConnectUrl(organizationId: string | undefined) {
   });
 }
 
+// ── Benchmark types (CA-11) ──
+
+export interface MetricComparison {
+  metricKey: string;
+  displayName: string;
+  category: 'area' | 'framework' | 'metric' | 'overall' | 'other';
+  orgValue: number | null;
+  franchiseAvg: number | null;
+  franchisePercentile: number | null;
+  franchiseSampleSize: number;
+  industryBaseline: number | null;
+  industryP25: number | null;
+  industryP50: number | null;
+  industryP75: number | null;
+  industryPercentile: number | null;
+  globalAvg: number | null;
+  globalPercentile: number | null;
+  globalSampleSize: number;
+  verdict: 'above_peer' | 'at_peer' | 'below_peer' | 'insufficient_data';
+}
+
+export interface BenchmarkAvailability {
+  franchiseBenchmarkAvailable: boolean;
+  franchiseOrgCount: number;
+  franchiseThreshold: number;
+  industryBenchmarkAvailable: boolean;
+  industryCode: string | null;
+  globalBenchmarkAvailable: boolean;
+  globalOrgCount: number;
+  globalThreshold: number;
+}
+
+export interface BenchmarkReport {
+  metrics: MetricComparison[];
+  availability: BenchmarkAvailability;
+}
+
+export interface IndustryOption {
+  code: string;
+  label: string;
+  description: string;
+}
+
+export interface IndustriesResponse {
+  industries: IndustryOption[];
+  employeeBands: string[];
+}
+
+export interface FranchiseLeaderboardRow {
+  organizationId: string;
+  organizationName: string;
+  overallScore: number | null;
+  topArea: string | null;
+  topAreaScore: number | null;
+  weakestArea: string | null;
+  weakestAreaScore: number | null;
+  lastScanAt: string | null;
+}
+
+export interface FranchiseLeaderboard {
+  franchiseId: string;
+  orgCount: number;
+  available: boolean;
+  rows: FranchiseLeaderboardRow[];
+}
+
+// ── Benchmark hooks (CA-11) ──
+
+export function useBenchmarkReport(scanId: string | undefined) {
+  return useQuery({
+    queryKey: ['benchmark-report', scanId],
+    queryFn: () =>
+      apiFetch<BenchmarkReport>(`/v2/cloud-assessment/benchmarks/${scanId}`),
+    enabled: !!scanId,
+  });
+}
+
+export function useBenchmarkIndustries() {
+  return useQuery({
+    queryKey: ['benchmark-industries'],
+    queryFn: () =>
+      apiFetch<IndustriesResponse>('/v2/cloud-assessment/benchmarks/industries'),
+    staleTime: 1000 * 60 * 60, // 1 hour — taxonomy is stable
+  });
+}
+
+export function useFranchiseLeaderboard(franchiseId: string | undefined) {
+  return useQuery({
+    queryKey: ['benchmark-franchise-summary', franchiseId],
+    queryFn: () =>
+      apiFetch<FranchiseLeaderboard>(
+        `/v2/cloud-assessment/benchmarks/franchise-summary?franchiseId=${franchiseId}`,
+      ),
+    enabled: !!franchiseId,
+  });
+}
+
+export function useSetOrgIndustry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      orgId,
+      industryCode,
+      industrySubcode,
+      employeeBand,
+    }: {
+      orgId: string;
+      industryCode: string;
+      industrySubcode?: string;
+      employeeBand?: string;
+    }) =>
+      apiFetch<{
+        orgId: string;
+        industryCode: string;
+        industrySubcode: string | null;
+        employeeBand: string | null;
+      }>(`/v2/organizations/${orgId}/industry`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          industryCode,
+          ...(industrySubcode ? { industrySubcode } : {}),
+          ...(employeeBand ? { employeeBand } : {}),
+        }),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['organizations'] });
+      qc.invalidateQueries({ queryKey: ['organization', variables.orgId] });
+      qc.invalidateQueries({ queryKey: ['benchmark-report'] });
+    },
+  });
+}
+
 // POST /v2/cloud-assessment/suggestions/{id}/dismiss
 export function useDismissSuggestion() {
   const qc = useQueryClient();

@@ -30,6 +30,7 @@ import { PowerBiTab } from './PowerBiTab';
 import { CopilotReadinessTab } from './CopilotReadinessTab';
 import { ConnectProgressModal } from './ConnectProgressModal';
 import { DataTab } from './DataTab';
+import { BenchmarksTab } from './BenchmarksTab';
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -282,6 +283,7 @@ export function CloudAssessmentPage() {
         <TabsTrigger value="powerbi">Power BI</TabsTrigger>
         <TabsTrigger value="copilot">Copilot Readiness</TabsTrigger>
         <TabsTrigger value="compliance">Compliance</TabsTrigger>
+        <TabsTrigger value="benchmarks">Benchmarks</TabsTrigger>
         <TabsTrigger value="remediation">Remediation</TabsTrigger>
       </TabsList>
       <TabsContent value="overview"><OverviewTab orgId={orgId} /></TabsContent>
@@ -299,6 +301,7 @@ export function CloudAssessmentPage() {
       <TabsContent value="powerbi"><PowerBiTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="copilot"><CopilotReadinessTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="compliance"><ComplianceTab orgId={orgId} scanId={latestScanId} /></TabsContent>
+      <TabsContent value="benchmarks"><BenchmarksTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="remediation"><RemediationTab orgId={orgId} /></TabsContent>
       </Tabs>
     </div>
