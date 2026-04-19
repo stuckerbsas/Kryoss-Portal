@@ -39,7 +39,11 @@ public class ReportComposer : IReportComposer
                 var footer = RenderPageFooter(data, options, pageNum);
                 var lastClose = html.LastIndexOf("</div>");
                 if (lastClose >= 0)
-                    html = html.Insert(lastClose, footer);
+                {
+                    // Insert between </div> (pb close) and </div> (page close)
+                    var insertAt = lastClose;
+                    html = html.Insert(insertAt, "\n" + footer);
+                }
             }
             sb.Append(html);
         }

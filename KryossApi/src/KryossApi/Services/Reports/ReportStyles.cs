@@ -29,7 +29,7 @@ public static class ReportStyles
         .grade-F { background: #C0392B; }
 
         /* Pages */
-        .page { width: 210mm; margin: 0 auto 20px; background: #fff; overflow: hidden; page-break-after: always; position: relative; }
+        .page { width: 210mm; min-height: 297mm; margin: 0 auto 20px; background: #fff; page-break-after: always; position: relative; }
 
         /* Unified page header — dark band + ribbon gradient layered behind
            the logo (echoes the cover art), eyebrow + page title on the left,
@@ -256,7 +256,7 @@ public static class ReportStyles
         .grade-F { background: #C0392B; }
 
         /* Pages */
-        .page { width: 210mm; margin: 0 auto 20px; background: #fff; overflow: hidden; page-break-after: always; position: relative; }
+        .page { width: 210mm; min-height: 297mm; margin: 0 auto 20px; background: #fff; page-break-after: always; position: relative; }
 
         /* Unified page header (same as org reports — single source of
            truth for the baseline visual across all report types). */
@@ -474,8 +474,8 @@ public static class ReportStyles
             min-height: 296mm !important;
             max-height: 296mm !important;
             box-sizing: border-box !important;
-            overflow: hidden !important;
         }
+        .cover { overflow: hidden !important; }
         /* On-screen preview: the A4 pages sit centered horizontally with a
            bottom gap between successive pages. Print rules below override
            these margins to 0 so the printed output remains edge-to-edge. */
