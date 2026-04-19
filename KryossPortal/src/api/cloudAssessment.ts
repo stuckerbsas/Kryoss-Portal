@@ -36,6 +36,50 @@ export interface ExternalUserData {
   highestPermission: string | null;
 }
 
+export interface MailDomainData {
+  domain: string;
+  isDefault: boolean;
+  isVerified: boolean;
+  spfRecord: string | null;
+  spfValid: boolean | null;
+  spfMechanism: string | null;
+  spfLookupCount: number | null;
+  spfWarnings: string | null;
+  dkimS1Present: boolean | null;
+  dkimS2Present: boolean | null;
+  dkimSelectors: string | null;
+  dmarcRecord: string | null;
+  dmarcValid: boolean | null;
+  dmarcPolicy: string | null;
+  dmarcSubdomainPolicy: string | null;
+  dmarcPct: number | null;
+  dmarcRua: string | null;
+  dmarcRuf: string | null;
+  mtaStsRecord: string | null;
+  mtaStsPolicy: string | null;
+  bimiPresent: boolean | null;
+  score: number | null;
+}
+
+export interface MailboxRiskData {
+  userPrincipalName: string;
+  displayName: string | null;
+  riskType: string;
+  riskDetail: string | null;
+  forwardTarget: string | null;
+  severity: string | null;
+}
+
+export interface SharedMailboxData {
+  mailboxUpn: string;
+  displayName: string | null;
+  delegatesCount: number | null;
+  fullAccessUsers: string | null;
+  sendAsUsers: string | null;
+  hasPasswordEnabled: boolean | null;
+  lastActivity: string | null;
+}
+
 export interface CloudAssessmentScan {
   id: string;
   status: 'running' | 'completed' | 'partial' | 'failed';
@@ -103,6 +147,9 @@ export interface CloudAssessmentScanDetail extends CloudAssessmentScan {
   }>;
   sharepointSites: SharepointSiteData[];
   externalUsers: ExternalUserData[];
+  mailDomains: MailDomainData[];
+  mailboxRisks: MailboxRiskData[];
+  sharedMailboxes: SharedMailboxData[];
 }
 
 export interface CloudAssessmentHistoryEntry {

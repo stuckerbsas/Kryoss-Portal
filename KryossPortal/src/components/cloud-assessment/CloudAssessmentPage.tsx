@@ -29,6 +29,7 @@ import { ComplianceTab } from './ComplianceTab';
 import { PowerBiTab } from './PowerBiTab';
 import { CopilotReadinessTab } from './CopilotReadinessTab';
 import { ConnectProgressModal } from './ConnectProgressModal';
+import { DataTab } from './DataTab';
 
 function statusBadge(status: string) {
   const colors: Record<string, string> = {
@@ -101,7 +102,7 @@ function AreaInlineStatusSelect({
   );
 }
 
-function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | undefined }) {
+export function AreaFindingsTab({ area, scanId }: { area: string; scanId: string | undefined }) {
   const { orgId } = useOrgParam();
   const { data: detail } = useCloudAssessmentDetail(scanId);
 
@@ -286,7 +287,7 @@ export function CloudAssessmentPage() {
       <TabsContent value="overview"><OverviewTab orgId={orgId} /></TabsContent>
       <TabsContent value="identity"><AreaFindingsTab area="identity" scanId={latestScanId} /></TabsContent>
       <TabsContent value="endpoint"><AreaFindingsTab area="endpoint" scanId={latestScanId} /></TabsContent>
-      <TabsContent value="data"><AreaFindingsTab area="data" scanId={latestScanId} /></TabsContent>
+      <TabsContent value="data"><DataTab scanId={latestScanId} /></TabsContent>
       <TabsContent value="productivity"><AreaFindingsTab area="productivity" scanId={latestScanId} /></TabsContent>
       <TabsContent value="azure">
         <AzureTab
