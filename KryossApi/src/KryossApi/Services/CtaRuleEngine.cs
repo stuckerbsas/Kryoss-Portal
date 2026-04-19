@@ -1,4 +1,5 @@
 using KryossApi.Data.Entities;
+using KryossApi.Services.Reports;
 
 namespace KryossApi.Services;
 

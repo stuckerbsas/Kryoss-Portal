@@ -1,6 +1,7 @@
 using System.Text;
 using KryossApi.Data.Entities;
 using KryossApi.Services.CopilotReadiness;
+using KryossApi.Services.Reports;
 
 namespace KryossApi.Services;
 

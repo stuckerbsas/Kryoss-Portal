@@ -2,6 +2,74 @@ using KryossApi.Data.Entities;
 
 namespace KryossApi.Services.Reports;
 
+// ======================================================================
+// DTOs (moved from ReportService.cs)
+// ======================================================================
+
+public class OrgControlResult
+{
+    public int ControlDefId { get; set; }
+    public Guid RunId { get; set; }
+    public string ControlId { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public string Category { get; set; } = null!;
+    public string Severity { get; set; } = null!;
+    public string Status { get; set; } = null!;
+    public string? Finding { get; set; }
+    public string? Remediation { get; set; }
+}
+
+public class ReportBranding
+{
+    public string CompanyName { get; set; } = "TeamLogic IT";
+    public string PrimaryColor { get; set; } = "#006536";
+    public string AccentColor { get; set; } = "#A2C564";
+    public string? LogoUrl { get; set; }
+}
+
+public class FrameworkScoreDto
+{
+    public string Code { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public double Score { get; set; }
+    public short PassCount { get; set; }
+    public short FailCount { get; set; }
+}
+
+public class HygieneScanDto
+{
+    public DateTime ScannedAt { get; set; }
+    public int TotalMachines { get; set; }
+    public int TotalUsers { get; set; }
+    public int StaleMachines { get; set; }
+    public int DormantMachines { get; set; }
+    public int StaleUsers { get; set; }
+    public int DormantUsers { get; set; }
+    public int DisabledUsers { get; set; }
+    public int PwdNeverExpire { get; set; }
+    public List<AdHygieneFinding> Findings { get; set; } = [];
+}
+
+public class OrgEnrichment
+{
+    public List<MachineDisk> Disks { get; set; } = [];
+    public List<MachinePort> Ports { get; set; } = [];
+    public List<MachineThreat> Threats { get; set; } = [];
+}
+
+/// <summary>
+/// Identity of the portal user that generated the report. Shown in the
+/// Executive One-Pager footer so the C-level reader knows who to call back.
+/// </summary>
+public class ReportUserInfo
+{
+    public string? FullName { get; set; }
+    public string? Email { get; set; }
+    public string? Phone { get; set; }
+    public string? JobTitle { get; set; }
+    public string? CompanyName { get; set; }
+}
+
 public class ReportData
 {
     // --- Org context ---
@@ -43,6 +111,7 @@ public class ReportData
     public int TotalMachines => Runs.Count;
     public DateTime ScanDate => Runs.Count > 0 ? Runs.Max(r => r.CompletedAt ?? r.StartedAt) : DateTime.UtcNow;
     public bool HasCloudData => CloudScan != null;
+    public string OrgGrade => ReportHelpers.GetGrade(AvgScore);
 }
 
 public class BenchmarkData
