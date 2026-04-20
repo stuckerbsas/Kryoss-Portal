@@ -26,6 +26,7 @@ export interface Organization {
   entraTenantId: string | null;
   brand: { id: number; code: string; name: string };
   machineCount: number;
+  avgScore: number | null;
   lastAssessmentAt: string | null;
   enrollmentCodeCount: number;
   protocolAuditEnabled?: boolean;

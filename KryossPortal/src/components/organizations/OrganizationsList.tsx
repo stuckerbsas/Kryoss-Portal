@@ -27,18 +27,10 @@ import { OrganizationForm } from './OrganizationForm';
 import { DeleteOrgDialog } from './DeleteOrgDialog';
 import { useOrganizations } from '@/api/organizations';
 import { slugify } from '@/lib/slugify';
+import { scoreToGrade } from '@/lib/grading';
+import { timeAgo } from '@/lib/dates';
 import type { Organization } from '@/types';
 
-function timeAgo(date: string | null): string {
-  if (!date) return 'Never';
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 export function OrganizationsList() {
   const navigate = useNavigate();
@@ -164,7 +156,10 @@ export function OrganizationsList() {
                     {org.machineCount}
                   </TableCell>
                   <TableCell>
-                    <GradeBadge grade={null} />
+                    <GradeBadge
+                      grade={scoreToGrade(org.avgScore)}
+                      score={org.avgScore != null ? Math.round(org.avgScore * 10) / 10 : null}
+                    />
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {timeAgo(org.lastAssessmentAt)}
