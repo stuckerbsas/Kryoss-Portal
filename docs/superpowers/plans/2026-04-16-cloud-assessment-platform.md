@@ -1,4 +1,6 @@
-# Cloud Assessment Platform — Master Plan
+# Cloud Assessment Platform — Master Plan (ARCHIVED 2026-04-20)
+
+> **⚠ ARCHIVED — see `ROADMAP.md` for current source of truth.** This file kept for historical context (detailed DB schemas, decisions log, original phase specs). Execution decisions + orchestrator prompts now live in `docs/superpowers/plans/ROADMAP.md`.
 
 > **Context:** New parallel feature alongside Copilot Readiness Assessment (shipped 2026-04-16). Cloud Assessment covers full Microsoft Cloud scope (M365, Azure, Entra, Power BI, Intune, Compliance Manager, etc). Copilot Readiness stays intact as specialized slice — no rename, no refactor.
 

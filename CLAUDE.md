@@ -70,8 +70,8 @@ Projecto Kryoss\
 This is the heart of the product. Memorize it:
 
 ```
-control_defs total: 738  (721 prior + 17 seed_008 new-engine controls)
-  Active:   647  (161 SC scored + 469 BL baseline + 17 new-engine)
+control_defs total: 858  (738 prior + 80 SRV + 40 DC)
+  Active:   767  (647 baseline + 80 SRV server + 40 DC domain controller)
   Inactive:  91  (legacy BL-XXX soft-deleted, superseded by BL-0XXX)
 
 Active by engine (dispatch type):
@@ -89,10 +89,10 @@ Framework coverage (active):
   ISO27001   ~179 (~27.7%)
   PCI-DSS     ~18 (~2.8%)
 
-Platform scope (as of 2026-04-10):
+Platform scope (as of 2026-04-19):
   W10, W11 → 647 controls linked each
-  MS19, MS22, MS25 → 647 controls linked each (seed_007c)
-  DC19/22/25 → 0 (Phase 2 roadmap)
+  MS19, MS22, MS25 → 727 controls each (647 baseline + 80 SRV via seed_010)
+  DC19, DC22, DC25 → 767 controls each (647 baseline + 80 SRV + 40 DC via seed_013 + 040)
 ```
 
 **Authoritative DB check script:** `KryossApi/sql/check_catalog_health.sql`
@@ -244,6 +244,8 @@ full list. Key ones:
 | 2026-04-18 | CA-11: Benchmarks | Three benchmark dimensions: franchise peers (≥5 orgs), industry baseline (15 NAICS codes × 5 employee bands), global Kryoss (≥50 orgs). Migration `038_cloud_assessment_benchmarks.sql` adds 4 tables + `organizations.industry_code/subcode/employee_count_band` + `franchises.benchmark_opt_in`. `BenchmarkService.ComputeAndPersistAsync` hooks into `CloudAssessmentService.RunScanInternalAsync` after suggestions block (non-fatal on failure). Nightly `Benchmark_RefreshAggregates` timer (03:00 UTC) rebuilds franchise + global rollups from latest completed scan per org. 4 API endpoints in `BenchmarkFunction.cs` + portal "Benchmarks" tab (radar overlay, per-metric verdict pills, franchise leaderboard) + self-contained HTML report `/benchmarks/{scanId}/report`. Privacy: sample gates (5/50) + franchise opt-out flag; per-org values never leave franchise. **Deploy requires**: apply `sql/038_cloud_assessment_benchmarks.sql` + `sql/seed_038_industry_benchmarks.sql`. |
 | 2026-04-18 | CA-12: Unified Cloud Experience | **Track 1:** CopilotReadiness endpoints deprecated (410 Gone, sunset 2026-05-18). Copilot Lens tab inside Cloud Assessment reads D1-D6 from `cloud_assessment_scans` Copilot* fields. New `GET /v2/cloud-assessment/copilot-lens/{scanId}` endpoint. **Track 2:** `ConsentOrchestrator.cs` + `GET /v2/cloud-assessment/connection-status` returning graph/azure/powerbi state + percentage. Portal `ConnectCloudWizard.tsx` stepper (3 steps: M365 → Azure → PBI). `ConnectionBanner` on CloudAssessmentPage. **Track 3:** "M365 / Cloud" tab removed from OrgDetail nav, `/m365` route redirects to `/cloud-assessment`. Single "Run Scan" button on Overview. **Track 4:** Data migration decision = archive. Legacy `copilot_readiness_*` tables kept read-only; CA already computes D1-D6 from live pipeline data. No SQL migration needed. |
 | 2026-04-19 | Unified Report System: 7 types, compositional blocks | Replaces monolithic ReportService with 17 blocks + 7 recipes via `ReportComposer`. Types: C-Level, Technical, Preventa Opener/Detailed, Framework Compliance, Business Proposal (auto-pricing from `service_catalog` + `franchise_service_rates`), Monthly Progress. Cloud integrated conditionally. SQL: `sql/039_service_catalog.sql` + `seed_039_service_catalog.sql`. Spec: `docs/superpowers/specs/2026-04-19-unified-report-system-design.md`. Plan: `docs/superpowers/plans/2026-04-19-unified-report-system.md`. |
+| 2026-04-19 | Phase 2+3: DC vs Member Server detection | Agent detects `ProductType` via WMI `Win32_OperatingSystem` (1=workstation, 2=DC, 3=server), sends in enrollment + hardware payload. `PlatformResolver` resolves DC19/DC22/DC25 when ProductType=2. Migration `040_dc_platform_support.sql` adds `product_type` column + links 647 baseline controls to DC platforms. `seed_013_dc_controls.sql` adds 40 DC-only controls (DC-001..DC-040). **Deploy requires**: apply `sql/040_dc_platform_support.sql` + `sql/seed_013_dc_controls.sql`. |
+| 2026-04-19 | Phase 5a: Network Diagnostics (no 3rd-party APIs) | Agent `NetworkDiagnostics.cs` runs speed test (HttpClient GET/POST against `/v1/speedtest`), internal latency (parallel ping sweep), route table (WMI `Win32_IP4RouteTable`), VPN detection (adapter type + keyword), bandwidth snapshot (IPv4Statistics delta), adapter inventory. Migration `041_network_diagnostics.sql` adds 3 tables (`machine_network_diag`, `machine_network_latency`, `machine_network_routes`). `EvaluationService` persists network diag data per run. `SpeedTestFunction` (GET/POST `/v1/speedtest`) serves random bytes for download + accepts upload. `NetworkDiagnosticsFunction` (GET `/v2/network-diagnostics`) portal endpoint. 50 network controls (NET-001..NET-050) in `seed_042_network_controls.sql`. `NetworkBlock` + `NetworkRecipe` add "network" report type (8th recipe). **Deploy requires**: apply `sql/041_network_diagnostics.sql` + `sql/seed_042_network_controls.sql`. |
 
 ---
 
@@ -316,6 +318,7 @@ full list. Key ones:
 
 | Document | When to read it |
 |---|---|
+| **`docs/superpowers/plans/ROADMAP.md`** | **ORCHESTRATOR SOURCE OF TRUTH — read at start of every new session. Contains active queue, shipped phases, backlog, prompt library, priority tiers.** |
 | `KryossApi/docs/security-baseline.md` | **Before any change to auth, crypto, key management, or the ingest flow. Non-negotiable.** |
 | `KryossApi/docs/agent-payload-schema.md` | Before modifying the agent's output or the `/v1/results` handler |
 | `KryossApi/docs/phase-roadmap.md` | Before adding any scope (server, DC, cloud, network) |
