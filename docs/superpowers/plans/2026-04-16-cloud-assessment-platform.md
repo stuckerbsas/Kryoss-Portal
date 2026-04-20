@@ -444,6 +444,306 @@ Some pipelines share logic (Entra, Defender, Purview, M365). Approach:
 - **Phase CA-11: Benchmarks** — ✅ COMPLETE (2026-04-18). Franchise peer (≥5 orgs), industry baseline (15 NAICS codes × 5 employee bands), and global Kryoss (≥50 orgs) dimensions. Migration `038_cloud_assessment_benchmarks.sql` + `seed_038_industry_benchmarks.sql`. `BenchmarkService` computes per-scan comparison rows (percentiles, verdicts) after each scan; nightly `Benchmark_RefreshAggregates` timer rebuilds franchise/global rollups. 4 API endpoints in `BenchmarkFunction.cs` (`GET /benchmarks/{scanId}`, `GET /benchmarks/industries`, `PATCH /organizations/{id}/industry`, `GET /benchmarks/franchise-summary`). Portal tab "Benchmarks" (`BenchmarksTab.tsx` + `BenchmarkMetricRow.tsx` + `IndustryPicker.tsx` + inline franchise leaderboard) with radar overlay, availability cards, per-metric verdict pills. Self-contained HTML report via `GET /benchmarks/{scanId}/report` (`BenchmarkReportBuilder.cs`). Privacy: sample gates respected (FranchiseMinSample=5, GlobalMinSample=50), franchise `benchmark_opt_in` excludes data from global pool, per-org numbers never leave franchise.
 - **Phase CA-12: Unified Cloud Experience** — ✅ COMPLETE (2026-04-18). 4 tracks: (1) CopilotReadiness endpoints deprecated (410 Gone, sunset 2026-05-18), Copilot Lens tab reads D1-D6 from CA scan entity, new `GET /v2/cloud-assessment/copilot-lens/{scanId}`. (2) `ConsentOrchestrator.cs` + `GET /v2/cloud-assessment/connection-status` (graph/azure/pbi state + percentage), portal `ConnectCloudWizard.tsx` stepper modal (3 steps: M365 → Azure → PBI with skip buttons), `ConnectionBanner` on CloudAssessmentPage. (3) "M365 / Cloud" tab removed from OrgDetail nav, `/m365` route 301-redirects to `/cloud-assessment`, single "Run Scan" button. (4) Data migration = archive approach — legacy `copilot_readiness_*` tables kept read-only, CA computes D1-D6 from live pipeline data, no SQL migration needed.
 
+---
+
+## Cloud Assessment — Remaining Gaps (post-CA-12)
+
+### CA-13: Intune Deep (verify + fill gaps)
+**Priority:** MEDIUM — likely partial from CA-2
+**Effort:** 0-1 session (verify first, may already be done)
+
+Audit CA-2 (Endpoint pipeline) output vs original Phase 7 (Intune Deep) spec. Check coverage of:
+- Device compliance policies (`/deviceManagement/deviceCompliancePolicies`)
+- Config profiles (`/deviceManagement/deviceConfigurations`)
+- App protection policies iOS + Android (`/deviceAppManagement/iosManagedAppProtections`, `/androidManagedAppProtections`)
+- Managed apps inventory (`/deviceAppManagement/mobileApps`)
+- Enrollment restrictions (`/deviceManagement/deviceEnrollmentConfigurations`)
+- Autopilot deployment profiles (`/deviceManagement/windowsAutopilotDeploymentProfiles`)
+
+If all present: mark CA-13 closed, no work.
+If gaps: add missing collectors + recommendations to EndpointPipeline (no new area, just enrich).
+
+### CA-14: Auto-Consent (Fabric Admin API + Delegated ARM)
+**Priority:** HIGH — huge UX win, cuts onboarding from 3 steps to 1 click
+**Effort:** 2 sessions
+
+Two tracks:
+
+**Track A — Auto-enable Power BI:**
+- Delegated OAuth flow with Fabric Admin scope (`https://api.fabric.microsoft.com/.default`)
+- Customer Fabric/PowerBI Admin signs in delegated
+- Backend `FabricAdminService` calls `POST /v1/admin/tenantsettings/ServicePrincipalAccess` to enable setting
+- Add Kryoss SPN to allowed list via `PATCH /v1/admin/security/spn-allowlist` (or tenant setting body)
+- Verify with app-only token afterward
+- Store delegated refresh token encrypted (optional, for re-verify)
+- Preview diff before apply, explicit user confirm
+
+**Track B — Auto-assign Azure RBAC:**
+- Delegated OAuth flow with ARM admin scope (user must be Owner/User Access Administrator on subscription)
+- Backend calls `PUT /subscriptions/{id}/providers/Microsoft.Authorization/roleAssignments/{guid}?api-version=2022-04-01` with Reader role + Kryoss SPN objectId
+- Shows list of subs user has access to, lets user pick which to grant
+- Verify via existing ARM call
+
+Result: ConnectCloudWizard Step 2 (Azure) + Step 3 (PBI) change from instructions + verify to single "Enable automatically (sign in as admin)" button.
+
+Fallback: existing manual instructions stay as "Configure manually" link.
+
+### CA-15: Drift Alerts + Notifications
+**Priority:** HIGH — MSP retention tool, surfaces problems between scans
+**Effort:** 1 session
+
+Triggers:
+- Overall score drops ≥0.5 vs previous scan
+- New Critical finding detected
+- New High priority finding in regulated framework (HIPAA/PCI)
+- Copilot license utilization drops (potential license loss)
+- Compliance framework score drops below threshold
+
+Delivery:
+- Email to franchise admin (SendGrid/Azure Comms Services)
+- Optional: webhook POST to configurable URL (for PSA integration)
+- Digest mode: weekly roll-up of all orgs under franchise
+
+New table `cloud_assessment_alert_rules` — MSP configures thresholds per franchise.
+New service `AlertService` — runs after each scan, compares vs previous, fires alerts.
+Portal: Alerts config page under franchise settings.
+
+### CA-16: PSA / Ticketing Integration
+**Priority:** MEDIUM — MSP workflow tool
+**Effort:** 2 sessions (per PSA)
+
+Connectors:
+- ConnectWise Manage (REST API, OAuth2)
+- Autotask PSA (REST API, API keys)
+- HaloPSA (REST API, JWT)
+- Generic webhook (escape hatch)
+
+On trigger (finding status → "in_progress" or alert fires):
+- Create ticket in PSA with finding details
+- Include remediation steps from finding
+- Link back to Kryoss finding URL
+- On ticket close in PSA: optional sync → status=resolved in Kryoss (requires webhook or polling)
+
+Config per franchise: which PSA, credentials, default board/queue, priority mapping.
+
+### CA-17: Automated Remediation Library
+**Priority:** MEDIUM-LOW — safety critical, per-fix careful review
+**Effort:** 1 session per fix handler (modular)
+
+CA-7 scaffolded fix button. Per-finding fix handlers:
+- Enable MFA for user (Graph PATCH `/users/{id}/authentication/methods`)
+- Apply sensitivity label to file (Graph PATCH `/drives/{id}/items/{itemId}`)
+- Disable legacy auth (CA policy create or modify)
+- Block external forwarding (Exchange transport rule create — requires EXO PowerShell or Graph equivalent)
+- Revoke risky OAuth grant (Graph DELETE `/oauth2PermissionGrants/{id}`)
+- Enable DKIM for domain (Graph action)
+- Enable customer lockbox
+- Add SPF record (customer DNS — can't do, generate instructions)
+
+Each handler:
+1. Preview endpoint — shows exact API call + risks
+2. Apply endpoint — executes, logs actlog, returns diff
+3. Rollback instructions embedded in success response
+4. Audit trail with user who approved
+
+Ship one handler per session, reviewed carefully for safety.
+
+### CA-18: Benchmark Periodic Refresh
+**Priority:** LOW — needs production data first
+**Effort:** 1 session
+
+Current benchmark seed = static estimates. After 100+ tenants scanned:
+- Quarterly job computes actual percentiles from real aggregate data
+- Update `cloud_assessment_industry_benchmarks` seed with refreshed numbers
+- Publish new percentiles to customers (email notification)
+- Track seed version history
+
+### CA-19: Graph Connectors + Copilot Knowledge Sources
+**Priority:** LOW — Copilot-specific depth
+**Effort:** 1 session
+
+Expand CA-4 Productivity or add dedicated sub-area:
+- Full Graph Connectors inventory (`/external/connections` + status)
+- Connected website content
+- Custom connectors deployed
+- External files indexed
+- Copilot ground truth sources mapping
+- Findings: stale connectors, failing index jobs, excluded-from-index sensitive content
+
+### CA-20: Real-time Audit Log Deep Dive
+**Priority:** LOW — data density issue for small tenants
+**Effort:** 1 session
+
+M365 unified audit log (`/auditLogs/directoryAudits`, `/auditLogs/signIns`):
+- Sign-in risk timeline (last 30d)
+- Admin action audit
+- Exported file/share events
+- Impossible travel detections
+- Mass download events
+- Privileged role elevations
+
+Requires `AuditLog.Read.All` (already consented). New view in Cloud Assessment.
+
+---
+
+## Non-Cloud Roadmap (Kryoss core platform)
+
+### Agent & Endpoint (KryossAgent)
+
+**Agent v1.6+ features:**
+- [ ] CVE scanner integration (Defender vuln data already, but standalone CVE lookup)
+- [ ] Patch compliance tracking (WSUS / WUfB / NinjaOne status per machine)
+- [ ] Backup verification (Veeam / Acronis / NinjaOne backup status signal)
+- [ ] BitLocker escrow verification (key backed up to AAD/AD)
+- [ ] Firewall rules inventory (not just posture — full rule list)
+- [ ] Scheduled tasks inventory (persistence detection)
+- [ ] Browser extensions inventory (shadow IT detection)
+- [ ] Chrome/Edge/Firefox saved passwords risk (password hygiene)
+
+**Domain Controller scope (Phase 2 deferred per CLAUDE.md):**
+- [ ] DC19/22/25 platform codes + control mapping (~100 DC-specific controls)
+- [ ] AD schema/replication health checks
+- [ ] FSMO role distribution audit
+- [ ] GPO inventory + inheritance analysis
+- [ ] DNS zone audit (stale records, secure dynamic updates)
+- [ ] DFS namespace health
+- [ ] Domain functional level recommendations
+
+**Attestation module (Phase 6 deferred per CLAUDE.md):**
+- [ ] Administrative/physical safeguards not measurable by agent
+- [ ] Policy documentation upload + version control
+- [ ] Evidence artifacts (screenshots, signed attestations)
+- [ ] Per-control attestation workflow (text/file evidence)
+- [ ] SOC 2 Type II evidence collection
+- [ ] Change log / audit trail for attestations
+
+### RMM / PSA Integrations
+
+**NinjaRMM:**
+- [ ] Deploy agent via Ninja automation (deploy script exists, not end-to-end tested)
+- [ ] Pull Ninja device inventory → auto-enroll missing machines
+- [ ] Sync Ninja custom fields (backup status, patch level) into Kryoss
+- [ ] Ticket auto-create from Kryoss findings
+
+**Intune:**
+- [ ] Deploy agent via Intune Win32 app (script exists in Scripts/Deploy/)
+- [ ] Pull Intune compliance data already (CA-2) — verify no gaps
+- [ ] Bi-directional: apply Intune compliance policy from Kryoss finding fix
+
+**ConnectWise Manage:**
+- [ ] Ticket auto-create (feeds CA-16)
+- [ ] Asset sync (Ninja already does this better, maybe skip)
+- [ ] Contract/billing integration
+
+### Reports & Deliverables
+
+**Monthly Progress Report (deferred per reports-4-type spec):**
+- [ ] Trend charts over 6 months
+- [ ] Score delta per framework
+- [ ] Findings resolved / introduced
+- [ ] Executive narrative (auto-generated)
+- [ ] Requires NinjaOne data integration for ticket/activity context
+
+**Additional report types:**
+- [ ] SOC 2 Type II evidence report (pull from attestations + scans)
+- [ ] Incident response preparedness report
+- [ ] Vendor risk report (per-vendor SaaS inventory + risk)
+- [ ] Insurance renewal report (cyber insurance questionnaire answers)
+- [ ] Board-level report (C-level exec summary, higher abstraction than current C-Level)
+
+### Assessment & Controls
+
+**Control catalog expansion:**
+- [ ] Custom control builder (MSP defines own controls)
+- [ ] Control exceptions workflow (approved exceptions with expiry)
+- [ ] Mapping to customer's own policies (upload policy → auto-map to controls)
+- [ ] CIS benchmark full implementation (currently partial via NIST overlap)
+
+**Framework additions:**
+- [ ] ISO 27001:2022 full (90+ Annex A controls, currently partial)
+- [ ] NIST 800-171 (CMMC predecessor)
+- [ ] PCI DSS 4.0 full (250+ sub-requirements)
+- [ ] Essential 8 (ACSC, Australia-relevant)
+- [ ] CIS Critical Security Controls v8 (18 controls)
+
+### Security Additional
+
+**External attack surface (pentest expansion):**
+- [ ] Already have external scans table + pipeline — verify coverage
+- [ ] Port scan public IPs (feeds CA-6 Azure public IP findings)
+- [ ] TLS cert expiration monitoring (per domain)
+- [ ] Leaked credentials check (HaveIBeenPwned API integration)
+- [ ] Shadow IT discovery (via Defender for Cloud Apps — CA-2 partial)
+- [ ] DNS record audit (subdomain takeover risk)
+
+**Dark web / threat intel:**
+- [ ] Breach notification monitoring (customer domain in breach dumps)
+- [ ] Employee email exposure in paste sites
+- [ ] Typosquat domain detection
+- [ ] Brand impersonation monitoring
+
+**Phishing & training:**
+- [ ] Phishing simulation launch + tracking (needs email sending infra)
+- [ ] Security awareness training completion status (LMS integration)
+- [ ] Reported phishing analytics (what users flag)
+
+### CMDB & Inventory
+
+**Asset discovery:**
+- [ ] SNMP already partial — expand to full network topology map
+- [ ] Printer audit (firmware, public print, credential default)
+- [ ] Network device inventory (switches, APs, firewalls, NAS)
+- [ ] IoT device detection (Defender for IoT partial, CA-6 covers Azure IoT)
+- [ ] Network topology visual (D3.js or similar)
+
+**Software inventory (beyond M365):**
+- [ ] Adobe Creative Cloud license utilization
+- [ ] QuickBooks / accounting SaaS audit
+- [ ] Zoom/Slack/Teams account audit
+- [ ] Third-party SaaS discovery (Defender for Cloud Apps expansion)
+- [ ] License optimizer across SaaS portfolio
+
+### Platform / Admin
+
+**Multi-franchise features:**
+- [ ] Franchise hierarchy (parent franchise + child reseller)
+- [ ] Cross-franchise benchmarks (global Kryoss already does this)
+- [ ] White-label customization per franchise (Brand 2025 partial)
+- [ ] Franchise-level RBAC (sub-admins with limited scope)
+
+**Billing / monetization:**
+- [ ] Service catalog (ServiceCatalogItem table exists — surface in UI)
+- [ ] Franchise service rates (FranchiseServiceRate exists — billing engine)
+- [ ] Usage-based billing (scans per month × rate)
+- [ ] Stripe integration
+- [ ] Invoice generation
+- [ ] Revenue dashboard for franchise admin
+
+**API / external:**
+- [ ] Public API with API key auth (for customer scripting)
+- [ ] Webhooks (CA-15 partial — expand to all events)
+- [ ] OData query endpoint (for Power BI / Excel pivot)
+- [ ] GraphQL endpoint (nice-to-have)
+
+### Mobile / UX
+
+- [ ] Mobile web view optimization (portal responsive for tablet, not phone)
+- [ ] Native iOS/Android app (view scores, receive alerts, approve fixes)
+- [ ] Slack/Teams bot (query score via chat, receive alerts)
+- [ ] Browser extension (score badge per customer)
+
+---
+
+## Priority Matrix (2026-04-20)
+
+| Tier | Features |
+|------|----------|
+| **P0** (next 1-3 sessions) | CA-13 (Intune verify), CA-14 (auto-consent), CA-15 (drift alerts), PSA integration (CA-16 Track A ConnectWise only) |
+| **P1** (month 1) | CA-17 per-fix handlers (start with enable MFA), DC scope (Phase 2), NinjaRMM bi-directional, Attestation module (basic version) |
+| **P2** (month 2-3) | Monthly Progress report, Shadow IT expansion, Custom control builder, Framework expansions (ISO 2022, PCI 4.0), External attack surface deep |
+| **P3** (month 3+) | Phishing sim, dark web, mobile app, multi-franchise hierarchy, billing engine, GraphQL |
+| **Icebox** | Brand impersonation, typosquat, network topology visual, board-level report |
+
 ### Sales demo path
 
 To show prospect: run Cloud Assessment once → show Overview page with all area scores + wasted licenses $ savings + top findings. Compelling single-screen MSP pitch.
