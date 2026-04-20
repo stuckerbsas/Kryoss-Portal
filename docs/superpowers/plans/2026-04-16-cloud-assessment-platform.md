@@ -734,15 +734,206 @@ Requires `AuditLog.Read.All` (already consented). New view in Cloud Assessment.
 
 ---
 
-## Priority Matrix (2026-04-20)
+## Infrastructure Assessment (IA) — New Product Line
+
+Separate from Cloud Assessment. Customer use case: MSP delivers infrastructure relevamiento for clients with:
+- Hybrid on-premise + cloud
+- Multi-site (incl. remote/industrial: yacimientos, factories, warehouses)
+- Capacity planning + optimization
+- Cloud migration readiness analysis
+
+Client deliverable expectations:
+- Arquitectura actual mapped (on-prem + cloud)
+- Capacity, performance, availability metrics
+- Site-to-site connectivity health (WAN, VPN, SD-WAN, ExpressRoute)
+- Optimization opportunities with $ estimates
+
+### IA-0: Scaffold
+**Effort:** 1 session
+
+New DB schema (`infra_assessment_*`):
+- `infra_assessment_scans` (org_id, scope, status, overall_health, scan_date)
+- `infra_assessment_sites` (scan_id, site_name, location, type: hq|branch|remote|industrial|datacenter|cloud, device_count, user_count, connectivity_type)
+- `infra_assessment_devices` (scan_id, site_id, hostname, device_type: server|switch|router|firewall|ap|printer|ups|hvac|plc|iot, vendor, model, role)
+- `infra_assessment_connectivity` (scan_id, site_a, site_b, link_type: mpls|sdwan|ipsec|expressroute|leased|internet|cellular|satellite, bandwidth_mbps, latency_ms, uptime_pct)
+- `infra_assessment_capacity` (scan_id, device_id, metric_key, current_value, peak_value, threshold, trend_direction)
+- `infra_assessment_findings` (same shape as CA findings)
+
+New service `Services/InfraAssessment/`.
+New portal tab "Infrastructure Assessment".
+New report type `infra-assessment`.
+
+### IA-1: Server & Hypervisor Inventory
+**Effort:** 2 sessions
+
+Expand agent (KryossAgent) to collect hypervisor detection + VM inventory:
+- VMware vCenter API integration (separate service principal / credentials)
+- Hyper-V host enumeration (via agent on host)
+- Proxmox detection (via API if present)
+- Per-VM: CPU cores, RAM allocated, disk size, OS, power state, snapshot count, last backup
+- Host resource utilization (CPU/RAM/storage allocation vs available)
+- VM consolidation opportunities (idle VMs, over-provisioned resources)
+
+New agent module: `KryossAgent.Hypervisor` — runs only if agent installed on hypervisor host.
+
+### IA-2: Network Topology Discovery
+**Effort:** 2 sessions
+
+Expand SNMP collector (already partial):
+- Full L2/L3 topology map via CDP/LLDP neighbor discovery
+- Per-switch: interface utilization, error rates, VLAN config, STP topology
+- Wireless: AP inventory, channel utilization, client associations, signal strength
+- Firewall rules (where accessible via SNMP/NetConf/SSH API)
+- Router config snapshot (read-only)
+
+Visual: D3.js topology map in portal, drill-down per device.
+
+Protocols supported:
+- Cisco IOS/NX-OS (SSH + show commands via netmiko or python library ported to C#)
+- Fortinet FortiOS (REST API)
+- Palo Alto PAN-OS (REST API)
+- pfSense/OPNsense (REST API)
+- MikroTik RouterOS (REST API)
+- SNMP v2c/v3 generic fallback
+
+### IA-3: WAN & Site Connectivity Health
+**Effort:** 2 sessions
+
+Per-site connectivity assessment:
+- Active probes from agent installed at each site
+- Ping/traceroute to HQ + cloud endpoints
+- Bandwidth utilization (polling switch interfaces via SNMP)
+- Latency/jitter/packet loss over time
+- DNS resolution time
+- MTU/MSS discovery
+- Path MTU to Microsoft endpoints (M365/Azure)
+
+Per-link:
+- Type classification (MPLS/SD-WAN/IPsec/ExpressRoute/Internet/Cellular/Satellite)
+- Uptime SLA measured
+- Cost per link (MSP inputs monthly)
+- Utilization vs provisioned bandwidth
+- Redundancy check (primary + backup link health)
+
+Findings:
+- Underutilized expensive links (MPLS 90% idle)
+- Congested cheap links (Internet saturated during peak)
+- Asymmetric routing
+- Single-path risk (no redundancy)
+- Satellite/cellular at remote sites (yacimientos) — latency/cost flags
+
+### IA-4: Cloud Connectivity Audit
+**Effort:** 1 session
+
+Integrates with CA-6 Azure data + new collectors:
+- ExpressRoute circuits (per-subscription, already partial via ARM)
+- Virtual WAN hubs
+- VPN Gateway sites (Site-to-Site + Point-to-Site)
+- Network Watcher connection monitoring results
+- NVA (Network Virtual Appliance) inventory
+
+Per-connection:
+- Throughput (Azure metrics)
+- Circuit utilization
+- BGP peering status
+- Reachability to critical Azure services (SQL, Storage, Copilot endpoints)
+
+AWS / GCP support (future IA phase).
+
+### IA-5: Capacity Planning & Trends
+**Effort:** 1 session
+
+Time-series data from agent + SNMP:
+- CPU/RAM/disk trends 90d per device
+- Growth rate projection (linear regression)
+- Hit date prediction (when disk full, when RAM saturated)
+- Server consolidation score (idle VMs, over-provisioned)
+- License utilization (M365 already in CA, expand to SQL Server, Windows Server, VMware, Citrix)
+
+Report section: "Capacity Roadmap" with 6/12/18-month projections.
+
+### IA-6: Collaboration & Unified Comms Audit
+**Effort:** 1 session
+
+Microinformática / colaboración scope:
+- Teams Rooms inventory (devices, firmware, last meeting date) — Graph API partial
+- Phone system config (Teams Calling, PSTN, auto-attendants)
+- Meeting quality metrics (Call Quality Dashboard if accessible)
+- Video conferencing endpoints (Poly, Cisco, Zoom Rooms)
+- Collaboration app sprawl (Teams + Slack + Zoom duplication detection)
+
+### IA-7: OT / Industrial Network Detection
+**Effort:** 1-2 sessions
+
+For yacimientos, factories, warehouses:
+- Passive OT device discovery (ignoring IPs that respond to M365 probes = IT only)
+- SCADA/PLC protocol detection (Modbus TCP 502, DNP3 20000, Ethernet/IP 44818, Siemens S7)
+- Integration with Defender for IoT (CA-6 can enrich)
+- Air-gapped network detection (hosts reachable only from specific jump boxes)
+- Firmware version inventory (limited — most OT vendors don't expose via standard protocols)
+
+Findings:
+- OT on flat network (no segmentation from IT) = High risk
+- Legacy protocols on internet-exposed interfaces = Critical
+- Default credentials detected = Critical (via OT-safe probe)
+
+### IA-8: Cloud Migration Readiness
+**Effort:** 2 sessions
+
+Per on-prem workload:
+- Workload classification (web app, database, file share, print, domain controller, etc.)
+- Cloud compatibility score (0-100)
+- Target recommendation (lift-and-shift VM, PaaS replacement, SaaS replacement, refactor, retire)
+- Azure/AWS/GCP cost estimate (per target, 3-year TCO)
+- Dependency mapping (which workloads must move together)
+- Migration complexity (low/med/high based on: dependencies, age, licensing, data volume)
+
+Output: "Migration Wave" plan — recommended sequencing to move workloads in groups.
+
+### IA-9: Availability & SLA Tracking
+**Effort:** 1 session
+
+Per-service uptime measurement:
+- Active probes from agent (HTTP/TCP/ICMP checks)
+- Historical uptime %
+- MTTR / MTBF calculations
+- Service dependency tree (if X down, what breaks)
+- SLA compliance vs contractual targets
+
+### IA-10: Infrastructure Assessment Report
+**Effort:** 1 session
+
+Dedicated report type `infra-assessment`. Sections:
+1. Executive summary (health score, top risks, top opportunities $)
+2. Arquitectura actual (on-prem + cloud + sites map)
+3. Capacity analysis (current utilization, trends, 12-month projections)
+4. Performance analysis (latency, throughput, error rates)
+5. Availability analysis (uptime per service, SLA compliance)
+6. Connectivity health (per-link analysis, redundancy gaps)
+7. OT/Industrial networks (if applicable)
+8. Cloud migration roadmap (wave plan, cost model)
+9. Optimization recommendations ($ saved / performance gained)
+10. Methodology
+
+Deliverable matches customer agenda items:
+- Contexto y objetivos → Cover + Exec summary
+- Relevamiento arquitectura actual → Sections 2-6
+- Oportunidades de mejora → Section 9
+- Próximos pasos → Embedded in each section + final roadmap section
+
+---
+
+## Priority Matrix (2026-04-20) — Updated
 
 | Tier | Features |
 |------|----------|
-| **P0** (next 1-3 sessions) | CA-13 (Intune verify), CA-14 (auto-consent), CA-15 (drift alerts), PSA integration (CA-16 Track A ConnectWise only) |
-| **P1** (month 1) | CA-17 per-fix handlers (start with enable MFA), DC scope (Phase 2), NinjaRMM bi-directional, Attestation module (basic version) |
-| **P2** (month 2-3) | Monthly Progress report, Shadow IT expansion, Custom control builder, Framework expansions (ISO 2022, PCI 4.0), External attack surface deep |
-| **P3** (month 3+) | Phishing sim, dark web, mobile app, multi-franchise hierarchy, billing engine, GraphQL |
-| **Icebox** | Brand impersonation, typosquat, network topology visual, board-level report |
+| **P0** (next 1-3 sessions) | CA-13 (Intune verify), CA-14 (auto-consent), CA-15 (drift alerts), IA-0 (Infra scaffold) — unlock client meeting |
+| **P1** (month 1) | IA-1 + IA-2 + IA-3 (server inv + topology + WAN health — core of client deliverable), CA-16 (ConnectWise PSA), DC scope (Phase 2) |
+| **P2** (month 2-3) | IA-4 + IA-5 + IA-10 (cloud connectivity + capacity + report), CA-17 per-fix handlers, Monthly Progress report, Attestation basic |
+| **P3** (month 3+) | IA-6 + IA-7 + IA-8 + IA-9 (collab + OT + migration + SLA), Phishing, dark web, multi-franchise |
+| **Icebox** | Brand impersonation, mobile app, GraphQL, AWS/GCP migration, Slack/Teams bot |
+
+**Rationale:** Customer meeting (60 min agenda) drives infrastructure assessment demand. IA-0 through IA-3 cover bulk of agenda ("arquitectura actual" + "relevamiento" + "conectividad entre sitios"). IA-10 report ships deliverable format matching their agenda sections.
 
 ### Sales demo path
 
