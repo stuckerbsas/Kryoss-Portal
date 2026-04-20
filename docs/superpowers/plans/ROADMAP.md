@@ -270,6 +270,10 @@ Dedicated report type. 10 sections matching customer agenda.
 | A-06 | Scheduled tasks inventory (persistence detection) | P2 | 0.5 session |
 | A-07 | Browser extensions inventory | P3 | 1 session |
 | A-08 | Browser saved passwords risk signal | P3 | 0.5 session |
+| A-09 | Agent version detection + drift dashboard | P1 | 1 session |
+| A-10 | Sentinel decouple binary → registry (prereq for auto-update) | P2 | 1 session |
+| A-11 | Self-update helper binary (updater.exe + hash verify + rollback) | P2 | 2-3 sessions |
+| A-12 | Staged rollout + update channels (stable/beta, 5→25→100%, auto-rollback) | P3 | 2 sessions |
 
 ### Domain Controller Scope (Phase 2 per CLAUDE.md)
 
@@ -385,8 +389,8 @@ Dedicated report type. 10 sections matching customer agenda.
 | Tier | Meaning | Items count |
 |------|---------|-------------|
 | **P0** | Immediate — next 5 sessions | IA-0, CA-13, CA-14, IA-1, IA-2 |
-| **P1** | Month 1 | IA-3, CA-15, CA-16 A, CA-17 MFA, DC-01..03, AT-01..03, A-01..02, R-01..02, R-04 |
-| **P2** | Month 2-3 | IA-4/5/10, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, DC-04..07, CM-02, PL-02/04, UX-01 |
+| **P1** | Month 1 | IA-3, CA-15, CA-16 A, CA-17 MFA, DC-01..03, AT-01..03, A-01..02, A-09, R-01..02, R-04 |
+| **P2** | Month 2-3 | IA-4/5/10, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01 |
 | **P3** | Month 3+ | IA-6..9, CA-19/20, A-07/08, AC-07, SE-05/08/09, CM-01/03..05, PL-01/03/05..10, RP-02..04, AT-04/05 |
 | **Icebox** | Needs demand signal | SE-06/07, RP-05, PL-11/12, UX-02..04 |
 
@@ -403,6 +407,7 @@ Dedicated report type. 10 sections matching customer agenda.
 | 2026-04-20 | Auto-remediation manual-only (CA-7) — no automatic status changes | User control always |
 | 2026-04-20 | IA (Infrastructure Assessment) new product line parallel to CA | Enterprise client demand (yacimientos use case) |
 | 2026-04-20 | ROADMAP.md = orchestrator source of truth, plan file archived | Single entry point for sessions |
+| 2026-04-20 | Agent auto-update phased: A-09 detect-only first (RMM pushes actual update), A-10+A-11 later for self-update | Aligns with current RMM-based deploy. EV code signing cert (~$500/yr) deferred until A-11. |
 
 ---
 
