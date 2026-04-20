@@ -17,6 +17,7 @@ import { ProtocolUsageTab } from './components/org-detail/ProtocolUsageTab';
 import { NetworkDiagnosticsTab } from './components/org-detail/NetworkDiagnosticsTab';
 import { SnmpTab } from './components/org-detail/SnmpTab';
 import { InfraAssessmentTab } from './components/org-detail/InfraAssessmentTab';
+import { NetworkSitesTab } from './components/org-detail/NetworkSitesTab';
 import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
 import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
               { path: 'cloud-assessment', element: <CloudAssessmentTab /> },
               { path: 'network-diagnostics', element: <NetworkDiagnosticsTab /> },
               { path: 'snmp', element: <SnmpTab /> },
+              { path: 'network-sites', element: <NetworkSitesTab /> },
               { path: 'infra-assessment', element: <InfraAssessmentTab /> },
               { path: 'protocol-usage', element: <ProtocolUsageTab /> },
               {

@@ -93,6 +93,19 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
             <span className="text-muted-foreground text-xs">—</span>
           )}
         </TableCell>
+        <TableCell>
+          <span className="font-mono tabular-nums" style={{ color: diag.dnsResolutionMs != null ? latencyColor(diag.dnsResolutionMs) : undefined }}>
+            {diag.dnsResolutionMs != null ? fmt(diag.dnsResolutionMs, 0) : '--'}
+          </span>
+        </TableCell>
+        <TableCell>
+          <span className="font-mono tabular-nums" style={{ color: diag.cloudEndpointAvgMs != null ? latencyColor(diag.cloudEndpointAvgMs) : undefined }}>
+            {diag.cloudEndpointAvgMs != null ? fmt(diag.cloudEndpointAvgMs, 0) : '--'}
+          </span>
+          {diag.cloudEndpointCount != null && (
+            <span className="text-muted-foreground text-xs"> ({diag.cloudEndpointCount})</span>
+          )}
+        </TableCell>
         <TableCell className="text-center font-mono tabular-nums">{diag.adapterCount}</TableCell>
         <TableCell className="text-center font-mono tabular-nums">{diag.routeCount}</TableCell>
         <TableCell className="text-muted-foreground text-xs">
@@ -102,7 +115,7 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
 
       {expanded && hasLatency && (
         <TableRow>
-          <TableCell colSpan={8} className="bg-muted/30 p-4">
+          <TableCell colSpan={10} className="bg-muted/30 p-4">
             <div className="space-y-4">
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 <Network className="h-4 w-4" /> Internal Latency ({diag.latencyPeers.length} peers)
@@ -228,6 +241,10 @@ export function NetworkDiagnosticsTab() {
   const avgUp = data.reduce((s, d) => s + d.uploadMbps, 0) / data.length;
   const avgLatency = data.reduce((s, d) => s + d.internetLatencyMs, 0) / data.length;
   const vpnCount = data.filter((d) => d.vpnDetected).length;
+  const dnsValues = data.filter((d) => d.dnsResolutionMs != null).map((d) => d.dnsResolutionMs!);
+  const avgDns = dnsValues.length > 0 ? dnsValues.reduce((s, v) => s + v, 0) / dnsValues.length : null;
+  const cloudValues = data.filter((d) => d.cloudEndpointAvgMs != null).map((d) => d.cloudEndpointAvgMs!);
+  const avgCloud = cloudValues.length > 0 ? cloudValues.reduce((s, v) => s + v, 0) / cloudValues.length : null;
 
   return (
     <div className="space-y-6">
@@ -239,7 +256,7 @@ export function NetworkDiagnosticsTab() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Avg Download</CardTitle>
@@ -284,6 +301,28 @@ export function NetworkDiagnosticsTab() {
             </p>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg DNS</CardTitle>
+            <Globe className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold" style={{ color: avgDns != null ? latencyColor(avgDns) : undefined }}>
+              {avgDns != null ? fmt(avgDns, 0) : '--'} <span className="text-sm font-normal text-muted-foreground">ms</span>
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Cloud Latency</CardTitle>
+            <Wifi className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold" style={{ color: avgCloud != null ? latencyColor(avgCloud) : undefined }}>
+              {avgCloud != null ? fmt(avgCloud, 0) : '--'} <span className="text-sm font-normal text-muted-foreground">ms</span>
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Per-machine table */}
@@ -303,6 +342,8 @@ export function NetworkDiagnosticsTab() {
                   <TableHead>Down (Mbps)</TableHead>
                   <TableHead>Up (Mbps)</TableHead>
                   <TableHead>Latency</TableHead>
+                  <TableHead>DNS</TableHead>
+                  <TableHead>Cloud</TableHead>
                   <TableHead className="text-center">VPN</TableHead>
                   <TableHead className="text-center">Adapters</TableHead>
                   <TableHead className="text-center">Routes</TableHead>

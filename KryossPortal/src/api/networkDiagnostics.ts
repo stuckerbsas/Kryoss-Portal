@@ -36,6 +36,10 @@ export interface NetworkDiag {
   adapterCount: number;
   bandwidthSendMbps: number;
   bandwidthRecvMbps: number;
+  dnsResolutionMs: number | null;
+  cloudEndpointCount: number | null;
+  cloudEndpointAvgMs: number | null;
+  triggeredByIpChange: boolean;
   scannedAt: string;
   latencyPeers: LatencyPeer[];
   routes: Route[];
