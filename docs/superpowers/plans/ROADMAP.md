@@ -2,7 +2,7 @@
 
 > **Role of this file:** Single source of truth for what's done, what's queued, what's backlog. Use as orchestrator entry-point at start of every session. Update status inline as phases ship.
 >
-> **Last updated:** 2026-04-20
+> **Last updated:** 2026-04-20 (audit sync)
 > **Owner:** Federico
 > **Orchestrator:** Claude (caveman mode default)
 
@@ -22,12 +22,25 @@
 
 **Shipped in production:**
 - Kryoss Agent v1.5.1 — 647 active controls, 11 engines, AD hygiene, port scan, native (zero Process.Start)
-- Assessment engine — 5 frameworks (CIS, NIST, HIPAA, ISO27001, PCI-DSS), 4 report types (C-Level, Technical, Preventas, Executive)
-- M365 Security Checks (50 checks) — DEPRECATED, rolled into Cloud Assessment
-- Copilot Readiness Assessment — DEPRECATED as standalone (2026-04-18), data flows now via Cloud Assessment Copilot Lens
+- Assessment engine — 5 frameworks (CIS, NIST, HIPAA, ISO27001, PCI-DSS), 4 report types (C-Level, Technical, Preventas, Framework)
+- M365 Security Checks (50 checks) — DEPRECATED, rolled into Cloud Assessment. Portal M365 route redirects to `/cloud-assessment`. Dead files cleaned up 2026-04-20
+- Copilot Readiness Assessment — DEPRECATED as standalone (2026-04-18), Copilot Lens tab inside Cloud Assessment reads from CA scan data
 - **Cloud Assessment platform** — CA-0..CA-12 COMPLETE. 7 areas (identity, endpoint, data, productivity, azure, powerbi, compliance), 7 frameworks with benchmark comparisons, unified consent wizard, Copilot Lens filter view
+- **External Scan** — portal + API (`ExternalScanFunction`, `external_scans` table), IP range network vulnerability scans. NOT in previous roadmap
+- **Threat Detection** — agent `ThreatDetector.cs` + portal ThreatsTab + API endpoints. NOT in previous roadmap
+- **Protocol Usage Audit** — agent `ProtocolAuditService` + portal ProtocolUsageTab + 12 controls (AUDIT/NTLM/SMB1). Org-level toggle
+- **SNMP Scanner** — agent `SnmpScanner.cs` + API `SnmpConfigFunction`/`SnmpFunction` + DB tables (`snmp_configs`, `snmp_devices`). ⚠️ No portal UI yet (see PG-02 below)
+- **Network Diagnostics (Phase 5a)** — agent + API (`NetworkDiagnosticsFunction`, `SpeedTestFunction`, 3 tables, 50 controls NET-001..050) + `NetworkBlock`/`NetworkRecipe` report. ⚠️ No portal tab yet (see PG-01 below)
+- **Recycle Bin** — portal `RecycleBinPage` + API endpoints for soft-delete restore. NOT in previous roadmap
+- **Unified Report System** — `ReportComposer` with 17 blocks, 4 active recipes (C-Level, Technical, Preventa, Framework). Business Proposal + Monthly Progress NOT yet implemented (see RP-01, RP-06 below)
 
 **In progress:** None
+
+**✅ Accuracy notes resolved (2026-04-20 housekeeping):**
+- Agent `.csproj` bumped to 1.5.1. All v1.5.0/v1.5.1 features verified in code (NativeCommandEngine, UserRightsApi, EventLogEngine event_count/event_top_sources, ProtocolAuditService, expanded ControlDef)
+- Portal M365Tab dead files deleted, route already redirected to `/cloud-assessment`
+- CopilotReadinessFunction already returns 410 Gone (earlier audit was false negative)
+- Agent + master CLAUDE.md updated to match actual code state
 
 **Customer context driving next priorities:**
 - Multi-site enterprise client expects infrastructure relevamiento (agenda: arquitectura actual, capacidad, conectividad entre sitios + yacimientos, optimización, evolución cloud)
@@ -42,10 +55,10 @@ Execute in order. Each ships independently. Prompts ready below.
 | # | Phase | Status | Est | Blocks |
 |---|-------|--------|-----|--------|
 | 1 | **IA-0** Infrastructure Assessment Scaffold | ⚪ queued | 1 session | All IA phases |
-| 2 | **CA-13** Intune Deep verify/gap-fill | ⚪ queued | 0-1 session | None |
-| 3 | **CA-14** Auto-consent (Fabric + ARM) | ⚪ queued | 2 sessions | None (UX win) |
-| 4 | **IA-1** Server & Hypervisor Inventory | ⚪ queued | 2 sessions | IA-10 report |
-| 5 | **IA-2** Network Topology Discovery | ⚪ queued | 2 sessions | IA-10 report |
+| 2 | **IA-11** Network Tab + Device Map + Auto-Speedtest (KILLER FEATURE) | ⚪ queued | 2-3 sessions | Diff vs Datto/Ninja/Auvik |
+| 3 | **CA-13** Intune Deep verify/gap-fill | ⚪ queued | 0-1 session | None |
+| 4 | **CA-14** Auto-consent (Fabric + ARM) | ⚪ queued | 2 sessions | None (UX win) |
+| 5 | **IA-1** Server & Hypervisor Inventory | ⚪ queued | 2 sessions | IA-10 report |
 
 After 5 complete → replan from Backlog.
 
@@ -254,14 +267,80 @@ Active probes, MTTR/MTBF, dependency tree, SLA compliance.
 
 Dedicated report type. 10 sections matching customer agenda.
 
+### IA-11: Network Tab + Device Map + Auto-Speedtest
+**Priority:** P1 — KILLER DIFFERENTIATOR (no MSP tool combines this)
+**Effort:** 2-3 sessions
+
+Combines: public IP detection + GeoIP + auto-speedtest on IP change + site clustering + device map + bandwidth/SLA tracking. Competitors (Datto, Ninja, Auvik) do pieces, none combine all.
+
+**Track A — Data layer (1 session):**
+- Migration: `machines.last_public_ip` NVARCHAR(45) + `last_public_ip_detected_at` + `machine_public_ip_history` table (machine_id, public_ip, first_seen, last_seen, geo_country, geo_city, isp, asn, connectivity_type_inferred)
+- New middleware: `AgentIpCaptureMiddleware` inspects Results/Inventory/Hygiene/NetworkDiag upload endpoints
+- Agent response schema extended: include `{yourPublicIp, speedtestRequested: bool}` on every response
+- New service: `SiteClusterService` groups machines by public IP → site
+- GeoIP enrichment: MaxMind GeoLite2 free DB (50MB, monthly refresh via timer)
+- ASN → connectivity type mapping (residential/business/cellular/satellite)
+
+**Track B — Agent upgrade v1.6+ (1 session):**
+- Agent compares received `yourPublicIp` vs stored in registry `HKLM\SOFTWARE\Kryoss\Agent\LastPublicIp`
+- On change: set local flag `speedtest_pending=true`, queue speedtest on next scheduled run (not immediate — respect rate limit)
+- Extend `NetworkDiagnostics` service:
+  - Auto-trigger speedtest on flag
+  - Cloud endpoint latency probe (M365 endpoints: outlook.office.com, teams.microsoft.com, sharepoint.com, graph.microsoft.com)
+  - DNS resolution time (3 queries, avg)
+  - MTU discovery (path MTU to M365 endpoints)
+- Rate limit: 1 speedtest per day per machine (local tracking)
+- Config override: franchise admin can bump to N/day for troubleshooting window
+- Upload via existing `POST /v1/network-diag` endpoint (extended payload)
+
+**Track C — Portal Network tab (1 session):**
+- New top-level tab "Network" (or sub-tab of Infrastructure Assessment)
+- 6 sections:
+  1. **Site map** (Leaflet + react-leaflet): pins clustered by public IP, click → drawer
+  2. **Sites table**: name (auto-derived, editable), public IP, stability (N changes/90d), agent count, detected device count, avg down/up/latency, connectivity type, SLA compliance
+  3. **Speedtest history**: per-site line chart down/up/latency 90d, anomaly flags (>30% drop vs baseline), top-N worst
+  4. **IP change events**: timeline of public IP changes per agent/site
+  5. **Connectivity health**: M365 endpoint reachability matrix, DNS resolution time, MTU issues, packet loss
+  6. **Devices per site**: Managed (agent) | Detected (network scan only) | Unmanaged alert (detected + not in M365 users)
+
+Findings generated:
+- "Site {X} averaging {Y} Mbps down, contracted {Z} Mbps — contact ISP" (if contracted bandwidth configured)
+- "Agent {Y} changed public IP {N} times in 30d — router instability"
+- "Remote site bandwidth degraded {N}% over 90d"
+- "Cellular/satellite ASN detected at site {X} — ensure redundancy"
+- "Unmanaged device detected on same LAN as managed agents — shadow IT risk"
+
+Yacimientos-specific value:
+- Auto-detects satellite/cellular ASNs → bandwidth/latency reality check
+- Contract vs actual bandwidth gap (common SMB overspend)
+- ISP stability tracking
+- Per-site MTU issues (common satellite problem)
+
+Permissions: agent already uses API Key + HMAC, no change. Server: no new auth.
+
+Bandwidth concern: default 100MB/test, max 1/day, franchise-level config. Silent mode default (no user notification). Optional tray notification future.
+
+### IA-12: External Scan — Domain Health integration
+**Priority:** P2
+**Effort:** 0.5 session
+
+Extend existing External Scan (IP range vuln scan) with DNS-based domain health:
+- Input: domain name (parallel to IP range)
+- Reuse `DnsLookup` + SPF/DKIM/DMARC parse from CA-10 MailFlowPipeline
+- Results persist to `external_scan_results` with new check_type="domain_health"
+- Portal ExternalScan tab: new "Domain Health" sub-section with per-domain score + findings
+
+No new consent. No new tables. Pure code reuse.
+
 ---
 
 ## Non-Cloud Roadmap (Kryoss Core)
 
-### Agent (KryossAgent v1.6+)
+### Agent (KryossAgent v1.4+)
 
 | # | Feature | Tier | Effort |
 |---|---------|------|--------|
+| ~~A-VER~~ | ~~Version audit: verify v1.5.0/v1.5.1 features in code, bump `.csproj` to match~~ | ✅ | — |
 | A-01 | CVE scanner (standalone, beyond Defender) | P1 | 1 session |
 | A-02 | Patch compliance tracking (WSUS/WUfB/Ninja) | P1 | 1 session |
 | A-03 | Backup verification (Veeam/Acronis/Ninja signal) | P2 | 1 session |
@@ -318,6 +397,8 @@ Dedicated report type. 10 sections matching customer agenda.
 | RP-03 | Vendor risk report (SaaS inventory) | P3 | 1 session |  |
 | RP-04 | Insurance renewal questionnaire report | P3 | 1 session |  |
 | RP-05 | Board-level exec report | Icebox | 1 session |  |
+| RP-06 | Business Proposal report (auto-pricing from `service_catalog` + `franchise_service_rates`) | P2 | 1 session | Needs `sql/039_service_catalog.sql` |
+| RP-07 | Network Assessment report (portal viewer for `NetworkRecipe` output) | P2 | 0.5 session | Backend done |
 
 ### Assessment & Controls
 
@@ -384,13 +465,41 @@ Dedicated report type. 10 sections matching customer agenda.
 
 ---
 
+## Portal Gaps (PG) — Backend exists, portal UI missing
+
+Features where API + agent work is done but portal has no tab/page.
+
+| # | Feature | Tier | Effort | Status |
+|---|---------|------|--------|--------|
+| ~~PG-01~~ | ~~Network Diagnostics portal tab~~ | ✅ | — | `NetworkDiagnosticsTab.tsx` + `api/networkDiagnostics.ts` + route + nav. KPIs (avg down/up/latency/VPN), per-machine expandable rows with latency peers + route table |
+| ~~PG-02~~ | ~~SNMP device management portal UI~~ | ✅ | — | `SnmpTab.tsx` + `api/snmp.ts` + route + nav. Config CRUD (v2c/v3, targets), device table with expandable interfaces, KPIs (devices/interfaces/uptime/locations) |
+| ~~PG-03~~ | ~~Network Assessment report viewer~~ | ✅ | — | Added `network` type to `ReportGenerator.tsx` dropdown → uses existing `NetworkRecipe` backend |
+
+---
+
+## Housekeeping (HK) — Cleanup & consistency tasks
+
+Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
+
+| # | Task | Tier | Effort | Notes |
+|---|------|------|--------|-------|
+| HK-01 | ~~Agent version bump `.csproj` to match actual feature level~~ | ✅ | — | Bumped 1.3.0 → 1.5.1 (2026-04-20) |
+| HK-02 | ~~CopilotReadinessFunction → return 410 Gone~~ | ✅ | — | Already returns 410 — earlier audit was wrong |
+| HK-03 | ~~Remove/redirect M365Tab in portal~~ | ✅ | — | Route already redirected. Dead files `M365Tab.tsx` + `org-detail/CopilotReadinessTab.tsx` deleted |
+| HK-04 | ~~Verify NativeCommandEngine + UserRightsApi exist~~ | ✅ | — | Both exist. Earlier audit false negative |
+| HK-05 | ~~Verify EventLogEngine `event_count`/`event_top_sources` exist~~ | ✅ | — | Both exist in EventLogEngine.cs + ControlDef.cs |
+| HK-06 | ~~Update CLAUDE.md shipped features to match actual code state~~ | ✅ | — | Agent CLAUDE.md v1.2.2→v1.5.1, engines table, services list, payload version, repo layout, master CLAUDE.md updated |
+| HK-07 | `service_catalog` + `franchise_service_rates` migration (sql/039) | P2 | 0.5 session | Referenced in Unified Report System spec, not found in DB |
+
+---
+
 ## Priority Tiers Summary
 
-| Tier | Meaning | Items count |
-|------|---------|-------------|
-| **P0** | Immediate — next 5 sessions | IA-0, CA-13, CA-14, IA-1, IA-2 |
-| **P1** | Month 1 | IA-3, CA-15, CA-16 A, CA-17 MFA, DC-01..03, AT-01..03, A-01..02, A-09, R-01..02, R-04 |
-| **P2** | Month 2-3 | IA-4/5/10, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01 |
+| Tier | Meaning | Items |
+|------|---------|-------|
+| **P0** | Immediate — next sessions | IA-0, IA-11 (killer), CA-13, CA-14, IA-1 |
+| **P1** | Month 1 | IA-2, IA-3, CA-15, CA-16 A, CA-17 MFA, DC-01..03, AT-01..03, A-01..02, A-09, R-01..02, R-04 |
+| **P2** | Month 2-3 | HK-07, RP-06, RP-07, IA-4/5/10/12, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01 |
 | **P3** | Month 3+ | IA-6..9, CA-19/20, A-07/08, AC-07, SE-05/08/09, CM-01/03..05, PL-01/03/05..10, RP-02..04, AT-04/05 |
 | **Icebox** | Needs demand signal | SE-06/07, RP-05, PL-11/12, UX-02..04 |
 
@@ -408,6 +517,10 @@ Dedicated report type. 10 sections matching customer agenda.
 | 2026-04-20 | IA (Infrastructure Assessment) new product line parallel to CA | Enterprise client demand (yacimientos use case) |
 | 2026-04-20 | ROADMAP.md = orchestrator source of truth, plan file archived | Single entry point for sessions |
 | 2026-04-20 | Agent auto-update phased: A-09 detect-only first (RMM pushes actual update), A-10+A-11 later for self-update | Aligns with current RMM-based deploy. EV code signing cert (~$500/yr) deferred until A-11. |
+| 2026-04-20 | IA-11 Network Tab added as P0 — promoted above CA-13/CA-14 | Killer differentiator: no MSP tool combines public IP detection + GeoIP + auto-speedtest + device map + SLA tracking. Yacimientos client value: satellite/cellular detection, bandwidth reality vs contracted. |
+| 2026-04-20 | IA-12 External Scan Domain Health added as P2 | Reuses CA-10 DNS/SPF/DKIM logic, extends existing ExternalScan feature, 0.5 session effort |
+| 2026-04-20 | Full code audit: 9 dead folders → `archive/`, roadmap synced to actual code | Found: External Scan, Threat Detection, SNMP Scanner, Recycle Bin shipped but not in roadmap. Found: Network Diag + SNMP have no portal tab. Found: Agent version discrepancy (csproj 1.3.0 vs docs 1.5.1). Added PG-01..03, HK-01..07, RP-06..07, A-VER |
+| 2026-04-20 | Inactive folders archived: Kryoss Partner Portal, Kryoss-main, Kryoss.Portal, Kryoss, New Portal, The Final portal, Assesment, CopilotReadinessAssessment, antigravity | Declutter repo — only KryossApi, KryossAgent, KryossPortal, Scripts, docs, Web, Procedimientos, Propuesta remain active |
 
 ---
 
