@@ -14,6 +14,9 @@ import { ThreatsTab } from './components/org-detail/ThreatsTab';
 import { ExternalScanTab } from './components/org-detail/ExternalScanTab';
 import { CloudAssessmentTab } from './components/org-detail/CloudAssessmentTab';
 import { ProtocolUsageTab } from './components/org-detail/ProtocolUsageTab';
+import { NetworkDiagnosticsTab } from './components/org-detail/NetworkDiagnosticsTab';
+import { SnmpTab } from './components/org-detail/SnmpTab';
+import { InfraAssessmentTab } from './components/org-detail/InfraAssessmentTab';
 import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
 import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
@@ -54,6 +57,9 @@ export const router = createBrowserRouter([
               { path: 'external-scan', element: <ExternalScanTab /> },
               { path: 'm365', element: <Navigate to="../cloud-assessment" replace /> },
               { path: 'cloud-assessment', element: <CloudAssessmentTab /> },
+              { path: 'network-diagnostics', element: <NetworkDiagnosticsTab /> },
+              { path: 'snmp', element: <SnmpTab /> },
+              { path: 'infra-assessment', element: <InfraAssessmentTab /> },
               { path: 'protocol-usage', element: <ProtocolUsageTab /> },
               {
                 path: 'machines/:machineId',

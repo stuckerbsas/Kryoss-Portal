@@ -35,6 +35,7 @@ const REPORT_TYPES = [
   { value: 'preventas',         label: 'Preventas'                         },
   { value: 'exec-onepager',     label: 'Executive One-Pager'               },
   { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)'            },
+  { value: 'network',           label: 'Network Assessment'                },
   { value: 'm365',              label: 'M365 Security & Copilot Readiness' },
 ] as const;
 
