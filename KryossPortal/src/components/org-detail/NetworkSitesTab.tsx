@@ -225,7 +225,7 @@ function IpHistoryTable({ history }: { history: IpHistoryEntry[] }) {
 }
 
 export function NetworkSitesTab() {
-  const orgId = useOrgParam();
+  const { orgId } = useOrgParam();
   const { data: sites, isLoading } = useNetworkSites(orgId);
   const { data: history, isLoading: historyLoading } = useIpHistory(orgId);
   const rebuild = useRebuildSites(orgId);

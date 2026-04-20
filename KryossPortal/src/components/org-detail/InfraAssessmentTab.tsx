@@ -306,7 +306,7 @@ function VmTable({ vms }: { vms: HypervisorVm[] }) {
   );
 }
 
-function ServersVmsTab({ orgId }: { orgId: string }) {
+function ServersVmsTab({ orgId }: { orgId: string | undefined }) {
   const { data: scanResult, isLoading } = useHypervisorScanResults(orgId);
 
   return (
@@ -467,7 +467,7 @@ function ServersVmsTab({ orgId }: { orgId: string }) {
 }
 
 export function InfraAssessmentTab() {
-  const orgId = useOrgParam();
+  const { orgId } = useOrgParam();
   const { data: scan, isLoading } = useInfraAssessment(orgId);
   const startScan = useStartInfraAssessmentScan(orgId);
 

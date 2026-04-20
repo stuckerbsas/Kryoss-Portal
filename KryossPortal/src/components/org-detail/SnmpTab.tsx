@@ -213,7 +213,7 @@ function SnmpConfigCard({ orgId }: { orgId: string }) {
                 <Label>Enabled</Label>
                 <Switch
                   checked={form.enabled}
-                  onCheckedChange={(v) => setForm({ ...form, enabled: v })}
+                  onCheckedChange={(v: boolean) => setForm({ ...form, enabled: v })}
                 />
               </div>
               <div>
