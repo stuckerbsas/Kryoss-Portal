@@ -58,6 +58,43 @@ export function ConnectProgressModal(_props: { orgId: string }) {
       return;
     }
 
+    // CA-14: auto-consent callbacks
+    const pbiAutoEnabled = searchParams.get('pbi_autoenabled');
+    const pbiError = searchParams.get('pbi_error');
+    const azureAutoAssigned = searchParams.get('azure_autoassigned');
+    const azureError = searchParams.get('azure_error');
+
+    if (pbiAutoEnabled === 'true') {
+      toast.success('Power BI auto-enabled successfully');
+      const newParams = new URLSearchParams();
+      setSearchParams(newParams, { replace: true });
+      return;
+    }
+    if (pbiError) {
+      toast.error(`Power BI auto-enable failed: ${decodeURIComponent(pbiError)}`);
+      const newParams = new URLSearchParams();
+      setSearchParams(newParams, { replace: true });
+      return;
+    }
+    if (azureAutoAssigned === 'true') {
+      const subs = searchParams.get('azure_subs') ?? '0';
+      const failed = searchParams.get('azure_failed') === 'True';
+      const note = searchParams.get('azure_note');
+      const msg = failed
+        ? `Azure: ${subs} subs found, some role assignments failed${note ? ` — ${decodeURIComponent(note)}` : ''}`
+        : `Azure auto-assigned Reader on ${subs} subscription(s)`;
+      failed ? toast.warning(msg) : toast.success(msg);
+      const newParams = new URLSearchParams();
+      setSearchParams(newParams, { replace: true });
+      return;
+    }
+    if (azureError) {
+      toast.error(`Azure auto-assign failed: ${decodeURIComponent(azureError)}`);
+      const newParams = new URLSearchParams();
+      setSearchParams(newParams, { replace: true });
+      return;
+    }
+
     const parsed = parseConnectParams(searchParams);
     if (parsed) {
       setResult(parsed);

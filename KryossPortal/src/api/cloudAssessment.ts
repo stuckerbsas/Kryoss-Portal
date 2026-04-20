@@ -642,6 +642,30 @@ export function useUnifiedCloudConnectUrl(organizationId: string | undefined) {
   });
 }
 
+// ── Auto-consent hooks (CA-14) ──
+
+export function usePbiAutoEnableUrl(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['pbi-auto-enable-url', organizationId],
+    queryFn: () =>
+      apiFetch<{ url: string }>(
+        `/v2/cloud-assessment/powerbi/auto-enable-url?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+export function useAzureAutoAssignUrl(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['azure-auto-assign-url', organizationId],
+    queryFn: () =>
+      apiFetch<{ url: string }>(
+        `/v2/cloud-assessment/azure/auto-assign-url?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
 // ── Benchmark types (CA-11) ──
 
 export interface MetricComparison {

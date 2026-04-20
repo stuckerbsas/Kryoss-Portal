@@ -126,6 +126,149 @@ export function useStartInfraAssessmentScan(organizationId: string | undefined) 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['infra-assessment', organizationId] });
       qc.invalidateQueries({ queryKey: ['infra-assessment-history', organizationId] });
+      qc.invalidateQueries({ queryKey: ['hypervisor-scan', organizationId] });
     },
+  });
+}
+
+// ── IA-1: Hypervisor Inventory ──
+
+export interface HypervisorConfig {
+  id: string;
+  platform: string;
+  displayName: string | null;
+  hostUrl: string;
+  username: string | null;
+  verifySsl: boolean;
+  isActive: boolean;
+  lastTestedAt: string | null;
+  lastTestOk: boolean | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export interface HypervisorHost {
+  id: string;
+  platform: string;
+  hostFqdn: string;
+  version: string | null;
+  clusterName: string | null;
+  cpuCoresTotal: number | null;
+  ramGbTotal: number | null;
+  storageGbTotal: number | null;
+  cpuUsagePct: number | null;
+  ramUsagePct: number | null;
+  vmCount: number;
+  vmRunning: number;
+  haEnabled: boolean | null;
+  powerState: string;
+}
+
+export interface HypervisorVm {
+  id: string;
+  hypervisorId: string;
+  vmName: string;
+  os: string | null;
+  powerState: string;
+  cpuCores: number | null;
+  ramGb: number | null;
+  diskGb: number | null;
+  cpuAvgPct: number | null;
+  ramAvgPct: number | null;
+  diskUsedPct: number | null;
+  snapshotCount: number;
+  oldestSnapshotDays: number | null;
+  lastBackup: string | null;
+  ipAddress: string | null;
+  toolsStatus: string | null;
+  isTemplate: boolean;
+  isIdle: boolean;
+  notes: string | null;
+}
+
+export interface HypervisorFinding {
+  area: string;
+  feature: string;
+  status: string;
+  priority: string;
+  observation: string;
+  recommendation: string;
+}
+
+export interface HypervisorScanResult {
+  scanId: string;
+  scannedAt: string;
+  hosts: HypervisorHost[];
+  vms: HypervisorVm[];
+  findings: HypervisorFinding[];
+}
+
+export function useHypervisorConfigs(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['hypervisor-configs', organizationId],
+    queryFn: () =>
+      apiFetch<HypervisorConfig[]>(
+        `/v2/infra-assessment/hypervisor-configs?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+export function useCreateHypervisorConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      organizationId: string;
+      platform: string;
+      displayName?: string;
+      hostUrl: string;
+      username?: string;
+      password?: string;
+      apiToken?: string;
+      verifySsl?: boolean;
+    }) =>
+      apiFetch<{ id: string }>('/v2/infra-assessment/hypervisor-configs', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['hypervisor-configs', variables.organizationId] });
+    },
+  });
+}
+
+export function useDeleteHypervisorConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ configId }: { configId: string; organizationId: string }) =>
+      apiFetch(`/v2/infra-assessment/hypervisor-configs/${configId}`, { method: 'DELETE' }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['hypervisor-configs', variables.organizationId] });
+    },
+  });
+}
+
+export function useTestHypervisorConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ configId }: { configId: string; organizationId: string }) =>
+      apiFetch<{ success: boolean; error?: string }>(
+        `/v2/infra-assessment/hypervisor-configs/${configId}/test`,
+        { method: 'POST' },
+      ),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['hypervisor-configs', variables.organizationId] });
+    },
+  });
+}
+
+export function useHypervisorScanResults(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['hypervisor-scan', organizationId],
+    queryFn: () =>
+      apiFetch<HypervisorScanResult>(
+        `/v2/infra-assessment/hypervisors?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
   });
 }

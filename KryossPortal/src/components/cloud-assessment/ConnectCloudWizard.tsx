@@ -27,6 +27,8 @@ import {
   useAzureVerify,
   usePowerBiConnect,
   usePowerBiVerify,
+  useAzureAutoAssignUrl,
+  usePbiAutoEnableUrl,
   type AzureConnectInstructions,
   type PowerBiConnectInstructions,
 } from '@/api/cloudAssessment';
@@ -142,8 +144,10 @@ function AzureStep({
   const [tenantId, setTenantId] = useState('');
   const [instructions, setInstructions] = useState<AzureConnectInstructions | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const connect = useAzureConnect();
   const verify = useAzureVerify();
+  const { data: autoUrl } = useAzureAutoAssignUrl(orgId);
   const tenantIdValid = GUID_RE.test(tenantId.trim());
 
   if (connected) {
@@ -203,58 +207,83 @@ function AzureStep({
         Grant read-only access to Azure subscriptions for infrastructure security scanning. This step is optional.
       </p>
 
-      <div className="space-y-2">
-        <Label htmlFor="wizard-azure-tenant" className="text-sm font-medium">
-          Entra Tenant ID
-        </Label>
-        <Input
-          id="wizard-azure-tenant"
-          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          value={tenantId}
-          onChange={(e) => setTenantId(e.target.value)}
-          className="font-mono text-sm"
-        />
+      <Button
+        onClick={() => { if (autoUrl?.url) window.location.href = autoUrl.url; }}
+        disabled={!autoUrl?.url}
+        className="w-full"
+      >
+        <ExternalLink className="mr-2 h-4 w-4" />
+        Enable automatically (recommended)
+      </Button>
+      <p className="text-xs text-muted-foreground text-center">
+        Signs in as admin and auto-assigns Reader role on all visible subscriptions.
+      </p>
+
+      <div className="pt-2 border-t">
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground underline"
+          onClick={() => setShowManual(!showManual)}
+        >
+          {showManual ? 'Hide manual setup' : 'Manual setup (az CLI)'}
+        </button>
       </div>
 
-      <Button
-        onClick={handleGenerate}
-        disabled={!tenantIdValid || connect.isPending}
-        size="sm"
-      >
-        {connect.isPending ? (
-          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
-        ) : (
-          'Generate az CLI command'
-        )}
-      </Button>
-
-      {instructions && (
+      {showManual && (
         <div className="space-y-3">
-          <div className="relative">
-            <pre className="bg-muted rounded p-3 text-xs overflow-x-auto pr-12">
-              {instructions.azCliCommand}
-            </pre>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopy}
-              className="absolute top-2 right-2 h-7 px-2"
-            >
-              {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-            </Button>
+          <div className="space-y-2">
+            <Label htmlFor="wizard-azure-tenant" className="text-sm font-medium">
+              Entra Tenant ID
+            </Label>
+            <Input
+              id="wizard-azure-tenant"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              value={tenantId}
+              onChange={(e) => setTenantId(e.target.value)}
+              className="font-mono text-sm"
+            />
           </div>
 
           <Button
-            onClick={handleVerify}
-            disabled={verify.isPending}
+            onClick={handleGenerate}
+            disabled={!tenantIdValid || connect.isPending}
             size="sm"
           >
-            {verify.isPending ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying...</>
+            {connect.isPending ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
             ) : (
-              'Verify connection'
+              'Generate az CLI command'
             )}
           </Button>
+
+          {instructions && (
+            <div className="space-y-3">
+              <div className="relative">
+                <pre className="bg-muted rounded p-3 text-xs overflow-x-auto pr-12">
+                  {instructions.azCliCommand}
+                </pre>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCopy}
+                  className="absolute top-2 right-2 h-7 px-2"
+                >
+                  {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+
+              <Button
+                onClick={handleVerify}
+                disabled={verify.isPending}
+                size="sm"
+              >
+                {verify.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying...</>
+                ) : (
+                  'Verify connection'
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -278,7 +307,9 @@ function PowerBiStep({
 }) {
   const connectPbi = usePowerBiConnect();
   const verifyPbi = usePowerBiVerify();
+  const { data: autoUrl } = usePbiAutoEnableUrl(orgId);
   const [instructions, setInstructions] = useState<PowerBiConnectInstructions | null>(null);
+  const [showManual, setShowManual] = useState(false);
 
   if (connected) {
     return (
@@ -320,46 +351,71 @@ function PowerBiStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Enable Power BI governance scanning. A tenant admin must allow the service principal
+        Enable Power BI governance scanning. A Fabric Admin must allow the service principal
         to access Power BI APIs. This step is optional.
       </p>
 
-      {!instructions ? (
-        <Button onClick={handleConnect} disabled={connectPbi.isPending} size="sm">
-          {connectPbi.isPending ? (
-            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading...</>
-          ) : (
-            'Show setup instructions'
-          )}
-        </Button>
-      ) : (
-        <div className="space-y-3">
-          <div className="rounded-lg border bg-muted/50 p-3 text-xs space-y-2">
-            <p className="font-medium">Required tenant admin settings:</p>
-            <ol className="list-decimal list-inside space-y-0.5">
-              {instructions.instructions.map((inst, i) => (
-                <li key={i}>{inst}</li>
-              ))}
-            </ol>
-            <a
-              href={instructions.tenantSettingsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs mt-1"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Open Power BI Admin Portal
-            </a>
-          </div>
+      <Button
+        onClick={() => { if (autoUrl?.url) window.location.href = autoUrl.url; }}
+        disabled={!autoUrl?.url}
+        className="w-full"
+      >
+        <ExternalLink className="mr-2 h-4 w-4" />
+        Enable automatically (recommended)
+      </Button>
+      <p className="text-xs text-muted-foreground text-center">
+        Signs in as Fabric Admin and enables ServicePrincipal access via Fabric API.
+      </p>
 
-          <Button onClick={handleVerify} disabled={verifyPbi.isPending} size="sm">
-            {verifyPbi.isPending ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying...</>
-            ) : (
-              'Verify Power BI connection'
-            )}
-          </Button>
-        </div>
+      <div className="pt-2 border-t">
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground underline"
+          onClick={() => setShowManual(!showManual)}
+        >
+          {showManual ? 'Hide manual setup' : 'Manual setup (Power BI Admin Portal)'}
+        </button>
+      </div>
+
+      {showManual && (
+        <>
+          {!instructions ? (
+            <Button onClick={handleConnect} disabled={connectPbi.isPending} size="sm">
+              {connectPbi.isPending ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading...</>
+              ) : (
+                'Show setup instructions'
+              )}
+            </Button>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-muted/50 p-3 text-xs space-y-2">
+                <p className="font-medium">Required tenant admin settings:</p>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  {instructions.instructions.map((inst, i) => (
+                    <li key={i}>{inst}</li>
+                  ))}
+                </ol>
+                <a
+                  href={instructions.tenantSettingsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs mt-1"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Open Power BI Admin Portal
+                </a>
+              </div>
+
+              <Button onClick={handleVerify} disabled={verifyPbi.isPending} size="sm">
+                {verifyPbi.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying...</>
+                ) : (
+                  'Verify Power BI connection'
+                )}
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       <div className="pt-2 border-t">
