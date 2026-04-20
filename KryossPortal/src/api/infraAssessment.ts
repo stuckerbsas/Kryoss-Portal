@@ -240,7 +240,7 @@ export function useCreateHypervisorConfig() {
 export function useDeleteHypervisorConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ configId }: { configId: string; organizationId: string }) =>
+    mutationFn: ({ configId }: { configId: string; organizationId: string | undefined }) =>
       apiFetch(`/v2/infra-assessment/hypervisor-configs/${configId}`, { method: 'DELETE' }),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['hypervisor-configs', variables.organizationId] });
@@ -251,7 +251,7 @@ export function useDeleteHypervisorConfig() {
 export function useTestHypervisorConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ configId }: { configId: string; organizationId: string }) =>
+    mutationFn: ({ configId }: { configId: string; organizationId: string | undefined }) =>
       apiFetch<{ success: boolean; error?: string }>(
         `/v2/infra-assessment/hypervisor-configs/${configId}/test`,
         { method: 'POST' },

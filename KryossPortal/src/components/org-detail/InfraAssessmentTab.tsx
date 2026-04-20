@@ -93,7 +93,7 @@ function AddConfigDialog({
   open,
   onOpenChange,
 }: {
-  orgId: string;
+  orgId: string | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -106,6 +106,7 @@ function AddConfigDialog({
   const [apiToken, setApiToken] = useState('');
 
   const handleSubmit = () => {
+    if (!orgId) return;
     create.mutate(
       {
         organizationId: orgId,
@@ -185,7 +186,7 @@ function AddConfigDialog({
   );
 }
 
-function ConfigsList({ orgId }: { orgId: string }) {
+function ConfigsList({ orgId }: { orgId: string | undefined }) {
   const { data: configs, isLoading } = useHypervisorConfigs(orgId);
   const deleteConfig = useDeleteHypervisorConfig();
   const testConfig = useTestHypervisorConfig();
