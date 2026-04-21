@@ -80,6 +80,8 @@ builder.Services.AddSingleton<IFabricAdminService, FabricAdminService>();
 builder.Services.AddScoped<IPublicIpTracker, PublicIpTracker>();
 builder.Services.AddScoped<ISiteClusterService, SiteClusterService>();
 builder.Services.AddScoped<IScanScheduleService, ScanScheduleService>();
+builder.Services.AddScoped<IAlertService, AlertService>();
+builder.Services.AddHttpClient();
 
 // ── M365 multi-tenant admin consent config ──
 builder.Services.AddSingleton(new M365Config

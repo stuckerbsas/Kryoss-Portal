@@ -156,7 +156,7 @@ public class CloudAssessmentService : ICloudAssessmentService
                 () => IdentityPipeline.RunAsync(graph, graphBetaHttp, log, ct),
                 scanId, db, log);
             var endpointTask = TrackPipeline("endpoint",
-                () => EndpointPipeline.RunAsync(graph, defenderHttp, log, ct),
+                () => EndpointPipeline.RunAsync(graph, defenderHttp, graphBetaHttp, log, ct),
                 scanId, db, log);
             var dataTask = TrackPipeline("data",
                 () => DataPipeline.RunAsync(graph, graphBetaHttp, log, ct),
@@ -524,14 +524,10 @@ public class CloudAssessmentService : ICloudAssessmentService
             await db.SaveChangesAsync();
 
             // CA-8: Compute per-framework compliance scores from persisted findings.
+            // Uses RecomputeAsync so re-runs are idempotent (deletes old scores first).
             try
             {
-                var frameworkScores = await ComplianceScoreEngine.ComputeAsync(db, scanId);
-                if (frameworkScores.Count > 0)
-                {
-                    db.CloudAssessmentFrameworkScores.AddRange(frameworkScores);
-                    await db.SaveChangesAsync();
-                }
+                await ComplianceScoreEngine.RecomputeAsync(db, scanId);
             }
             catch (Exception ex)
             {
@@ -569,6 +565,17 @@ public class CloudAssessmentService : ICloudAssessmentService
             catch (Exception ex)
             {
                 log.LogWarning(ex, "Failed to compute benchmark comparison for scan {ScanId}", scan.Id);
+            }
+
+            // CA-15: Evaluate drift alert rules and fire notifications (non-fatal).
+            try
+            {
+                var alertService = scope.ServiceProvider.GetRequiredService<IAlertService>();
+                await alertService.EvaluateAndFireAsync(scanId, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to evaluate alerts for scan {ScanId}", scanId);
             }
 
             log.LogInformation(

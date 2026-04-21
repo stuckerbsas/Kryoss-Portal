@@ -96,6 +96,17 @@
 | GET | `/v2/infra-assessment/{scanId}` | `InfraAssessmentFunction.Detail` | Single scan detail |
 | GET | `/v2/infra-assessment/history?organizationId=X` | `InfraAssessmentFunction.History` | Scan history (summary, last 20) |
 
+### Portal API (v2) — Drift Alerts (CA-15)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/alert-rules` | `AlertFunction.ListRules` | List alert rules for franchise |
+| POST | `/v2/alert-rules` | `AlertFunction.CreateRule` | Create alert rule |
+| PATCH | `/v2/alert-rules/{ruleId}` | `AlertFunction.UpdateRule` | Update alert rule |
+| DELETE | `/v2/alert-rules/{ruleId}` | `AlertFunction.DeleteRule` | Delete alert rule |
+| GET | `/v2/alerts/history` | `AlertFunction.History` | Alert history (last 100) |
+| POST | `/v2/alert-rules/{ruleId}/test` | `AlertFunction.TestRule` | Test alert delivery |
+
 ---
 
 ## Folder layout

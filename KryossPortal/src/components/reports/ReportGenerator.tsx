@@ -36,6 +36,8 @@ const REPORT_TYPES = [
   { value: 'exec-onepager',     label: 'Executive One-Pager'               },
   { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)'            },
   { value: 'network',           label: 'Network Assessment'                },
+  { value: 'framework',         label: 'Framework Compliance'              },
+  { value: 'proposal',          label: 'Business Proposal'                 },
   { value: 'm365',              label: 'M365 Security & Copilot Readiness' },
 ] as const;
 

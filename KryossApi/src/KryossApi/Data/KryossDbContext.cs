@@ -56,6 +56,16 @@ public class KryossDbContext : DbContext
     // CMDB - Threat detection
     public DbSet<MachineThreat> MachineThreats => Set<MachineThreat>();
 
+    // CMDB - Network diagnostics
+    public DbSet<MachineNetworkDiag> MachineNetworkDiags => Set<MachineNetworkDiag>();
+    public DbSet<MachineNetworkLatency> MachineNetworkLatencies => Set<MachineNetworkLatency>();
+    public DbSet<MachineNetworkRoute> MachineNetworkRoutes => Set<MachineNetworkRoute>();
+
+    // SNMP infrastructure
+    public DbSet<SnmpConfig> SnmpConfigs => Set<SnmpConfig>();
+    public DbSet<SnmpDevice> SnmpDevices => Set<SnmpDevice>();
+    public DbSet<SnmpDeviceInterface> SnmpDeviceInterfaces => Set<SnmpDeviceInterface>();
+
     // External scans (cloud-side pentest)
     public DbSet<ExternalScan> ExternalScans => Set<ExternalScan>();
     public DbSet<ExternalScanResult> ExternalScanResults => Set<ExternalScanResult>();
@@ -114,6 +124,25 @@ public class KryossDbContext : DbContext
     // Service Catalog & Franchise Billing
     public DbSet<ServiceCatalogItem> ServiceCatalog => Set<ServiceCatalogItem>();
     public DbSet<FranchiseServiceRate> FranchiseServiceRates => Set<FranchiseServiceRate>();
+
+    // Network Sites + Public IP (IA-11)
+    public DbSet<MachinePublicIpHistory> MachinePublicIpHistory => Set<MachinePublicIpHistory>();
+    public DbSet<NetworkSite> NetworkSites => Set<NetworkSite>();
+
+    // CA-15: Drift Alerts
+    public DbSet<CloudAssessmentAlertRule> CloudAssessmentAlertRules => Set<CloudAssessmentAlertRule>();
+    public DbSet<CloudAssessmentAlertSent> CloudAssessmentAlertsSent => Set<CloudAssessmentAlertSent>();
+
+    // Infrastructure Assessment (IA-0)
+    public DbSet<InfraAssessmentScan> InfraAssessmentScans => Set<InfraAssessmentScan>();
+    public DbSet<InfraAssessmentSite> InfraAssessmentSites => Set<InfraAssessmentSite>();
+    public DbSet<InfraAssessmentDevice> InfraAssessmentDevices => Set<InfraAssessmentDevice>();
+    public DbSet<InfraAssessmentConnectivity> InfraAssessmentConnectivity => Set<InfraAssessmentConnectivity>();
+    public DbSet<InfraAssessmentCapacity> InfraAssessmentCapacity => Set<InfraAssessmentCapacity>();
+    public DbSet<InfraAssessmentFinding> InfraAssessmentFindings => Set<InfraAssessmentFinding>();
+    public DbSet<InfraHypervisorConfig> InfraHypervisorConfigs => Set<InfraHypervisorConfig>();
+    public DbSet<InfraHypervisor> InfraHypervisors => Set<InfraHypervisor>();
+    public DbSet<InfraVm> InfraVms => Set<InfraVm>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -356,6 +385,65 @@ public class KryossDbContext : DbContext
             e.ToTable("machine_threats");
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+        });
+
+        // ── CMDB - Network diagnostics ──
+        mb.Entity<MachineNetworkDiag>(e =>
+        {
+            e.ToTable("machine_network_diag");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasOne(x => x.Run).WithMany().HasForeignKey(x => x.RunId);
+            e.Property(x => x.DnsResolutionMs).HasColumnName("dns_resolution_ms");
+            e.Property(x => x.CloudEndpointCount).HasColumnName("cloud_endpoint_count");
+            e.Property(x => x.CloudEndpointAvgMs).HasColumnName("cloud_endpoint_avg_ms");
+            e.Property(x => x.TriggeredByIpChange).HasColumnName("triggered_by_ip_change");
+            e.HasMany(x => x.LatencyPeers).WithOne(x => x.Diag).HasForeignKey(x => x.DiagId);
+            e.HasMany(x => x.Routes).WithOne(x => x.Diag).HasForeignKey(x => x.DiagId);
+        });
+        mb.Entity<MachineNetworkLatency>(e =>
+        {
+            e.ToTable("machine_network_latency");
+            e.HasKey(x => x.Id);
+        });
+        mb.Entity<MachineNetworkRoute>(e =>
+        {
+            e.ToTable("machine_network_routes");
+            e.HasKey(x => x.Id);
+        });
+
+        // ── Network Sites + Public IP (IA-11) ──
+        mb.Entity<MachinePublicIpHistory>(e =>
+        {
+            e.ToTable("machine_public_ip_history");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+        });
+        mb.Entity<NetworkSite>(e =>
+        {
+            e.ToTable("network_sites");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+        });
+
+        // ── SNMP infrastructure ──
+        mb.Entity<SnmpConfig>(e =>
+        {
+            e.ToTable("snmp_configs");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+        });
+        mb.Entity<SnmpDevice>(e =>
+        {
+            e.ToTable("snmp_devices");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasMany(x => x.Interfaces).WithOne(x => x.Device).HasForeignKey(x => x.DeviceId);
+        });
+        mb.Entity<SnmpDeviceInterface>(e =>
+        {
+            e.ToTable("snmp_device_interfaces");
+            e.HasKey(x => x.Id);
         });
 
         // ── External scans (cloud-side pentest) ──
@@ -974,6 +1062,225 @@ public class KryossDbContext : DbContext
         mb.Entity<Franchise>(e =>
         {
             e.Property(x => x.BenchmarkOptIn).HasColumnName("benchmark_opt_in");
+        });
+
+        // ── CA-15: Drift Alerts ──
+        mb.Entity<CloudAssessmentAlertRule>(e =>
+        {
+            e.ToTable("cloud_assessment_alert_rules");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.FranchiseId).HasColumnName("franchise_id");
+            e.Property(x => x.RuleType).HasColumnName("rule_type").HasMaxLength(60);
+            e.Property(x => x.Threshold).HasColumnName("threshold").HasColumnType("decimal(8,2)");
+            e.Property(x => x.FrameworkCode).HasColumnName("framework_code").HasMaxLength(20);
+            e.Property(x => x.IsEnabled).HasColumnName("is_enabled");
+            e.Property(x => x.DeliveryChannel).HasColumnName("delivery_channel").HasMaxLength(20);
+            e.Property(x => x.TargetEmail).HasColumnName("target_email").HasMaxLength(256);
+            e.Property(x => x.WebhookUrl).HasColumnName("webhook_url").HasMaxLength(512);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasOne(x => x.Franchise).WithMany().HasForeignKey(x => x.FranchiseId);
+            e.HasIndex(x => x.FranchiseId);
+        });
+
+        mb.Entity<CloudAssessmentAlertSent>(e =>
+        {
+            e.ToTable("cloud_assessment_alerts_sent");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.RuleId).HasColumnName("rule_id");
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.Severity).HasColumnName("severity").HasMaxLength(20);
+            e.Property(x => x.RuleType).HasColumnName("rule_type").HasMaxLength(60);
+            e.Property(x => x.Summary).HasColumnName("summary").HasMaxLength(500);
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json");
+            e.Property(x => x.DeliveryStatus).HasColumnName("delivery_status").HasMaxLength(20);
+            e.Property(x => x.DeliveredAt).HasColumnName("delivered_at");
+            e.Property(x => x.ErrorMessage).HasColumnName("error_message").HasMaxLength(500);
+            e.Property(x => x.FiredAt).HasColumnName("fired_at");
+            e.HasOne(x => x.Scan).WithMany().HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Rule).WithMany().HasForeignKey(x => x.RuleId);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasIndex(x => x.ScanId);
+            e.HasIndex(x => x.OrganizationId);
+        });
+
+        // ── Infrastructure Assessment (IA-0) ──
+        mb.Entity<InfraAssessmentScan>(e =>
+        {
+            e.ToTable("infra_assessment_scans");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.Status).HasColumnName("status").HasMaxLength(30);
+            e.Property(x => x.Scope).HasColumnName("scope");
+            e.Property(x => x.OverallHealth).HasColumnName("overall_health");
+            e.Property(x => x.SiteCount).HasColumnName("site_count");
+            e.Property(x => x.DeviceCount).HasColumnName("device_count");
+            e.Property(x => x.FindingCount).HasColumnName("finding_count");
+            e.Property(x => x.StartedAt).HasColumnName("started_at");
+            e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasMany(x => x.Sites).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Devices).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Connectivity).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Capacity).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Findings).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<InfraAssessmentSite>(e =>
+        {
+            e.ToTable("infra_assessment_sites");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.SiteName).HasColumnName("site_name").HasMaxLength(200);
+            e.Property(x => x.Location).HasColumnName("location").HasMaxLength(500);
+            e.Property(x => x.SiteType).HasColumnName("site_type").HasMaxLength(30);
+            e.Property(x => x.DeviceCount).HasColumnName("device_count");
+            e.Property(x => x.UserCount).HasColumnName("user_count");
+            e.Property(x => x.ConnectivityType).HasColumnName("connectivity_type").HasMaxLength(100);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        mb.Entity<InfraAssessmentDevice>(e =>
+        {
+            e.ToTable("infra_assessment_devices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.SiteId).HasColumnName("site_id");
+            e.Property(x => x.Hostname).HasColumnName("hostname").HasMaxLength(255);
+            e.Property(x => x.DeviceType).HasColumnName("device_type").HasMaxLength(30);
+            e.Property(x => x.Vendor).HasColumnName("vendor").HasMaxLength(200);
+            e.Property(x => x.Model).HasColumnName("model").HasMaxLength(200);
+            e.Property(x => x.Role).HasColumnName("role").HasMaxLength(200);
+            e.Property(x => x.IpAddress).HasColumnName("ip_address").HasMaxLength(50);
+            e.Property(x => x.Os).HasColumnName("os").HasMaxLength(200);
+            e.Property(x => x.Firmware).HasColumnName("firmware").HasMaxLength(200);
+            e.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(200);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId);
+        });
+
+        mb.Entity<InfraAssessmentConnectivity>(e =>
+        {
+            e.ToTable("infra_assessment_connectivity");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.SiteAId).HasColumnName("site_a_id");
+            e.Property(x => x.SiteBId).HasColumnName("site_b_id");
+            e.Property(x => x.LinkType).HasColumnName("link_type").HasMaxLength(30);
+            e.Property(x => x.BandwidthMbps).HasColumnName("bandwidth_mbps");
+            e.Property(x => x.LatencyMs).HasColumnName("latency_ms");
+            e.Property(x => x.UptimePct).HasColumnName("uptime_pct");
+            e.Property(x => x.CostMonthlyUsd).HasColumnName("cost_monthly_usd");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.SiteA).WithMany().HasForeignKey(x => x.SiteAId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.SiteB).WithMany().HasForeignKey(x => x.SiteBId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        mb.Entity<InfraAssessmentCapacity>(e =>
+        {
+            e.ToTable("infra_assessment_capacity");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.DeviceId).HasColumnName("device_id");
+            e.Property(x => x.MetricKey).HasColumnName("metric_key").HasMaxLength(100);
+            e.Property(x => x.CurrentValue).HasColumnName("current_value");
+            e.Property(x => x.PeakValue).HasColumnName("peak_value");
+            e.Property(x => x.Threshold).HasColumnName("threshold");
+            e.Property(x => x.TrendDirection).HasColumnName("trend_direction").HasMaxLength(20);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Device).WithMany().HasForeignKey(x => x.DeviceId);
+        });
+
+        mb.Entity<InfraAssessmentFinding>(e =>
+        {
+            e.ToTable("infra_assessment_findings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.Area).HasColumnName("area").HasMaxLength(30);
+            e.Property(x => x.Service).HasColumnName("service").HasMaxLength(200);
+            e.Property(x => x.Feature).HasColumnName("feature").HasMaxLength(200);
+            e.Property(x => x.Status).HasColumnName("status").HasMaxLength(30);
+            e.Property(x => x.Priority).HasColumnName("priority").HasMaxLength(20);
+            e.Property(x => x.Observation).HasColumnName("observation");
+            e.Property(x => x.Recommendation).HasColumnName("recommendation");
+            e.Property(x => x.LinkText).HasColumnName("link_text").HasMaxLength(500);
+            e.Property(x => x.LinkUrl).HasColumnName("link_url").HasMaxLength(2000);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        // ── IA-1: Hypervisor Inventory ──
+        mb.Entity<InfraHypervisorConfig>(e =>
+        {
+            e.ToTable("infra_hypervisor_configs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.Platform).HasColumnName("platform").HasMaxLength(20);
+            e.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(200);
+            e.Property(x => x.HostUrl).HasColumnName("host_url").HasMaxLength(500);
+            e.Property(x => x.Username).HasColumnName("username").HasMaxLength(200);
+            e.Property(x => x.EncryptedPassword).HasColumnName("encrypted_password");
+            e.Property(x => x.ApiToken).HasColumnName("api_token");
+            e.Property(x => x.VerifySsl).HasColumnName("verify_ssl");
+            e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.LastTestedAt).HasColumnName("last_tested_at");
+            e.Property(x => x.LastTestOk).HasColumnName("last_test_ok");
+            e.Property(x => x.LastError).HasColumnName("last_error").HasMaxLength(500);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        mb.Entity<InfraHypervisor>(e =>
+        {
+            e.ToTable("infra_hypervisors");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.ConfigId).HasColumnName("config_id");
+            e.Property(x => x.SiteId).HasColumnName("site_id");
+            e.Property(x => x.Platform).HasColumnName("platform").HasMaxLength(20);
+            e.Property(x => x.HostFqdn).HasColumnName("host_fqdn").HasMaxLength(300);
+            e.Property(x => x.Version).HasColumnName("version").HasMaxLength(100);
+            e.Property(x => x.ClusterName).HasColumnName("cluster_name").HasMaxLength(200);
+            e.Property(x => x.CpuCoresTotal).HasColumnName("cpu_cores_total");
+            e.Property(x => x.RamGbTotal).HasColumnName("ram_gb_total");
+            e.Property(x => x.StorageGbTotal).HasColumnName("storage_gb_total");
+            e.Property(x => x.CpuUsagePct).HasColumnName("cpu_usage_pct");
+            e.Property(x => x.RamUsagePct).HasColumnName("ram_usage_pct");
+            e.Property(x => x.VmCount).HasColumnName("vm_count");
+            e.Property(x => x.VmRunning).HasColumnName("vm_running");
+            e.Property(x => x.HaEnabled).HasColumnName("ha_enabled");
+            e.Property(x => x.PowerState).HasColumnName("power_state").HasMaxLength(20);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasMany(x => x.Vms).WithOne(v => v.Hypervisor).HasForeignKey(v => v.HypervisorId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        mb.Entity<InfraVm>(e =>
+        {
+            e.ToTable("infra_vms");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ScanId).HasColumnName("scan_id");
+            e.Property(x => x.HypervisorId).HasColumnName("hypervisor_id");
+            e.Property(x => x.VmName).HasColumnName("vm_name").HasMaxLength(300);
+            e.Property(x => x.Os).HasColumnName("os").HasMaxLength(200);
+            e.Property(x => x.PowerState).HasColumnName("power_state").HasMaxLength(20);
+            e.Property(x => x.CpuCores).HasColumnName("cpu_cores");
+            e.Property(x => x.RamGb).HasColumnName("ram_gb");
+            e.Property(x => x.DiskGb).HasColumnName("disk_gb");
+            e.Property(x => x.CpuAvgPct).HasColumnName("cpu_avg_pct");
+            e.Property(x => x.RamAvgPct).HasColumnName("ram_avg_pct");
+            e.Property(x => x.DiskUsedPct).HasColumnName("disk_used_pct");
+            e.Property(x => x.SnapshotCount).HasColumnName("snapshot_count");
+            e.Property(x => x.OldestSnapshotDays).HasColumnName("oldest_snapshot_days");
+            e.Property(x => x.LastBackup).HasColumnName("last_backup");
+            e.Property(x => x.LastLogin).HasColumnName("last_login");
+            e.Property(x => x.IpAddress).HasColumnName("ip_address").HasMaxLength(50);
+            e.Property(x => x.ToolsStatus).HasColumnName("tools_status").HasMaxLength(50);
+            e.Property(x => x.IsTemplate).HasColumnName("is_template");
+            e.Property(x => x.IsIdle).HasColumnName("is_idle");
+            e.Property(x => x.Notes).HasColumnName("notes").HasMaxLength(500);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
     }
 }

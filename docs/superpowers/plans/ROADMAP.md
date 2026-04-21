@@ -21,7 +21,7 @@
 ## Current State Snapshot (2026-04-20)
 
 **Shipped in production:**
-- Kryoss Agent v1.5.1 — 647 active controls, 11 engines, AD hygiene, port scan, native (zero Process.Start)
+- Kryoss Agent v1.5.1 — 767 active controls (647 baseline + 80 SRV + 40→100 DC), 12 engines (DcEngine added), AD hygiene, port scan, native (zero Process.Start)
 - Assessment engine — 5 frameworks (CIS, NIST, HIPAA, ISO27001, PCI-DSS), 4 report types (C-Level, Technical, Preventas, Framework)
 - M365 Security Checks (50 checks) — DEPRECATED, rolled into Cloud Assessment. Portal M365 route redirects to `/cloud-assessment`. Dead files cleaned up 2026-04-20
 - Copilot Readiness Assessment — DEPRECATED as standalone (2026-04-18), Copilot Lens tab inside Cloud Assessment reads from CA scan data
@@ -54,11 +54,11 @@ Execute in order. Each ships independently. Prompts ready below.
 
 | # | Phase | Status | Est | Blocks |
 |---|-------|--------|-----|--------|
-| 1 | **IA-0** Infrastructure Assessment Scaffold | ⚪ queued | 1 session | All IA phases |
-| 2 | **IA-11** Network Tab + Device Map + Auto-Speedtest (KILLER FEATURE) | ⚪ queued | 2-3 sessions | Diff vs Datto/Ninja/Auvik |
-| 3 | **CA-13** Intune Deep verify/gap-fill | ⚪ queued | 0-1 session | None |
-| 4 | **CA-14** Auto-consent (Fabric + ARM) | ⚪ queued | 2 sessions | None (UX win) |
-| 5 | **IA-1** Server & Hypervisor Inventory | ⚪ queued | 2 sessions | IA-10 report |
+| 1 | ~~**IA-0** Infrastructure Assessment Scaffold~~ | ✅ shipped | 1 session | All IA phases |
+| 2 | ~~**IA-11** Network Tab + Device Map + Auto-Speedtest (KILLER FEATURE)~~ | ✅ Track A+B+C shipped | 2-3 sessions | Diff vs Datto/Ninja/Auvik |
+| 3 | ~~**CA-13** Intune Deep verify/gap-fill~~ | ✅ shipped | 0-1 session | None |
+| 4 | ~~**CA-14** Auto-consent (Fabric + ARM)~~ | ✅ shipped | 1 session | None (UX win) |
+| 5 | ~~**IA-1** Server & Hypervisor Inventory~~ | ✅ shipped | 1 session | IA-10 report |
 
 After 5 complete → replan from Backlog.
 
@@ -81,25 +81,27 @@ After 5 complete → replan from Backlog.
 | CA-10 Mail Flow | ✅ | — | SPF/DKIM/DMARC/MTA-STS per domain + forwarding rule risks |
 | CA-11 Benchmarks | ✅ | 2026-04-18 | Franchise peer + industry + global, NAICS 15 industries × 5 bands |
 | CA-12 Unified Experience | ✅ | 2026-04-18 | CopilotReadiness deprecated, ConnectCloudWizard, single tab, single scan button |
+| CA-13 Intune Deep | ✅ | 2026-04-20 | Verify/gap-fill of Intune checks in Endpoint pipeline |
+| CA-14 Auto-consent | ✅ | 2026-04-20 | PBI Fabric auto-enable (delegated OAuth) + Azure ARM auto-assign Reader (delegated). Wizard updated with "Enable automatically" primary buttons + manual fallback. `AutoConsentFunction.cs` + `FabricAdminService.cs` |
 
 ---
 
 ## Cloud Assessment (CA) — Remaining Gaps
 
-### CA-13: Intune Deep Verify + Gap Fill
+### CA-13: Intune Deep Verify + Gap Fill ✅
 **Priority:** P0 — verify first, may be done
-**Effort:** 0-1 session
+**Effort:** 0-1 session — **SHIPPED 2026-04-20**
 
-Audit CA-2 coverage vs spec. Confirm:
-- [ ] App protection policies iOS + Android
-- [ ] Managed apps inventory
-- [ ] Enrollment restrictions
-- [ ] Autopilot deployment profiles
-- [ ] Configuration profiles drift detection
+Audit CA-2 coverage vs spec:
+- [x] App protection policies iOS + Android — already in CA-2
+- [x] Managed apps inventory — already in CA-2
+- [x] Enrollment restrictions — already in CA-2
+- [x] Autopilot deployment profiles — **NEW**: `CollectAutopilotProfiles` via Graph beta `/beta/deviceManagement/windowsAutopilotDeploymentProfiles`
+- [x] Configuration profiles drift detection — **NEW**: `CollectConfigProfileAssignmentStatus` via `DeviceConfigurationDeviceStateSummaries` (compliant/nonCompliant/error/conflict/notApplicable)
 
-If gaps: add to EndpointPipeline, no new area.
-
-**Prompt ready below** in prompt library.
+New recommendations: `GenerateConfigProfileDrift` (>15% = action required, >5% = warning), enhanced `GenerateAutopilot` (pass when profiles exist).
+New metrics: `config_profiles_assigned/succeeded/failed/pending/conflict`, `autopilot_profiles` now populated.
+Signature change: `EndpointPipeline.RunAsync` now takes `graphBetaHttp` param (like other pipelines).
 
 ### CA-14: Auto-Consent (Fabric + ARM)
 **Priority:** P0 — UX win, cuts onboarding 3 steps → 1 click
@@ -119,9 +121,9 @@ If gaps: add to EndpointPipeline, no new area.
 
 Result: ConnectCloudWizard Steps 2+3 become single-click per service.
 
-### CA-15: Drift Alerts + Notifications
+### CA-15: Drift Alerts + Notifications ✅
 **Priority:** P0 — MSP retention
-**Effort:** 1 session
+**Effort:** 1 session — **SHIPPED 2026-04-21**
 
 - `cloud_assessment_alert_rules` table (per-franchise thresholds)
 - `AlertService` runs after each scan, detects drops
@@ -183,17 +185,28 @@ M365 unified audit log views (sign-in risk timeline, admin actions, impossible t
 
 Parallel to Cloud Assessment. Customer: hybrid on-prem + cloud + multi-site (yacimientos).
 
-### IA-0: Scaffold
+### IA-0: Scaffold ✅
 **Priority:** P0 — unlocks all IA
-**Effort:** 1 session
+**Effort:** 1 session — **SHIPPED 2026-04-20**
 
-New DB: `infra_assessment_*` (scans, sites, devices, connectivity, capacity, findings).
-New service `Services/InfraAssessment/`.
-New portal tab, new report type `infra-assessment`.
+SQL migration `043_infra_assessment.sql` (6 tables). Entity classes in `Data/Entities/InfraAssessment.cs`.
+DbContext mappings. `IInfraAssessmentService` + `InfraAssessmentService` stub (start, latest, detail, history).
+`InfraAssessmentFunction.cs` (POST scan, GET latest, GET detail, GET history). DI registered.
+Portal: `api/infraAssessment.ts` hooks + `InfraAssessmentTab.tsx` with KPI cards + findings list + nav entry + route.
 
-### IA-1: Server & Hypervisor Inventory
+### IA-1: Server & Hypervisor Inventory ✅
 **Priority:** P1
-**Effort:** 2 sessions
+**Effort:** 1 session — **SHIPPED 2026-04-20**
+
+Migration `046_hypervisor_inventory.sql` (3 tables: `infra_hypervisor_configs`, `infra_hypervisors`, `infra_vms`).
+Entities `InfraHypervisorConfig`, `InfraHypervisor`, `InfraVm`. DbContext mappings.
+`HypervisorPipeline.cs` — VMware vCenter REST + Proxmox REST (QEMU + LXC) collectors.
+7 finding generators (idle VM, over-provisioned, stale snapshots, missing backup, capacity exhaustion, no HA, EOL OS).
+`HypervisorConfigFunction.cs` — CRUD + test + scan results (6 endpoints).
+Portal: "Servers & VMs" sub-tab in InfraAssessmentTab with config manager (add/delete/test), host table, VM table, findings.
+Hyper-V deferred to agent-side WMI module (IA-1b).
+
+**Previous spec (kept for reference):**
 
 - VMware vCenter API integration
 - Hyper-V host + VM enumeration
@@ -270,6 +283,42 @@ Dedicated report type. 10 sections matching customer agenda.
 ### IA-11: Network Tab + Device Map + Auto-Speedtest
 **Priority:** P1 — KILLER DIFFERENTIATOR (no MSP tool combines this)
 **Effort:** 2-3 sessions
+**Track A status:** ✅ shipped 2026-04-20
+**Track B status:** ✅ shipped 2026-04-20
+**Track C status:** ✅ shipped 2026-04-20
+
+**Track A shipped (data layer + portal):**
+- SQL migration `044_network_sites.sql`: `machines.last_public_ip` + `last_public_ip_at`, `machine_public_ip_history` table, `network_sites` table
+- `PublicIpTracker` service: captures public IP from `X-Forwarded-For` on every agent results submission, maintains IP history
+- `SiteClusterService`: groups machines by public IP → auto-derived network sites, computes agent count, IP changes 90d, avg speed/latency
+- `NetworkSitesFunction.cs`: 4 endpoints (GET list, POST rebuild, PATCH update, GET ip-history)
+- Portal `NetworkSitesTab.tsx`: KPI cards (sites, agents, avg download, unstable/cellular alerts) + Sites table (IP, location, ISP, type, speed, latency, IP changes) + IP History tab
+- Wired into `ResultsFunction` (non-fatal IP tracking after evaluation)
+
+**Track B shipped (agent upgrade + server response + portal):**
+- Agent `NetworkDiagnostics.cs`: `MeasureCloudEndpointLatencyAsync` (6 M365 endpoints: outlook, teams, sharepoint, graph, login, admin) + `MeasureDnsResolutionAsync` (3-query average)
+- Agent models: `CloudEndpointLatency` class, `NetworkDiagResult` extended with `CloudEndpointLatency`, `DnsResolutionMs`, `TriggeredByIpChange`
+- Agent `JsonContext.cs`: `CloudEndpointLatency` + `List<CloudEndpointLatency>` added for AOT source-gen
+- Agent `ResultsResponse`: `YourPublicIp` + `SpeedtestRequested` fields for server→agent communication
+- Agent `Program.cs`: console output shows cloud endpoint count + DNS latency, prints public IP after upload
+- Server `ResultsFunction`: response now includes `yourPublicIp` (from `_currentUser.IpAddress`) + `speedtestRequested`
+- Server `EvaluationService`: `NetworkDiagDto` extended with `CloudEndpointLatencyDto`, `DnsResolutionMs`, `TriggeredByIpChange`; persists `dns_resolution_ms`, `cloud_endpoint_count`, `cloud_endpoint_avg_ms`, `triggered_by_ip_change` columns
+- Server `MachineNetworkDiag` entity: 4 new columns
+- SQL migration `045_network_diag_cloud_dns.sql`: adds 4 columns to `machine_network_diag`
+- Portal `NetworkDiagnosticsTab.tsx`: 2 new KPI cards (DNS, Cloud Latency) + 2 new table columns + 6-column grid
+- Portal `networkDiagnostics.ts`: API types extended
+
+**Track C shipped (GeoIP + map + charts + SLA + device drill-down):**
+- Server `GeoIpService.cs`: `IGeoIpService` interface + `IpApiGeoIpService` implementation (ip-api.com free tier, auto-detects country/region/city/lat/lon/ISP/ASN/connectivity type)
+- `PublicIpTracker` enriched: auto-populates geo fields on `machine_public_ip_history` rows via GeoIP lookup on first IP detection
+- `SiteClusterService` enriched: propagates geo data from IP history to `network_sites`, auto-names sites by city
+- `NetworkSitesFunction.cs`: 2 new endpoints — `GET /v2/network-sites/{siteId}/speed-history` (90d speed/latency/DNS/cloud timeseries) + `GET /v2/network-sites/{siteId}/machines` (devices at site with latest diag)
+- Portal `SiteMap.tsx`: Leaflet interactive map (react-leaflet + OpenStreetMap tiles), auto-fit bounds, click-to-select site, popup with speed/ISP/agents
+- Portal `SpeedHistoryChart.tsx`: Recharts line chart (download/upload 90d), SLA reference line from contracted bandwidth
+- Portal `SiteDetailDrawer.tsx`: slide-over drawer with SLA compliance bar, speed/latency/upload KPIs, speed history chart, device table
+- Portal `NetworkSitesTab.tsx`: full rewrite — map card, SLA breaches KPI, SLA column in sites table, clickable rows → drawer, 5 KPI cards
+- API types: `SpeedHistoryPoint`, `SpeedHistoryResponse`, `SiteMachine` + `useSpeedHistory`, `useSiteMachines` hooks
+- NPM: `leaflet`, `react-leaflet`, `@types/leaflet` installed
 
 Combines: public IP detection + GeoIP + auto-speedtest on IP change + site clustering + device map + bandwidth/SLA tracking. Competitors (Datto, Ninja, Auvik) do pieces, none combine all.
 
@@ -341,6 +390,7 @@ No new consent. No new tables. Pure code reuse.
 | # | Feature | Tier | Effort |
 |---|---------|------|--------|
 | ~~A-VER~~ | ~~Version audit: verify v1.5.0/v1.5.1 features in code, bump `.csproj` to match~~ | ✅ | — |
+| ~~A-OFL~~ | ~~Offline collection mode (`--offline`/`--share`/`--collect`)~~ | ✅ | 0.5 session |
 | A-01 | CVE scanner (standalone, beyond Defender) | P1 | 1 session |
 | A-02 | Patch compliance tracking (WSUS/WUfB/Ninja) | P1 | 1 session |
 | A-03 | Backup verification (Veeam/Acronis/Ninja signal) | P2 | 1 session |
@@ -349,16 +399,18 @@ No new consent. No new tables. Pure code reuse.
 | A-06 | Scheduled tasks inventory (persistence detection) | P2 | 0.5 session |
 | A-07 | Browser extensions inventory | P3 | 1 session |
 | A-08 | Browser saved passwords risk signal | P3 | 0.5 session |
-| A-09 | Agent version detection + drift dashboard | P1 | 1 session |
+| ~~A-09~~ | ~~Agent version detection + drift dashboard~~ | ✅ shipped 2026-04-20 | 0.5 session |
 | A-10 | Sentinel decouple binary → registry (prereq for auto-update) | P2 | 1 session |
 | A-11 | Self-update helper binary (updater.exe + hash verify + rollback) | P2 | 2-3 sessions |
+| A-11b | NinjaRMM auto-update alternative: version check in deploy script + download from URL or `KRYOSS_LATEST_VERSION` Script Variable. Lighter than A-11, no updater.exe needed | P2 | 0.5 session |
 | A-12 | Staged rollout + update channels (stable/beta, 5→25→100%, auto-rollback) | P3 | 2 sessions |
+| ~~A-13~~ | ~~Server-side scan orchestrator: agent polls `/v1/schedule`, server returns slot time~~ | ✅ shipped 2026-04-20 | 2-3 sessions |
 
 ### Domain Controller Scope (Phase 2 per CLAUDE.md)
 
 | # | Feature | Tier | Effort |
 |---|---------|------|--------|
-| DC-01 | DC19/22/25 platform codes + control mapping (~100 DC controls) | P1 | 2 sessions |
+| DC-01 | DC19/22/25 platform codes + control mapping (~100 DC controls) | ✅ shipped 2026-04-20 | 1 session |
 | DC-02 | AD schema/replication health | P1 | 1 session |
 | DC-03 | FSMO role distribution audit | P1 | 0.5 session |
 | DC-04 | GPO inventory + inheritance analysis | P2 | 2 sessions |
@@ -397,8 +449,8 @@ No new consent. No new tables. Pure code reuse.
 | RP-03 | Vendor risk report (SaaS inventory) | P3 | 1 session |  |
 | RP-04 | Insurance renewal questionnaire report | P3 | 1 session |  |
 | RP-05 | Board-level exec report | Icebox | 1 session |  |
-| RP-06 | Business Proposal report (auto-pricing from `service_catalog` + `franchise_service_rates`) | P2 | 1 session | Needs `sql/039_service_catalog.sql` |
-| RP-07 | Network Assessment report (portal viewer for `NetworkRecipe` output) | P2 | 0.5 session | Backend done |
+| ~~RP-06~~ | ~~Business Proposal report (auto-pricing from `service_catalog` + `franchise_service_rates`)~~ | ✅ shipped 2026-04-21 | 1 session | `ProposalRecipe.cs` + `ServiceCatalogBlock.cs` + portal dropdown added |
+| ~~RP-07~~ | ~~Network Assessment report (portal viewer for `NetworkRecipe` output)~~ | ✅ shipped 2026-04-20 | 0.5 session | `NetworkRecipe.cs` + `NetworkBlock.cs` + portal `ReportGenerator.tsx` has `network` type |
 
 ### Assessment & Controls
 
@@ -489,7 +541,7 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 | HK-04 | ~~Verify NativeCommandEngine + UserRightsApi exist~~ | ✅ | — | Both exist. Earlier audit false negative |
 | HK-05 | ~~Verify EventLogEngine `event_count`/`event_top_sources` exist~~ | ✅ | — | Both exist in EventLogEngine.cs + ControlDef.cs |
 | HK-06 | ~~Update CLAUDE.md shipped features to match actual code state~~ | ✅ | — | Agent CLAUDE.md v1.2.2→v1.5.1, engines table, services list, payload version, repo layout, master CLAUDE.md updated |
-| HK-07 | `service_catalog` + `franchise_service_rates` migration (sql/039) | P2 | 0.5 session | Referenced in Unified Report System spec, not found in DB |
+| ~~HK-07~~ | ~~`service_catalog` + `franchise_service_rates` migration (sql/039)~~ | ✅ | — | SQL files exist: `sql/039_service_catalog.sql` + `seed_039_service_catalog.sql`. Verified 2026-04-21 |
 
 ---
 
@@ -497,9 +549,9 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 
 | Tier | Meaning | Items |
 |------|---------|-------|
-| **P0** | Immediate — next sessions | IA-0, IA-11 (killer), CA-13, CA-14, IA-1 |
-| **P1** | Month 1 | IA-2, IA-3, CA-15, CA-16 A, CA-17 MFA, DC-01..03, AT-01..03, A-01..02, A-09, R-01..02, R-04 |
-| **P2** | Month 2-3 | HK-07, RP-06, RP-07, IA-4/5/10/12, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01 |
+| **P0** | ~~Immediate~~ | ✅ All shipped (IA-0, IA-11, CA-13, CA-14, IA-1) |
+| **P1** | Month 1 | IA-2, IA-3, CA-16 A, CA-17 MFA, DC-02..03, AT-01..03, A-01..02, R-01..02, R-04 |
+| **P2** | Month 2-3 | RP-06, IA-4/5/10/12, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01 |
 | **P3** | Month 3+ | IA-6..9, CA-19/20, A-07/08, AC-07, SE-05/08/09, CM-01/03..05, PL-01/03/05..10, RP-02..04, AT-04/05 |
 | **Icebox** | Needs demand signal | SE-06/07, RP-05, PL-11/12, UX-02..04 |
 
