@@ -24,6 +24,26 @@ namespace KryossAgent.Models;
 [JsonSerializable(typeof(List<SoftwareItem>))]
 [JsonSerializable(typeof(ThreatFinding))]
 [JsonSerializable(typeof(List<ThreatFinding>))]
+[JsonSerializable(typeof(NetworkDiagResult))]
+[JsonSerializable(typeof(LatencyResult))]
+[JsonSerializable(typeof(List<LatencyResult>))]
+[JsonSerializable(typeof(RouteEntry))]
+[JsonSerializable(typeof(List<RouteEntry>))]
+[JsonSerializable(typeof(VpnInterface))]
+[JsonSerializable(typeof(List<VpnInterface>))]
+[JsonSerializable(typeof(AdapterInfo))]
+[JsonSerializable(typeof(List<AdapterInfo>))]
+[JsonSerializable(typeof(BandwidthInfo))]
+[JsonSerializable(typeof(CloudEndpointLatency))]
+[JsonSerializable(typeof(List<CloudEndpointLatency>))]
+[JsonSerializable(typeof(SnmpCredentials))]
+[JsonSerializable(typeof(SnmpScanResult))]
+[JsonSerializable(typeof(SnmpDeviceResult))]
+[JsonSerializable(typeof(List<SnmpDeviceResult>))]
+[JsonSerializable(typeof(SnmpInterfaceResult))]
+[JsonSerializable(typeof(SnmpEntityInfo))]
+[JsonSerializable(typeof(OfflineCollectPayload))]
+[JsonSerializable(typeof(List<OfflineCollectPayload>))]
 // Primitive types that can appear polymorphically inside CheckResult.Value (object?).
 // Without these, source-gen throws NotSupportedException when an engine writes a
 // boxed long/int/bool/string/double to Value (e.g. EventLogConfiguration.MaximumSizeInBytes
@@ -33,6 +53,7 @@ namespace KryossAgent.Models;
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(ScheduleResponse))]
 [JsonSourceGenerationOptions(
     PropertyNameCaseInsensitive = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

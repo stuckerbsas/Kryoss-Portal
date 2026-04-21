@@ -33,6 +33,7 @@ var knownFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "--silent", "--verbose", "--scan", "--reenroll",
     "--code", "--api-url", "--threads", "--targets", "--targets-file",
     "--discover-ad", "--discover-arp", "--discover-subnet",
+    "--offline", "--share", "--collect",
 };
 foreach (var arg in args)
 {
@@ -84,6 +85,54 @@ if (!silent)
     Console.WriteLine();
 }
 
+// ── A-13: Orchestrated scan scheduling ──
+if (silent && !args.Contains("--code", StringComparer.OrdinalIgnoreCase))
+{
+    var persistedConfig = AgentConfig.Load();
+    if (persistedConfig.IsEnrolled)
+    {
+        var lastRunFile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Kryoss", "lastrun.txt");
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        if (File.Exists(lastRunFile) && File.ReadAllText(lastRunFile).Trim() == today)
+        {
+            if (verbose) Console.Error.WriteLine($"[INFO] Already ran today ({today}). Exiting.");
+            Environment.Exit(0);
+        }
+
+        try
+        {
+            using var scheduleClient = new ApiClient(persistedConfig);
+            var schedule = await scheduleClient.GetScheduleAsync();
+            if (schedule is not null && !schedule.RunNow)
+            {
+                var sleepMs = (int)(schedule.RunAt - DateTime.UtcNow).TotalMilliseconds;
+                if (sleepMs > 0 && sleepMs <= 65 * 60 * 1000)
+                {
+                    if (verbose) Console.Error.WriteLine(
+                        $"[INFO] Slot in {sleepMs / 1000}s (at {schedule.RunAt:HH:mm:ss} UTC). Sleeping...");
+                    await Task.Delay(sleepMs);
+                }
+                else if (sleepMs > 65 * 60 * 1000)
+                {
+                    if (verbose) Console.Error.WriteLine(
+                        $"[INFO] Slot too far ({sleepMs / 1000}s). Exiting — next hourly wake handles it.");
+                    Environment.Exit(0);
+                }
+            }
+            else if (verbose && schedule is not null)
+            {
+                Console.Error.WriteLine("[INFO] Server says runNow=true (catch-up).");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (verbose) Console.Error.WriteLine($"[WARN] Schedule check failed, running immediately: {ex.Message}");
+        }
+    }
+}
+
 // ── Scan mode: delegate to NetworkScanner and exit ──
 if (scanMode)
 {
@@ -98,6 +147,14 @@ if (scanMode)
         Console.WriteLine($"RESULT: ERROR | {Environment.MachineName} | Network scan: {ex.Message}");
         Environment.Exit(2);
     }
+    return;
+}
+
+// ── Collect mode: upload offline payloads from shared folder to API ──
+var collectPath = GetArg(args, "--collect");
+if (collectPath is not null)
+{
+    await RunCollectMode(collectPath, args, silent, verbose);
     return;
 }
 
@@ -166,15 +223,14 @@ if (!config.IsEnrolled)
 
     var hostname = Environment.MachineName;
     var platform = PlatformDetector.DetectPlatform();
-    // Hardware detection deferred to after controls download — not needed for
-    // enrollment (EnrollAsync only uses OS strings from platform).
+    var earlyHw = PlatformDetector.DetectHardware();
 
     if (!silent) Console.WriteLine($"  Enrolling {hostname}...");
 
     try
     {
         using var enrollClient = new ApiClient(config);
-        var enrollment = await enrollClient.EnrollAsync(code, hostname, platform);
+        var enrollment = await enrollClient.EnrollAsync(code, hostname, platform, earlyHw.ProductType ?? 0);
         if (enrollment is null)
         {
             Console.Error.WriteLine("[ERROR] Enrollment returned null.");
@@ -314,7 +370,8 @@ ICheckEngine[] engines =
     new EventLogEngine(),
     new CertStoreEngine(),
     new BitLockerEngine(),                       // WMI Win32_EncryptableVolume (no manage-bde.exe)
-    new TpmEngine()                              // WMI Win32_Tpm (no tpmtool.exe)
+    new TpmEngine(),                             // WMI Win32_Tpm (no tpmtool.exe)
+    new DcEngine()                               // Type="dc" — DirectoryServices/WMI/registry DC checks
 ];
 
 var allResults = new List<CheckResult>();
@@ -395,19 +452,88 @@ if (!silent)
 // ── Attach threats to hardware info ──
 hardwareInfo.Threats = threats;
 
-// ── Build and upload payload ──
+// ── Network diagnostics ──
+NetworkDiagResult? networkDiag = null;
+if (!silent) Console.Write("    Running network diagnostics...");
+try
+{
+    networkDiag = await NetworkDiagnostics.RunAllAsync(config.ApiUrl, verbose);
+    if (!silent)
+    {
+        var vpnCount = networkDiag.VpnInterfaces?.Count ?? 0;
+        var peerCount = networkDiag.InternalLatency?.Count ?? 0;
+        var cloudCount = networkDiag.CloudEndpointLatency?.Count(e => e.Reachable) ?? 0;
+        var dnsMs = networkDiag.DnsResolutionMs?.ToString("0.#") ?? "n/a";
+        Console.WriteLine($" done ({networkDiag.DownloadMbps:0.#} Mbps down, {peerCount} peers, {vpnCount} VPNs, {cloudCount} cloud, DNS {dnsMs}ms)");
+    }
+}
+catch (Exception ex)
+{
+    if (verbose) Console.Error.WriteLine($"  [WARN] Network diagnostics failed: {ex.Message}");
+    if (!silent) Console.WriteLine(" skipped");
+}
+
+// ── SNMP infrastructure scan ──
+try
+{
+    var snmpCreds = await apiClient.GetSnmpCredentialsAsync();
+    if (snmpCreds != null)
+    {
+        if (!silent) Console.Write("    Running SNMP infrastructure scan...");
+        var snmpTargets = snmpCreds.Targets ?? new List<string>();
+        // Auto-discover from ARP/route if no explicit targets
+        if (snmpTargets.Count == 0 && networkDiag?.InternalLatency != null)
+            snmpTargets = networkDiag.InternalLatency
+                .Where(p => p.Reachable)
+                .Select(p => p.Host)
+                .ToList();
+
+        if (snmpTargets.Count > 0)
+        {
+            var snmpResult = await SnmpScanner.ScanAsync(snmpCreds, snmpTargets, verbose);
+            if (!silent) Console.WriteLine($" done ({snmpResult.Devices.Count} devices, {snmpResult.Unreachable.Count} unreachable)");
+            if (snmpResult.Devices.Count > 0)
+                await apiClient.SubmitSnmpResultsAsync(snmpResult);
+        }
+        else if (!silent) Console.WriteLine(" skipped (no targets)");
+    }
+}
+catch (Exception ex)
+{
+    if (verbose) Console.Error.WriteLine($"  [WARN] SNMP scan failed: {ex.Message}");
+    if (!silent) Console.WriteLine(" skipped");
+}
+
+// ── Build payload ──
 var payload = new AssessmentPayload
 {
     AgentId = config.AgentId,
-    AgentVersion = "1.3.0",
+    AgentVersion = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
     Timestamp = DateTime.UtcNow,
     DurationMs = durationMs,
     Platform = platformInfo,
     Hardware = hardwareInfo,
     Software = softwareList,
     Results = allResults,
+    NetworkDiag = networkDiag,
 };
 
+// ── Offline mode: dump to shared folder instead of uploading ──
+var offlineMode = args.Contains("--offline", StringComparer.OrdinalIgnoreCase);
+var sharePath = GetArg(args, "--share");
+
+if (offlineMode || sharePath is not null)
+{
+    var targetDir = sharePath ?? Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "Kryoss", "OfflineCollect");
+    OfflineStore.SaveCollectPayload(payload, config, targetDir, silent);
+    Console.WriteLine($"RESULT: OFFLINE | {Environment.MachineName} | {allResults.Count} checks | Saved to shared folder");
+    Environment.Exit(0);
+    return;
+}
+
+// ── Upload payload ──
 try
 {
     if (!silent) Console.Write("  Uploading results...");
@@ -428,6 +554,8 @@ try
             Console.WriteLine($"  ║  Pass: {response.PassCount,4}  Warn: {response.WarnCount,4}  Fail: {response.FailCount,4} ║");
             Console.WriteLine($"  ╚══════════════════════════════════════╝");
             Console.ResetColor();
+            if (!string.IsNullOrEmpty(response.YourPublicIp))
+                Console.WriteLine($"  Public IP: {response.YourPublicIp}");
         }
         else
         {
@@ -435,12 +563,63 @@ try
         }
     }
 
-    // ── v1.3.0: Stateless cycle ──
-    // Wipe credentials from registry after successful upload IF no offline
-    // queue items remain. Next run will re-enroll (cheap, <1s) and use fresh
-    // credentials. Zero on-disk state when idle = minimal attack surface.
-    // If offline queue has items, KEEP credentials — next run needs them to
-    // re-sign and upload the queued payloads.
+    // ── Auto AD hygiene for Domain Controllers ──
+    if (hardwareInfo.ProductType == 2)
+    {
+        if (!silent) Console.Write("  Running AD hygiene audit (DC detected)...");
+        try
+        {
+            TargetDiscovery.DiscoverAd(null);
+            var report = TargetDiscovery.LastHygieneReport;
+            if (report is not null)
+            {
+                var allFindings = new List<object>();
+                foreach (var m in report.StaleMachines) allFindings.Add(new { m.Name, objectType = "Computer", status = "Stale", m.DaysInactive, m.Detail });
+                foreach (var m in report.DormantMachines) allFindings.Add(new { m.Name, objectType = "Computer", status = "Dormant", m.DaysInactive, m.Detail });
+                foreach (var u in report.StaleUsers) allFindings.Add(new { u.Name, objectType = "User", status = "Stale", u.DaysInactive, u.Detail });
+                foreach (var u in report.DormantUsers) allFindings.Add(new { u.Name, objectType = "User", status = "Dormant", u.DaysInactive, u.Detail });
+                foreach (var u in report.DisabledUsers) allFindings.Add(new { u.Name, objectType = "User", status = "Disabled", u.DaysInactive, u.Detail });
+                foreach (var u in report.NeverExpirePasswords) allFindings.Add(new { u.Name, objectType = "User", status = "PwdNeverExpires", u.DaysInactive, u.Detail });
+                foreach (var s in report.PrivilegedAccounts) allFindings.Add(new { s.Name, objectType = "Security", status = "PrivilegedAccount", s.DaysInactive, s.Detail });
+                foreach (var s in report.KerberoastableAccounts) allFindings.Add(new { s.Name, objectType = "Security", status = "Kerberoastable", s.DaysInactive, s.Detail });
+                foreach (var s in report.UnconstrainedDelegation) allFindings.Add(new { s.Name, objectType = "Security", status = "UnconstrainedDelegation", s.DaysInactive, s.Detail });
+                foreach (var s in report.AdminCountResidual) allFindings.Add(new { s.Name, objectType = "Security", status = "AdminCountResidue", s.DaysInactive, s.Detail });
+                foreach (var s in report.NoLaps) allFindings.Add(new { s.Name, objectType = "Security", status = "NoLAPS", s.DaysInactive, s.Detail });
+                foreach (var s in report.DomainInfo) allFindings.Add(new { s.Name, objectType = "Config", status = s.Status, s.DaysInactive, s.Detail });
+
+                var totalMachines = TargetDiscovery.LastDiscoveredActiveCount;
+                var totalUsers = TargetDiscovery.LastDiscoveredActiveUserCount;
+
+                await apiClient.SubmitHygieneAsync(new
+                {
+                    scannedBy = Environment.MachineName,
+                    totalMachines,
+                    totalUsers,
+                    findings = allFindings
+                });
+
+                if (!silent) Console.WriteLine($" done ({allFindings.Count} findings)");
+                else Console.WriteLine($"RESULT: HYGIENE | {Environment.MachineName} | {allFindings.Count} findings");
+            }
+            else if (!silent) Console.WriteLine(" no findings");
+        }
+        catch (Exception hyEx)
+        {
+            if (verbose) Console.Error.WriteLine($"  [WARN] AD hygiene failed: {hyEx.Message}");
+            if (!silent) Console.WriteLine(" skipped");
+        }
+    }
+
+    try
+    {
+        var kryossDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Kryoss");
+        Directory.CreateDirectory(kryossDir);
+        File.WriteAllText(Path.Combine(kryossDir, "lastrun.txt"),
+            DateTime.UtcNow.ToString("yyyy-MM-dd"));
+    }
+    catch { }
+
     var pendingCount = OfflineStore.LoadPending().Count;
     if (pendingCount == 0)
     {
@@ -456,11 +635,21 @@ try
 }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"[WARN] Upload failed: {ex.Message}");
-    Console.Error.WriteLine("  Saving results offline for later upload...");
-    Console.WriteLine($"RESULT: OFFLINE | {Environment.MachineName} | {allResults.Count} checks | Upload failed: {ex.Message}");
-    OfflineStore.SavePayload(payload);
-    Environment.Exit(2);
+    // If share path configured, fall back to offline dump instead of local queue
+    if (sharePath is not null)
+    {
+        OfflineStore.SaveCollectPayload(payload, config, sharePath, silent);
+        Console.WriteLine($"RESULT: OFFLINE | {Environment.MachineName} | {allResults.Count} checks | Fallback to shared folder");
+        Environment.Exit(2);
+    }
+    else
+    {
+        Console.Error.WriteLine($"[WARN] Upload failed: {ex.Message}");
+        Console.Error.WriteLine("  Saving results offline for later upload...");
+        Console.WriteLine($"RESULT: OFFLINE | {Environment.MachineName} | {allResults.Count} checks | Upload failed: {ex.Message}");
+        OfflineStore.SavePayload(payload);
+        Environment.Exit(2);
+    }
 }
 
 }
@@ -509,6 +698,104 @@ static async Task UploadPendingResults(AgentConfig config, bool silent)
     }
 }
 
+// ── Collect mode: read JSONs from shared folder, POST to /v1/collect ──
+static async Task RunCollectMode(string collectPath, string[] args, bool silent, bool verbose)
+{
+    if (!Directory.Exists(collectPath))
+    {
+        Console.Error.WriteLine($"[ERROR] Collect path does not exist: {collectPath}");
+        Environment.Exit(1);
+        return;
+    }
+
+    var cliCode = GetArg(args, "--code");
+    var cliApiUrl = GetArg(args, "--api-url");
+
+    var config = AgentConfig.Load();
+    if (EmbeddedConfig.ApiUrl is not null) config.ApiUrl = EmbeddedConfig.ApiUrl;
+    if (!string.IsNullOrEmpty(cliApiUrl)) config.ApiUrl = cliApiUrl;
+
+    var enrollCode = cliCode ?? EmbeddedConfig.EnrollmentCode;
+
+    // Collector must be enrolled to authenticate
+    if (!config.IsEnrolled)
+    {
+        if (string.IsNullOrEmpty(enrollCode))
+        {
+            Console.Error.WriteLine("[ERROR] Collector not enrolled. Provide --code <enrollment-code>.");
+            Environment.Exit(1);
+            return;
+        }
+        var hostname = Environment.MachineName;
+        var platform = PlatformDetector.DetectPlatform();
+        var earlyHw = PlatformDetector.DetectHardware();
+        if (!silent) Console.WriteLine($"  Enrolling collector {hostname}...");
+
+        using var enrollClient = new ApiClient(config);
+        var enrollment = await enrollClient.EnrollAsync(enrollCode, hostname, platform, earlyHw.ProductType ?? 0);
+        if (enrollment is null)
+        {
+            Console.Error.WriteLine("[ERROR] Collector enrollment failed.");
+            Environment.Exit(1);
+            return;
+        }
+        config.AgentId = enrollment.AgentId;
+        config.ApiKey = enrollment.ApiKey;
+        config.ApiSecret = enrollment.ApiSecret;
+        config.PublicKeyPem = enrollment.PublicKey;
+        config.AssessmentId = enrollment.AssessmentId;
+        config.Save();
+        if (!silent) Console.WriteLine($"  Collector enrolled.");
+    }
+
+    var files = Directory.GetFiles(collectPath, "collect_*.json");
+    if (files.Length == 0)
+    {
+        if (!silent) Console.WriteLine("  No pending collect files found.");
+        Environment.Exit(0);
+        return;
+    }
+
+    if (!silent) Console.WriteLine($"  Found {files.Length} collect file(s). Uploading...");
+
+    var donePath = Path.Combine(collectPath, "done");
+    Directory.CreateDirectory(donePath);
+
+    using var client = new ApiClient(config);
+    var successCount = 0;
+    var failCount = 0;
+
+    foreach (var file in files)
+    {
+        try
+        {
+            var json = File.ReadAllText(file);
+            var envelope = System.Text.Json.JsonSerializer.Deserialize(json,
+                KryossJsonContext.Default.OfflineCollectPayload);
+            if (envelope is null)
+            {
+                if (!silent) Console.Error.WriteLine($"  [WARN] Skipping corrupt file: {Path.GetFileName(file)}");
+                failCount++;
+                continue;
+            }
+
+            await client.SubmitCollectAsync(envelope);
+            File.Move(file, Path.Combine(donePath, Path.GetFileName(file)), overwrite: true);
+            successCount++;
+            if (verbose) Console.WriteLine($"  Uploaded: {Path.GetFileName(file)} ({envelope.Hostname})");
+        }
+        catch (Exception ex)
+        {
+            failCount++;
+            Console.Error.WriteLine($"  [WARN] Failed {Path.GetFileName(file)}: {ex.Message}");
+        }
+    }
+
+    if (!silent) Console.WriteLine($"  Collect complete: {successCount} uploaded, {failCount} failed.");
+    Console.WriteLine($"RESULT: COLLECT | {Environment.MachineName} | {successCount} uploaded, {failCount} failed");
+    Environment.Exit(failCount > 0 ? 2 : 0);
+}
+
 // ── Help ──
 static void PrintHelp()
 {
@@ -532,6 +819,11 @@ OPTIONS:
   Scan mode:
     --scan               Network discovery + port scan + AD hygiene (no remote deployment)
 
+  Offline collection:
+    --offline            Save results to shared folder (skip upload)
+    --share PATH         Shared folder path for offline results
+    --collect PATH       Upload all collect_*.json files from PATH to API
+
   Network discovery (used with --scan):
     --discover-ad [OU]   Discover machines via Active Directory
     --discover-arp       Discover machines via ARP table
@@ -549,9 +841,10 @@ OPTIONS:
 
 EXAMPLES:
   KryossAgent.exe                              Scan this machine (default)
+  KryossAgent.exe --offline --share \\server\kryoss  Scan + save to share
+  KryossAgent.exe --collect \\server\kryoss    Upload all pending from share
   KryossAgent.exe --scan --threads 20          Network discovery + port scan
   KryossAgent.exe --reenroll --code XXXX       Re-enroll and scan
-  KryossAgent.exe --scan --discover-subnet 10.0.0.0/24
   KryossAgent.exe --verbose                    Full detail output
 
 EXIT CODES:

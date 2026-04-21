@@ -41,7 +41,7 @@ public class ApiClient : IDisposable
         _http = new HttpClient(handler, disposeHandler: true)
         {
             BaseAddress = new Uri(config.ApiUrl.TrimEnd('/')),
-            Timeout = TimeSpan.FromSeconds(30)
+            Timeout = TimeSpan.FromSeconds(120)
         };
 
         // Envelope encryption is only available after the agent is enrolled
@@ -66,12 +66,13 @@ public class ApiClient : IDisposable
     /// POST /v1/enroll — no HMAC needed (public endpoint).
     /// </summary>
     public async Task<EnrollmentResponse?> EnrollAsync(string code, string hostname,
-        PlatformInfo? platform)
+        PlatformInfo? platform, int productType = 0)
     {
         var enrollBody = new EnrollRequest
         {
             Code = code, Hostname = hostname,
-            Os = platform?.Os, OsVersion = platform?.Version, OsBuild = platform?.Build
+            Os = platform?.Os, OsVersion = platform?.Version, OsBuild = platform?.Build,
+            ProductType = productType
         };
         var json = JsonSerializer.Serialize(enrollBody, KryossJsonContext.Default.EnrollRequest);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -93,6 +94,21 @@ public class ApiClient : IDisposable
         }
 
         return await response.Content.ReadFromJsonAsync(KryossJsonContext.Default.EnrollmentResponse);
+    }
+
+    /// <summary>
+    /// GET /v1/schedule — HMAC signed. Returns the assigned scan time slot.
+    /// </summary>
+    public async Task<ScheduleResponse?> GetScheduleAsync()
+    {
+        var path = "/v1/schedule";
+        var request = CreateSignedRequest(HttpMethod.Get, path);
+        var response = await _http.SendAsync(request);
+
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadFromJsonAsync(KryossJsonContext.Default.ScheduleResponse);
     }
 
     /// <summary>
@@ -225,6 +241,63 @@ public class ApiClient : IDisposable
             try { error = await response.Content.ReadAsStringAsync(); }
             catch { error = response.StatusCode.ToString(); }
             Console.Error.WriteLine($"[WARN] Port scan upload failed ({response.StatusCode}): {error}");
+        }
+    }
+
+    public async Task<Models.SnmpCredentials?> GetSnmpCredentialsAsync()
+    {
+        var path = "/v1/snmp-config";
+        var request = CreateSignedRequest(HttpMethod.Get, path);
+        var response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode) return null;
+
+        var json = await response.Content.ReadAsByteArrayAsync();
+        return System.Text.Json.JsonSerializer.Deserialize(json, Models.KryossJsonContext.Default.SnmpCredentials);
+    }
+
+    [UnconditionalSuppressMessage("AOT", "IL2026",
+        Justification = "SNMP payloads use source-gen serializable types.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050",
+        Justification = "SNMP payloads use source-gen serializable types.")]
+    public async Task SubmitSnmpResultsAsync(Models.SnmpScanResult snmpResult)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            snmpResult, Models.KryossJsonContext.Default.SnmpScanResult);
+        var path = "/v1/snmp";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            string error;
+            try { error = await response.Content.ReadAsStringAsync(); }
+            catch { error = response.StatusCode.ToString(); }
+            Console.Error.WriteLine($"[WARN] SNMP upload failed ({response.StatusCode}): {error}");
+        }
+    }
+
+    /// <summary>
+    /// POST /v1/collect — upload an offline collect payload on behalf of another machine.
+    /// </summary>
+    public async Task SubmitCollectAsync(OfflineCollectPayload envelope)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(envelope, KryossJsonContext.Default.OfflineCollectPayload);
+        var path = "/v1/collect";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            string error;
+            try { error = await response.Content.ReadAsStringAsync(); }
+            catch { error = response.StatusCode.ToString(); }
+            throw new ApiException($"Collect upload failed ({response.StatusCode}): {error}");
         }
     }
 

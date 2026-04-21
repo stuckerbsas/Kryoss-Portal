@@ -47,13 +47,14 @@
     <!-- Assembly info -->
     <AssemblyName>KryossAgent</AssemblyName>
     <RootNamespace>KryossAgent</RootNamespace>
-    <Version>1.3.0</Version>
+    <Version>1.6.0</Version>
     <Company>TeamLogic IT</Company>
     <Product>Kryoss Security Agent</Product>
     <Description>Security assessment agent for Kryoss platform</Description>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Lextm.SharpSnmpLib" Version="12.5.7" />
     <PackageReference Include="System.Text.Json" Version="8.0.*" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.*" />
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.*" />
