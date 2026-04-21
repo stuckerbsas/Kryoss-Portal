@@ -13,7 +13,7 @@ A security assessment SaaS for MSPs (primary user: TeamLogic IT franchise, built
 
 1. **Audit compliance** — run ~630 checks against Windows endpoints and score them against CIS / NIST / HIPAA / ISO 27001 / PCI-DSS
 2. **Ticket reduction** — detect drift/misconfig early and feed findings into a helpdesk/PSA workflow
-3. **Cloud workspace hardening** — eventually cover M365 / Entra ID / Google Workspace via connectors (Phase 4, not started)
+3. **Cloud workspace hardening** — M365 / Entra ID / Azure / Power BI via unified Cloud Assessment (CA-0..CA-12 SHIPPED, single tab + single scan)
 
 **Business model:** Kryoss is the backend. Franchise portal = MSPs sign up, enroll client machines, generate reports, sell remediation.
 
@@ -26,7 +26,7 @@ Projecto Kryoss\
 ├── CLAUDE.md                       <- YOU ARE HERE (master index)
 ├── KryossApi\                      <- Backend (.NET 8 Azure Functions)
 │   └── CLAUDE.md                   <- See this for full API map
-├── KryossAgent\                    <- Windows agent (.NET 8 AOT)
+├── KryossAgent\                    <- Windows agent (.NET 8, v1.5.1, ~12 MB trimmed)
 │   └── CLAUDE.md                   <- See this for full agent map
 ├── KryossPortal\                   <- Frontend (React 18 + Vite + TS + shadcn/ui + MSAL)
 │                                      Repo: github.com/stuckerbsas/Kryoss-Portal
@@ -35,19 +35,20 @@ Projecto Kryoss\
 │                                      Friendly URLs: /organizations/{slug}/machines/{hostname}
 │                                      Spec: docs/superpowers/specs/2026-04-10-kryoss-portal-mvp-design.md
 │                                      Plan: docs/superpowers/plans/2026-04-10-kryoss-portal-mvp.md
-├── Scripts\                        <- Legacy PowerShell scripts & audit tools
+├── Scripts\                        <- PowerShell scripts & audit tools
 │   └── CLAUDE.md                   <- MSP/TeamLogic IT PowerShell standards
 │                                      (NinjaRMM/Intune deploy, brand, etc.)
-├── Kryoss Partner Portal\          <- Old/different portal variant — UNUSED
-├── The Final portal\               <- Legacy production Go+Vue CRM+auth portal
-│                                      (see user memory: existing portal)
-├── New Portal\                     <- Another variant — UNUSED / unclear
-├── Kryoss.Portal\                  <- UNUSED / unclear
-├── Kryoss\ / Kryoss-main\          <- UNUSED / legacy
-└── docs\, Procedimientos\, Web\    <- Non-code: brand, docs, web assets
+├── docs\                           <- Specs, plans, roadmap
+├── Procedimientos\                 <- Internal procedures docs
+├── Propuesta\                      <- Proposals
+├── Web\                            <- Web assets
+└── archive\                        <- Dead/legacy folders (moved 2026-04-20)
+    ├── Kryoss Partner Portal\, The Final portal\, New Portal\
+    ├── Kryoss.Portal\, Kryoss\, Kryoss-main\
+    ├── Assesment\, CopilotReadinessAssessment\, antigravity\
 ```
 
-**Rule of thumb:** If you need code, look at `KryossApi\` (backend), `KryossAgent\` (agent), or `KryossPortal\` (frontend). The other "portal"-named folders are dead code — **don't touch them without asking first**.
+**Rule of thumb:** Active code lives in `KryossApi\`, `KryossAgent\`, `KryossPortal\`, `Scripts\`. Everything in `archive\` is dead — don't touch without asking.
 
 ---
 
@@ -56,8 +57,8 @@ Projecto Kryoss\
 | Layer | Tech | Status |
 |---|---|---|
 | Backend API | .NET 8 Azure Functions + EF Core 8 + Azure SQL | ✅ Deployed (`func-kryoss`) |
-| Database | Azure SQL `sql-kryoss.database.windows.net` / DB `KryossDb` | ✅ Seeded with ~647 active controls |
-| Agent | .NET 8 v1.2.2 (win-x64, single-file, ~68 MB self-contained) | ✅ 11 engines + network scanner (AD/ARP/subnet discovery, PsExec remote deploy) + port scanner (TCP top 100 + UDP top 20) + AD hygiene audit + binary patching sentinels |
+| Database | Azure SQL `sql-kryoss.database.windows.net` / DB `KryossDb` | ✅ Seeded with ~767 active controls |
+| Agent | .NET 8 v1.5.1 (win-x64, single-file trimmed, ~12 MB) | ✅ 12 engines (zero Process.Start) + DcEngine + network scanner + port scanner + AD hygiene + SNMP + network diagnostics + protocol audit + threat detection + binary patching sentinels |
 | Portal | React 18 + Vite + TS + shadcn/ui + MSAL, deployed on Azure SWA | ✅ Deployed (`zealous-dune-0ac672d10.6.azurestaticapps.net`) |
 | Auth | Agent: API Key + HMAC-SHA256 (`ApiKeyAuthMiddleware`). Portal: MSAL JWT via `BearerAuthMiddleware`. Easy Auth DISABLED on func-kryoss (platform.enabled=true, requireAuthentication=false, AllowAnonymous). All auth handled by custom middleware. | ✅ Implemented in middleware |
 | Crypto | RSA-2048 + AES-256-GCM for payload encryption (agent → API) | ⚠️ Agent has `CryptoService.cs` but current `ApiClient.cs` only uses HMAC — payload encryption may not be wired up end-to-end yet |
@@ -65,34 +66,34 @@ Projecto Kryoss\
 
 ---
 
-## Control catalog state (as of 2026-04-10)
+## Control catalog state (as of 2026-04-20)
 
 This is the heart of the product. Memorize it:
 
 ```
-control_defs total: 858  (738 prior + 80 SRV + 40 DC)
-  Active:   767  (647 baseline + 80 SRV server + 40 DC domain controller)
-  Inactive:  91  (legacy BL-XXX soft-deleted, superseded by BL-0XXX)
+control_defs total: 918  (738 prior + 80 SRV + 100 DC)
+  Active:   827  (647 baseline + 80 SRV server + 100 DC domain controller)
+  Inactive: 91   (legacy BL-XXX soft-deleted, superseded by BL-0XXX)
 
 Active by engine (dispatch type):
-  registry    356    command     211
-  auditpol     24    firewall     21
-  service      11    netaccount    5
-  secedit       2    eventlog      4
-  certstore     6    bitlocker     4
-  tpm           3
+  registry    371    command     188
+  auditpol     34    firewall     21
+  dc           27    service      18
+  netaccount    5    secedit       2
+  eventlog      4    certstore     6
+  bitlocker     5    tpm           4
 
 Framework coverage (active):
-  NIST       647 (100.0%)
-  CIS        ~637 (~98.5%)
-  HIPAA      ~320 (~49.5%)
-  ISO27001   ~179 (~27.7%)
-  PCI-DSS     ~18 (~2.8%)
+  NIST       827 (100.0%)
+  CIS        ~810 (~98%)
+  HIPAA      ~380 (~46%)
+  ISO27001   ~240 (~29%)
+  PCI-DSS     ~30 (~3.6%)
 
-Platform scope (as of 2026-04-19):
+Platform scope (as of 2026-04-20):
   W10, W11 → 647 controls linked each
   MS19, MS22, MS25 → 727 controls each (647 baseline + 80 SRV via seed_010)
-  DC19, DC22, DC25 → 767 controls each (647 baseline + 80 SRV + 40 DC via seed_013 + 040)
+  DC19, DC22, DC25 → 827 controls each (647 baseline + 80 SRV + 100 DC via seed_013 + 047)
 ```
 
 **Authoritative DB check script:** `KryossApi/sql/check_catalog_health.sql`
@@ -246,6 +247,13 @@ full list. Key ones:
 | 2026-04-19 | Unified Report System: 7 types, compositional blocks | Replaces monolithic ReportService with 17 blocks + 7 recipes via `ReportComposer`. Types: C-Level, Technical, Preventa Opener/Detailed, Framework Compliance, Business Proposal (auto-pricing from `service_catalog` + `franchise_service_rates`), Monthly Progress. Cloud integrated conditionally. SQL: `sql/039_service_catalog.sql` + `seed_039_service_catalog.sql`. Spec: `docs/superpowers/specs/2026-04-19-unified-report-system-design.md`. Plan: `docs/superpowers/plans/2026-04-19-unified-report-system.md`. |
 | 2026-04-19 | Phase 2+3: DC vs Member Server detection | Agent detects `ProductType` via WMI `Win32_OperatingSystem` (1=workstation, 2=DC, 3=server), sends in enrollment + hardware payload. `PlatformResolver` resolves DC19/DC22/DC25 when ProductType=2. Migration `040_dc_platform_support.sql` adds `product_type` column + links 647 baseline controls to DC platforms. `seed_013_dc_controls.sql` adds 40 DC-only controls (DC-001..DC-040). **Deploy requires**: apply `sql/040_dc_platform_support.sql` + `sql/seed_013_dc_controls.sql`. |
 | 2026-04-19 | Phase 5a: Network Diagnostics (no 3rd-party APIs) | Agent `NetworkDiagnostics.cs` runs speed test (HttpClient GET/POST against `/v1/speedtest`), internal latency (parallel ping sweep), route table (WMI `Win32_IP4RouteTable`), VPN detection (adapter type + keyword), bandwidth snapshot (IPv4Statistics delta), adapter inventory. Migration `041_network_diagnostics.sql` adds 3 tables (`machine_network_diag`, `machine_network_latency`, `machine_network_routes`). `EvaluationService` persists network diag data per run. `SpeedTestFunction` (GET/POST `/v1/speedtest`) serves random bytes for download + accepts upload. `NetworkDiagnosticsFunction` (GET `/v2/network-diagnostics`) portal endpoint. 50 network controls (NET-001..NET-050) in `seed_042_network_controls.sql`. `NetworkBlock` + `NetworkRecipe` add "network" report type (8th recipe). **Deploy requires**: apply `sql/041_network_diagnostics.sql` + `sql/seed_042_network_controls.sql`. |
+
+| 2026-04-20 | IA-11: Network Sites + GeoIP + Leaflet Map + Speedtest History + SLA | Track A: `PublicIpTracker` captures public IP from X-Forwarded-For, `SiteClusterService` groups machines by IP → auto-derived sites, `NetworkSitesFunction` 4 endpoints, portal `NetworkSitesTab`. Migration `044_network_sites.sql`. Track B: Agent `NetworkDiagnostics.cs` gains cloud endpoint latency (6 M365 endpoints) + DNS resolution measurement. `ResultsFunction` returns `yourPublicIp`. Migration `045_network_diag_cloud_dns.sql`. Track C: `GeoIpService` (ip-api.com) enriches IP history + sites with geo/ISP/ASN/connectivity type. Portal gains Leaflet site map, speed history chart (recharts), SLA compliance badges, site detail drawer with device list. **Deploy requires**: `sql/044_network_sites.sql` + `sql/045_network_diag_cloud_dns.sql`. |
+| 2026-04-20 | CA-14: Auto-consent (Fabric + ARM) | `AutoConsentFunction.cs` — 4 endpoints: PBI auto-enable URL/callback (delegated `Tenant.ReadWrite.All` scope, exchanges code → enables ServicePrincipalAccess via `FabricAdminService`) + Azure auto-assign URL/callback (delegated `user_impersonation`, auto-assigns Reader on all visible subs). Portal `ConnectCloudWizard` Azure + PBI steps gained "Enable automatically" primary button + collapsible manual fallback. `ConnectProgressModal` handles callback params. **Deploy requires**: App Registration add delegated Fabric + ARM scopes + 2 redirect URIs. |
+| 2026-04-20 | IA-1: Server & Hypervisor Inventory | Migration `046_hypervisor_inventory.sql` (3 tables: `infra_hypervisor_configs`, `infra_hypervisors`, `infra_vms`). `HypervisorPipeline.cs` collects VMware vCenter REST + Proxmox REST (QEMU + LXC). 7 finding generators (idle/over-provisioned/stale snapshots/no backup/capacity/no HA/EOL OS). `HypervisorConfigFunction.cs` — CRUD + test + scan results. Portal "Servers & VMs" sub-tab with config manager + host table + VM table + findings. Hyper-V deferred to agent WMI module (IA-1b). **Deploy requires**: `sql/046_hypervisor_inventory.sql`. |
+| 2026-04-20 | A-OFL: Offline Collection Mode | Machines without internet dump `OfflineCollectPayload` JSON to shared folder (`--offline --share \\server\path`). Collector machine uploads all via `--collect \\server\path` → `POST /v1/collect`. Server auto-enrolls unknown machines using embedded enrollment code. Agent: `OfflineCollectPayload.cs` model, `SaveCollectPayload` in OfflineStore, `SubmitCollectAsync` in ApiClient, `RunCollectMode` in Program.cs. API: `CollectFunction.cs` (auth via collector's API key, auto-enroll via `EnrollmentService.RedeemCodeAsync`, evaluate, track IP). |
+| 2026-04-20 | DC-01: Domain Controller controls expansion (40→100) | New `DcEngine` (12th engine, type='dc') with 27 native check types via System.DirectoryServices/WMI/Registry/ServiceController. Migration `047_dc_controls_v2.sql`: converts 8 broken command-type DC controls to native types, deactivates 15 non-executable ones, adds 60 new controls (DC-041..DC-100) covering AD security, registry hardening, services, audit policies, hardware. All zero Process.Start. Agent dispatches by `CheckType` field. **Deploy requires**: `sql/047_dc_controls_v2.sql`. |
+| 2026-04-20 | A-13: Server-side scan orchestrator (Phase 1) | Server assigns scan time slots per machine at enrollment. Agent v1.6.0: hourly check-in via `GET /v1/schedule`, replaces random 0-30min jitter. Org default window 2-6AM, uniform slot distribution (min 10s spacing, gap-filling). `ScanScheduleService` (slot assignment + schedule compute), `ScheduleFunction` (exempt from auth like /enroll). Agent uses `lastrun.txt` (not registry — gets wiped) to prevent double-run. NinjaOne deploy script v3.0: hourly trigger + 2h execution limit. Phase 2 adds portal UI for window config + redistribute. **Deploy requires**: `sql/049_scan_orchestrator.sql` + `sql/049b_backfill_scan_slots.sql`. |
 
 ---
 

@@ -25,6 +25,7 @@
 | POST | `/v1/enroll` | `EnrollFunction.Run` | First-run enrollment with code |
 | GET | `/v1/controls?assessmentId=X` | `ControlsFunction.Run` | Agent pulls catalog subset |
 | POST | `/v1/results` | `ResultsFunction.Run` | Agent ships encrypted payload |
+| POST | `/v1/collect` | `CollectFunction.Run` | Offline collection: collector uploads on behalf of machines without internet (auto-enrolls unknown machines) |
 
 ### Portal API (v2) — Bearer token + RBAC + RLS
 
@@ -63,6 +64,37 @@
 |---|---|---|---|
 | POST | `/v1/hygiene` | `HygieneFunction.Submit` | Agent submits AD hygiene findings |
 | POST | `/v1/ports` | (in MachinesFunction or InventoryFunction) | Agent submits port scan results |
+| GET | `/v1/speedtest` | `SpeedTestFunction.Download` | Returns 10 MB random bytes for agent speed test |
+| POST | `/v1/speedtest` | `SpeedTestFunction.Upload` | Accepts agent upload for speed test measurement |
+| GET | `/v1/schedule` | `ScheduleFunction.Run` | A-13: Returns assigned scan time slot for agent (exempt from auth, HMAC-signed) |
+| POST | `/v1/collect` | `CollectFunction.Run` | Offline collection: upload on behalf of other machines |
+
+### Portal API (v2) — Network diagnostics
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/network-diagnostics?organizationId=X` | `NetworkDiagnosticsFunction.List` | Org-level network diagnostics with latency/routes |
+| GET | `/v2/network-diagnostics/{machineId}` | `NetworkDiagnosticsFunction.Detail` | Per-machine latest network diagnostic detail |
+
+### Portal API (v2) — Network Sites (IA-11)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/network-sites?organizationId=X` | `NetworkSitesFunction.List` | List auto-derived network sites |
+| POST | `/v2/network-sites/rebuild` | `NetworkSitesFunction.Rebuild` | Rebuild sites from current machine IPs |
+| PATCH | `/v2/network-sites/{siteId}` | `NetworkSitesFunction.Update` | Rename site or set contracted bandwidth |
+| GET | `/v2/network-sites/ip-history?organizationId=X` | `NetworkSitesFunction.IpHistory` | Public IP change timeline |
+| GET | `/v2/network-sites/{siteId}/speed-history` | `NetworkSitesFunction.SpeedHistory` | 90d speed/latency/DNS timeseries for site |
+| GET | `/v2/network-sites/{siteId}/machines` | `NetworkSitesFunction.SiteMachines` | Machines at site with latest diag |
+
+### Portal API (v2) — Infrastructure Assessment
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| POST | `/v2/infra-assessment/scan` | `InfraAssessmentFunction.Scan` | Start new IA scan (body: organizationId, scope?) |
+| GET | `/v2/infra-assessment?organizationId=X` | `InfraAssessmentFunction.Latest` | Latest scan with all children |
+| GET | `/v2/infra-assessment/{scanId}` | `InfraAssessmentFunction.Detail` | Single scan detail |
+| GET | `/v2/infra-assessment/history?organizationId=X` | `InfraAssessmentFunction.History` | Scan history (summary, last 20) |
 
 ---
 
@@ -88,6 +120,8 @@ src/KryossApi/
 │       ├── HygieneFunction.cs          <- POST /v1/hygiene (agent) + GET /v2/hygiene (portal)
 │       ├── AgentDownloadFunction.cs    <- /v2/agent/download (patched binary)
 │       ├── M365Function.cs            <- M365/Entra ID: connect, scan, get, disconnect
+│       ├── NetworkSitesFunction.cs    <- IA-11: list, rebuild, update, IP history
+│       ├── InfraAssessmentFunction.cs <- IA: start scan, latest, detail, history
 │       ├── OrganizationsFunction.cs
 │       ├── MeFunction.cs
 │       └── RecycleBinFunction.cs
@@ -99,7 +133,8 @@ src/KryossApi/
 │   └── ActlogMiddleware.cs          <- Request logging to actlog table
 ├── Services/
 │   ├── CryptoService.cs             <- RSA keygen, AES-GCM decrypt
-│   ├── EnrollmentService.cs         <- Code redemption, machine registration
+│   ├── ScanScheduleService.cs       <- A-13: Slot assignment (gap-filling) + schedule computation
+│   ├── EnrollmentService.cs         <- Code redemption, machine registration + slot assignment
 │   ├── EvaluationService.cs         <- SERVER-SIDE PASS/FAIL eval vs check_json
 │   ├── ReportService.cs             <- Legacy HTML report rendering (executive, presales)
 │   ├── Reports/                     <- Unified Report System (compositional blocks)
@@ -121,6 +156,10 @@ src/KryossApi/
 │   ├── ActlogService.cs             <- Audit logging
 │   ├── CurrentUserService.cs        <- Request-scoped user context
 │   ├── M365ScannerService.cs         <- Graph API client: 30 M365/Entra ID security checks
+│   ├── InfraAssessment/
+│   │   ├── IInfraAssessmentService.cs <- Interface (start, latest, detail, history)
+│   │   ├── InfraAssessmentService.cs  <- Stub orchestrator (creates scan row)
+│   │   └── Pipelines/                 <- Future: site discovery, device audit, etc.
 │   └── AuditInterceptor.cs          <- EF Core CreatedBy/UpdatedBy interceptor
 ├── Data/
 │   ├── KryossDbContext.cs           <- All DbSets
@@ -132,9 +171,11 @@ src/KryossApi/
 │       ├── Machine.cs
 │       ├── MachineDisk.cs           <- per-drive inventory (drive letter, size, free, type)
 │       ├── MachinePort.cs           <- open ports per host (port, protocol, state, service)
+│       ├── MachineNetworkDiag.cs    <- network diagnostics (speed, latency, routes, VPN, adapters)
 │       ├── AdHygiene.cs             <- AD hygiene findings (stale objects, security issues)
 │       ├── Brand.cs                 <- Brand/MSP customization
 │       ├── M365Tenant.cs            <- M365Tenant + M365Finding entities
+│       ├── InfraAssessment.cs       <- 6 entities: Scan, Site, Device, Connectivity, Capacity, Finding
 │       ├── Organization.cs
 │       └── Auth.cs
 └── Models/                          <- (empty — DTOs inline in functions)
@@ -175,13 +216,15 @@ src/KryossApi/
 |---|---|
 | Auth/RBAC | `modules`, `actions`, `permissions`, `roles`, `role_permissions`, `users`, `actlog` |
 | Org | `franchises`, `organizations`, `auth_api_keys`, `org_crypto_keys` |
-| CMDB | `machines`, `machine_snapshots` (with `raw_*` JSON cols), `machine_software`, `machine_users`, `machine_disks` (per-drive), `machine_ports` (open ports) |
+| CMDB | `machines`, `machine_snapshots` (with `raw_*` JSON cols), `machine_software`, `machine_users`, `machine_disks` (per-drive), `machine_ports` (open ports), `machine_network_diag` + `machine_network_latency` + `machine_network_routes` (network diagnostics) |
 | AD Hygiene | `ad_hygiene` (stale machines/users, privileged accounts, kerberoastable, delegation, LAPS, domain info) |
 | Catalog | `control_categories`, `control_defs`, `frameworks`, `platforms`, `control_frameworks`, `control_platforms` |
 | Assessment | `assessments`, `assessment_controls`, `assessment_runs`, `control_results`, `run_framework_scores` |
 | Enrollment | `enrollment_codes` |
 | CRM/Tickets | `crm_*`, `tickets_*` (tables exist, features Phase 5+) |
 | M365/Cloud | `m365_tenants`, `m365_findings` (Phase 4: Entra ID / M365 security checks) |
+| Network Sites | `network_sites`, `machine_public_ip_history` (IA-11: auto-derived sites from public IP clustering) |
+| Infra Assessment | `infra_assessment_scans`, `_sites`, `_devices`, `_connectivity`, `_capacity`, `_findings` (IA-0 scaffold) |
 
 **Schema files to read when DB-adjacent changes are needed:**
 - `sql/004_assessment.sql` — core catalog + assessment tables
@@ -197,6 +240,8 @@ src/KryossApi/
 - `seed_006b_deactivate_legacy.sql` — soft-deletes 91 legacy BL-XXX
 - `seed_007_platform_scope_workstation.sql` + `seed_007b_prune_inactive_platforms.sql` — W10/W11 scope
 - `seed_007c_platform_scope_server.sql` — links 647 controls to MS19/MS22/MS25
+- `040_dc_platform_support.sql` — adds `product_type` column to machines + links 647 controls to DC19/DC22/DC25
+- `seed_013_dc_controls.sql` — 40 DC-specific controls (DC-001..DC-040)
 
 **Verification:** `sql/check_catalog_health.sql` — 14-section read-only health check.
 
@@ -237,7 +282,7 @@ src/KryossApi/
 ## Known gaps (see `../CLAUDE.md` for details)
 
 1. ✅ `check_json` casing — fixed by `seed_005b_fix_casing.sql`
-2. ✅ Platform scope — server resolves from OS string, agent sends `X-Agent-Id`; MS19/MS22/MS25 now have 647 controls linked (seed_007c)
+2. ✅ Platform scope — server resolves from OS string + ProductType, agent sends `X-Agent-Id`; MS19/MS22/MS25 + DC19/DC22/DC25 all have controls linked
 3. ✅ Hardware inventory — ~25 fields + multi-disk in `machine_disks` table
 4. ✅ Software inventory — 600+ commercial app detection, org-level endpoint
 5. ✅ Port scanning — `machine_ports` table, TCP top 100 + UDP top 20

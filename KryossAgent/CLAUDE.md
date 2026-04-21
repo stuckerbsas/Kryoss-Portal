@@ -1,4 +1,4 @@
-# KryossAgent v1.2.2 — Windows Assessment Agent (.NET 8)
+# KryossAgent v1.6.0 — Windows Assessment Agent (.NET 8)
 
 **Read `../CLAUDE.md` first.** This file is the detailed map of the agent only.
 
@@ -8,10 +8,10 @@
 
 - **.NET 8** (`net8.0-windows`), **win-x64** only
 - **Native AOT capable** (`PublishAot=true` in csproj, but `publish.ps1` currently overrides to false — see gap note)
-- **Self-contained single-file** publish (~68 MB)
+- **Self-contained single-file** publish (~12 MB trimmed, was ~68 MB pre-v1.4.0)
 - **Zero external runtime deps** on target machines
-- **NuGet:** `System.Text.Json` (source-gen), `System.ServiceProcess.ServiceController`, `Microsoft.Win32.Registry`, `System.Diagnostics.EventLog`
-- **No WMI, no PowerShell SDK, no COM** — all AOT-safe
+- **NuGet:** `System.Text.Json` (source-gen), `System.ServiceProcess.ServiceController`, `Microsoft.Win32.Registry`, `System.Diagnostics.EventLog`, `System.Management` (WMI), `System.DirectoryServices`, `Lextm.SharpSnmpLib`
+- **Zero Process.Start** since v1.4.0 — all engines use registry, WMI, P/Invoke, or .NET APIs
 
 ---
 
@@ -29,19 +29,21 @@ KryossAgent/
     ├── Config/
     │   ├── AgentConfig.cs            <- loads/saves HKLM\SOFTWARE\Kryoss\Agent
     │   └── EmbeddedConfig.cs         <- binary patching sentinels (UTF-16LE, fixed-length)
-    ├── Engines/                      <- 12 files (11 types + interface)
+    ├── Engines/                      <- v1.5.1: 14 files (12 engine types + interface + P/Invoke)
     │   ├── ICheckEngine.cs           <- interface: Type, Execute(controls)
     │   ├── RegistryEngine.cs         <- HKLM/HKCU/HKU/HKCR, handles HKU user enum
-    │   ├── SeceditEngine.cs          <- BATCH: secedit /export /cfg once, parse INF
-    │   ├── AuditpolEngine.cs         <- BATCH: auditpol /get /category:* /r, parse CSV
-    │   ├── NetAccountsEngine.cs      <- BATCH: 'net accounts', parse colon pairs
+    │   ├── SecurityPolicyEngine.cs   <- P/Invoke NetUserModalsGet + registry (replaces SeceditEngine + NetAccountsEngine)
+    │   ├── NetAccountCompatEngine.cs <- Backward compat wrapper → SecurityPolicyEngine
+    │   ├── AuditpolEngine.cs         <- P/Invoke AuditQuerySystemPolicy (advapi32.dll), no auditpol.exe
     │   ├── FirewallEngine.cs         <- registry-only (SharedAccess\...\FirewallPolicy)
     │   ├── ServiceEngine.cs          <- System.ServiceProcess.ServiceController
-    │   ├── ShellEngine.cs            <- Type="command", allowlisted System32 exes, honors TimeoutSeconds
-    │   ├── EventLogEngine.cs         <- EventLogConfiguration + EventLogReader
+    │   ├── NativeCommandEngine.cs    <- Routes by CheckType: TLS, UserRights, AppLocker, inline registry, custom
+    │   ├── UserRightsApi.cs          <- P/Invoke LsaEnumerateAccountsWithUserRight for 16 user-rights controls
+    │   ├── EventLogEngine.cs         <- EventLogConfiguration + EventLogReader + event_count + event_top_sources
     │   ├── CertStoreEngine.cs        <- X509Store
-    │   ├── BitLockerEngine.cs        <- BATCH: single manage-bde -status invocation, parsed per drive
-    │   └── TpmEngine.cs              <- BATCH: registry + tpmtool getdeviceinformation
+    │   ├── BitLockerEngine.cs        <- WMI Win32_EncryptableVolume (replaces manage-bde.exe)
+    │   ├── TpmEngine.cs              <- WMI Win32_Tpm + registry (replaces tpmtool.exe)
+    │   └── DcEngine.cs              <- Domain Controller checks via LDAP/WMI/Registry/ServiceController (27 check types)
     ├── Models/
     │   ├── AssessmentPayload.cs      <- top-level POST /v1/results body
     │   ├── ControlDef.cs             <- downloaded control definition from /v1/controls
@@ -52,13 +54,16 @@ KryossAgent/
     │   ├── CryptoService.cs          <- RSA-OAEP + AES-GCM envelope (dormant)
     │   ├── HardwareFingerprint.cs    <- registry-based SHA-256 hardware ID
     │   ├── NetworkScanner.cs         <- orchestrates remote scan: discover + deploy + collect
+    │   ├── NetworkDiagnostics.cs     <- speed test, latency sweep, route table, VPN detection, adapters
     │   ├── OfflineStore.cs           <- queue at C:\ProgramData\Kryoss\PendingResults\*.json
     │   ├── PinnedHttpHandler.cs      <- SPKI pinning for HTTPS
-    │   ├── PlatformDetector.cs       <- OS/hw/multi-disk detection via registry (no WMI)
+    │   ├── PlatformDetector.cs       <- OS/hw/multi-disk/ProductType detection via WMI MSFT_PhysicalDisk
     │   ├── PortScanner.cs            <- TCP top 100 + UDP top 20 port scanning
-    │   ├── PsExecRunner.cs           <- PsExec embedded resource, remote execution
+    │   ├── ProtocolAuditService.cs   <- NTLM/SMBv1 audit (configures event logs, opt-in per org)
     │   ├── SecurityService.cs        <- security-related helpers
+    │   ├── SnmpScanner.cs            <- SNMP device discovery (IF-MIB, ENTITY-MIB, etc.)
     │   ├── SoftwareInventory.cs      <- Uninstall registry keys (HKLM 64+32 bit)
+    │   ├── ThreatDetector.cs         <- Endpoint threat detection
     │   └── TargetDiscovery.cs        <- AD/ARP/subnet/explicit target discovery + AD hygiene
     └── Helpers/                      <- (empty)
 ```
@@ -69,19 +74,21 @@ KryossAgent/
 
 1. Parse CLI args (`--silent`, `--verbose`, `--alone`, `--scan`, `--code`, `--api-url`, `--reenroll`, `--credential`, `--threads`, discovery flags)
 2. Show branded banner (uses `EmbeddedConfig.MspName`/`OrgName` if patched, otherwise generic Kryoss banner)
-3. If `--scan`: delegate to `NetworkScanner.RunAsync()` and exit
-4. If patched binary or `--reenroll`: wipe `HKLM\SOFTWARE\Kryoss\Agent` for clean enrollment
-5. Load `AgentConfig` from `HKLM\SOFTWARE\Kryoss\Agent`
-6. If not enrolled: resolve code from CLI > embedded > interactive prompt → `POST /v1/enroll` → save credentials
-7. Upload any pending offline payloads from `C:\ProgramData\Kryoss\PendingResults\`
-8. `GET /v1/controls?assessmentId=X` → receive list of `ControlDef`
-9. Detect platform + hardware (~25 fields, multi-disk) + enumerate software
-10. Group controls by `Type` → run 11 engines **in parallel** (`Task.WhenAll`)
-11. Build `AssessmentPayload` (v1.2.2) → `POST /v1/results` (HMAC signed)
-12. Server responds with `{score, grade, passCount, warnCount, failCount}` — printed to console
-13. Unless `--alone` or `--silent`: auto-run network scan (discovery + remote deploy + port scan + AD hygiene)
-14. Output `RESULT:` lines for deployment script parsing (`OK`, `SKIP`, `ERROR`, `OFFLINE`, `ENROLL_FAILED`)
-15. On upload failure → save payload to offline store, exit code 2
+3. **A-13 Orchestrated scheduling** (silent mode only): check `lastrun.txt` → if already ran today, exit. Call `GET /v1/schedule` → sleep until assigned slot, exit if too far, or run immediately on catch-up/fallback.
+4. If `--scan`: delegate to `NetworkScanner.RunAsync()` and exit
+5. If patched binary or `--reenroll`: wipe `HKLM\SOFTWARE\Kryoss\Agent` for clean enrollment
+6. Load `AgentConfig` from `HKLM\SOFTWARE\Kryoss\Agent`
+7. If not enrolled: resolve code from CLI > embedded > interactive prompt → `POST /v1/enroll` → save credentials
+8. Upload any pending offline payloads from `C:\ProgramData\Kryoss\PendingResults\`
+9. `GET /v1/controls?assessmentId=X` → receive list of `ControlDef`
+10. Detect platform + hardware (~25 fields, multi-disk) + enumerate software
+11. Group controls by `Type` → run 12 engines **in parallel** (`Task.WhenAll`)
+12. Build `AssessmentPayload` (v1.6.0) → `POST /v1/results` (HMAC signed)
+13. Server responds with `{score, grade, passCount, warnCount, failCount}` — printed to console
+14. Write `lastrun.txt` with today's date (prevents double-run on next hourly wake)
+15. Unless `--alone` or `--silent`: auto-run network scan (discovery + remote deploy + port scan + AD hygiene)
+16. Output `RESULT:` lines for deployment script parsing (`OK`, `SKIP`, `ERROR`, `OFFLINE`, `ENROLL_FAILED`)
+17. On upload failure → save payload to offline store, exit code 2
 
 ---
 
@@ -100,6 +107,7 @@ KryossAgent/
 | CertStoreEngine | `certstore` | `X509Store` | AOT-safe |
 | BitLockerEngine | `bitlocker` | WMI `Win32_EncryptableVolume` (root\CIMV2\Security\MicrosoftVolumeEncryption) | Replaces manage-bde.exe parsing |
 | TpmEngine | `tpm` | WMI `Win32_Tpm` (root\CIMV2\Security\MicrosoftTpm) + registry | Replaces tpmtool.exe |
+| DcEngine | `dc` | System.DirectoryServices (LDAP) + WMI + Registry + ServiceController | 27 check types: krbtgt_age, asrep_roastable, protected_users, recycle_bin, schema_admins, preauth_disabled, unconstrained_deleg, kerberoastable, stale_computers, pwd_never_expire, inactive_admins, domain_level, laps_coverage, admin_count_orphan, gpo_count, tombstone_lifetime, dsrm_password_set, ntds_service, replication_queue, time_source, dns_forwarders, print_spooler, smb_signing, ldap_signing, secure_channel, ntlm_restrict, crl_validity. Returns SkipNotDc on non-DC machines. |
 
 **v1.4.0 security contract:** `grep Process.Start` in `KryossAgent/src/` returns **ZERO** matches. The agent is a pure passive sensor — all data collection via registry, WMI read queries, P/Invoke, and .NET APIs. No external executables, no shell commands, no process spawning. PlatformDetector also converted to WMI `MSFT_PhysicalDisk` (replaces `Get-PhysicalDisk` PowerShell calls).
 
@@ -109,12 +117,12 @@ KryossAgent/
 
 ## Data models
 
-### `AssessmentPayload` (v1.2.2)
+### `AssessmentPayload` (v1.5.1)
 
 ```csharp
 class AssessmentPayload {
     Guid AgentId
-    string AgentVersion  // "1.2.2"
+    string AgentVersion  // "1.5.1"
     DateTime Timestamp
     int DurationMs
     PlatformInfo? Platform       // { os, build, version }
@@ -124,10 +132,10 @@ class AssessmentPayload {
 }
 ```
 
-**HardwareInfo** includes ~25 fields: cpu, cpuCores, ramGb, manufacturer, model,
+**HardwareInfo** includes ~26 fields: cpu, cpuCores, ramGb, manufacturer, model,
 serialNumber, tpmPresent, tpmVersion, secureBoot, bitLockerStatus, ipAddress,
-macAddress, domainStatus, domainName, systemAgeDays, lastBootAt, plus
-per-drive disk info (drive letter, sizeGb, freeGb, type).
+macAddress, domainStatus, domainName, productType (1=workstation, 2=DC, 3=server),
+systemAgeDays, lastBootAt, plus per-drive disk info (drive letter, sizeGb, freeGb, type).
 
 ### `ControlDef` (downloaded from `/v1/controls`)
 
@@ -171,11 +179,9 @@ class CheckResult {
 
 - **`PinnedHttpHandler`** — SPKI pinning for HTTPS connections (log-only until `SpkiPins` registry value populated).
 
-- **`PlatformDetector`** — `DetectPlatform()` returns `{os, version, build}`. `DetectHardware()` returns ~25 fields + multi-disk inventory (enumerates all fixed `DriveInfo` drives). All via registry + .NET APIs, AOT-safe. **Does NOT compute platform code — server resolves this.**
+- **`PlatformDetector`** — `DetectPlatform()` returns `{os, version, build}`. `DetectHardware()` returns ~26 fields + multi-disk inventory (enumerates all fixed `DriveInfo` drives). Includes `ProductType` detection via WMI `Win32_OperatingSystem` (1=workstation, 2=DC, 3=server). **Does NOT compute platform code — server resolves this using OS string + ProductType.**
 
 - **`PortScanner`** — Scans TCP top 100 ports (parallel `TcpClient` with configurable timeout) + UDP top 20 ports per target. Returns list of `PortResult(port, protocol, state, service)`.
-
-- **`PsExecRunner`** — Extracts PsExec from embedded resources, runs it against remote targets. Used by `NetworkScanner` for remote agent deployment.
 
 - **`SecurityService`** — Security-related helpers.
 
@@ -227,6 +233,10 @@ KryossAgent.exe --verbose
 
 # Custom API URL
 KryossAgent.exe --code K7X9-M2P4-Q8R1-T5W3 --api-url https://custom-url.azurewebsites.net
+
+# Offline collection (machines without internet)
+KryossAgent.exe --offline --share \\fileserver\kryoss-collect
+KryossAgent.exe --collect \\fileserver\kryoss-collect --code K7X9-M2P4-Q8R1-T5W3
 ```
 
 Exit codes: `0` = success, `1` = fatal error, `2` = warning/upload-deferred, `99` = unhandled exception.
@@ -247,7 +257,7 @@ Exit codes: `0` = success, `1` = fatal error, `2` = warning/upload-deferred, `99
 10. ✅ **AD Hygiene audit** — privileged, kerberoastable, LAPS, delegation, domain level
 11. ✅ **Binary patching** — EmbeddedConfig sentinels for server-side org-specific .exe generation
 12. ✅ **Multi-disk detection** — per-drive inventory (letter, size, free, type)
-13. ✅ **CLI flags** — `--help`, `--alone`, `--scan`, `--verbose`, `--credential`, `--threads`, discovery flags
+13. ✅ **CLI flags** — `--help`, `--alone`, `--scan`, `--verbose`, `--credential`, `--threads`, discovery flags, `--offline`, `--share`, `--collect`
 14. 🟡 **`CryptoService` dormant** — defined but not used by `ApiClient`. Decide: wire it up or remove it
 15. 🟡 **`publish.ps1` overrides `PublishAot=true`** — binary is 68 MB single-file-with-runtime instead of ~15 MB AOT native
 16. 🟡 **`raw_*` blocks** — `raw_users`, `raw_network`, `raw_security_posture` still not populated as structured raw blocks in payload (data available via dedicated endpoints instead)
