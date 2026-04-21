@@ -31,7 +31,8 @@ function statusBadge(status: string) {
     Disabled: { label: 'Disabled', className: 'bg-gray-100 text-gray-600' },
     PwdNeverExpires: { label: 'Pwd Never Expires', className: 'bg-red-100 text-red-800' },
     OldPassword: { label: 'Old Password', className: 'bg-amber-100 text-amber-800' },
-    PrivilegedAccount: { label: 'Privileged', className: 'bg-purple-100 text-purple-800' },
+    PrivilegedAccount: { label: 'AD Privileged', className: 'bg-purple-100 text-purple-800' },
+    LocalAdmin: { label: 'Local Admin', className: 'bg-orange-100 text-orange-800' },
     Kerberoastable: { label: 'Kerberoastable', className: 'bg-red-100 text-red-800' },
     UnconstrainedDelegation: { label: 'Unconstrained Deleg.', className: 'bg-red-100 text-red-800' },
     AdminCountResidue: { label: 'Admin Residue', className: 'bg-amber-100 text-amber-800' },
@@ -122,6 +123,7 @@ export function HygieneTab() {
   const disabledUsers = users.filter((f) => f.status === 'Disabled');
   const pwdNeverExpire = users.filter((f) => f.status === 'PwdNeverExpires');
   const privileged = security.filter((f) => f.status === 'PrivilegedAccount');
+  const localAdmins = security.filter((f) => f.status === 'LocalAdmin');
   const kerberoastable = security.filter((f) => f.status === 'Kerberoastable');
   const unconstrainedDeleg = security.filter((f) => f.status === 'UnconstrainedDelegation');
   const adminResidue = security.filter((f) => f.status === 'AdminCountResidue');
@@ -158,7 +160,7 @@ export function HygieneTab() {
       )}
 
       {/* KPI cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Dormant Machines</CardTitle>
@@ -212,12 +214,27 @@ export function HygieneTab() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Privileged</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">AD Privileged</CardTitle>
             <Shield className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{privileged.length}</div>
-            <p className="text-xs text-muted-foreground">Admin accounts</p>
+            <div className="text-2xl font-bold" style={{ color: privileged.length > 5 ? '#C0392B' : '#006536' }}>
+              {privileged.length}
+            </div>
+            <p className="text-xs text-muted-foreground">Domain/Enterprise/Schema</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Local Admins</CardTitle>
+            <Shield className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" style={{ color: localAdmins.length > 10 ? '#D97706' : '#006536' }}>
+              {localAdmins.length}
+            </div>
+            <p className="text-xs text-muted-foreground">Builtin Administrators</p>
           </CardContent>
         </Card>
 
@@ -264,8 +281,13 @@ export function HygieneTab() {
       {/* Finding tables */}
       <FindingsTable
         findings={privileged}
-        title="Privileged Accounts"
+        title="AD Privileged Accounts (Domain Admins / Enterprise Admins / Schema Admins)"
         icon={<Shield className="h-4 w-4 text-purple-500" />}
+      />
+      <FindingsTable
+        findings={localAdmins}
+        title="Local Administrators (Builtin Administrators Group)"
+        icon={<Shield className="h-4 w-4 text-orange-500" />}
       />
       <FindingsTable
         findings={kerberoastable}
