@@ -74,11 +74,24 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
           <span className="font-mono tabular-nums" style={{ color: speedColor(diag.downloadMbps) }}>
             {fmt(diag.downloadMbps)}
           </span>
+          <span className="text-muted-foreground text-xs"> Mbps</span>
         </TableCell>
         <TableCell>
           <span className="font-mono tabular-nums" style={{ color: speedColor(diag.uploadMbps) }}>
             {fmt(diag.uploadMbps)}
           </span>
+          <span className="text-muted-foreground text-xs"> Mbps</span>
+        </TableCell>
+        <TableCell>
+          {diag.gatewayLatencyMs != null ? (
+            <span className="font-mono tabular-nums" style={{ color: latencyColor(diag.gatewayLatencyMs) }}>
+              {fmt(diag.gatewayLatencyMs, 0)} <span className="text-muted-foreground text-xs">ms</span>
+            </span>
+          ) : (
+            <span className="font-mono tabular-nums" style={{ color: latencyColor(diag.internetLatencyMs) }}>
+              {fmt(diag.internetLatencyMs, 0)} <span className="text-muted-foreground text-xs">ms *</span>
+            </span>
+          )}
         </TableCell>
         <TableCell>
           <span className="font-mono tabular-nums" style={{ color: latencyColor(diag.internetLatencyMs) }}>
@@ -86,27 +99,38 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
           </span>
           <span className="text-muted-foreground text-xs"> ms</span>
         </TableCell>
-        <TableCell className="text-center">
-          {diag.vpnDetected ? (
-            <Badge variant="secondary" className="bg-blue-100 text-blue-800">VPN</Badge>
-          ) : (
-            <span className="text-muted-foreground text-xs">—</span>
-          )}
-        </TableCell>
         <TableCell>
           <span className="font-mono tabular-nums" style={{ color: diag.dnsResolutionMs != null ? latencyColor(diag.dnsResolutionMs) : undefined }}>
-            {diag.dnsResolutionMs != null ? fmt(diag.dnsResolutionMs, 0) : '--'}
+            {diag.dnsResolutionMs != null ? `${fmt(diag.dnsResolutionMs, 0)} ms` : '--'}
           </span>
         </TableCell>
         <TableCell>
           <span className="font-mono tabular-nums" style={{ color: diag.cloudEndpointAvgMs != null ? latencyColor(diag.cloudEndpointAvgMs) : undefined }}>
-            {diag.cloudEndpointAvgMs != null ? fmt(diag.cloudEndpointAvgMs, 0) : '--'}
+            {diag.cloudEndpointAvgMs != null ? `${fmt(diag.cloudEndpointAvgMs, 0)} ms` : '--'}
           </span>
-          {diag.cloudEndpointCount != null && (
-            <span className="text-muted-foreground text-xs"> ({diag.cloudEndpointCount})</span>
-          )}
         </TableCell>
-        <TableCell className="text-center font-mono tabular-nums">{diag.adapterCount}</TableCell>
+        <TableCell className="text-center">
+          <div className="flex items-center justify-center gap-1">
+            {diag.ethCount > 0 && (
+              <span title={`${diag.ethCount} Ethernet`} className="text-blue-600">
+                <Network className="h-3.5 w-3.5" />
+              </span>
+            )}
+            {diag.wifiCount > 0 && (
+              <span title={`${diag.wifiCount} WiFi`} className="text-green-600">
+                <Wifi className="h-3.5 w-3.5" />
+              </span>
+            )}
+            {diag.vpnDetected && (
+              <span title="VPN" className="text-purple-600">
+                <Shield className="h-3.5 w-3.5" />
+              </span>
+            )}
+            {!diag.ethCount && !diag.wifiCount && !diag.vpnDetected && (
+              <span className="font-mono tabular-nums text-xs">{diag.adapterCount}</span>
+            )}
+          </div>
+        </TableCell>
         <TableCell className="text-center font-mono tabular-nums">{diag.routeCount}</TableCell>
         <TableCell className="text-muted-foreground text-xs">
           {new Date(diag.scannedAt).toLocaleString()}
@@ -239,6 +263,8 @@ export function NetworkDiagnosticsTab() {
 
   const avgDown = data.reduce((s, d) => s + d.downloadMbps, 0) / data.length;
   const avgUp = data.reduce((s, d) => s + d.uploadMbps, 0) / data.length;
+  const gwValues = data.filter((d) => d.gatewayLatencyMs != null).map((d) => d.gatewayLatencyMs!);
+  const avgGwLatency = gwValues.length > 0 ? gwValues.reduce((s, v) => s + v, 0) / gwValues.length : null;
   const avgLatency = data.reduce((s, d) => s + d.internetLatencyMs, 0) / data.length;
   const vpnCount = data.filter((d) => d.vpnDetected).length;
   const dnsValues = data.filter((d) => d.dnsResolutionMs != null).map((d) => d.dnsResolutionMs!);
@@ -281,12 +307,12 @@ export function NetworkDiagnosticsTab() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Internet Latency</CardTitle>
-            <Globe className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Gateway Latency</CardTitle>
+            <Network className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold" style={{ color: latencyColor(avgLatency) }}>
-              {fmt(avgLatency, 0)} <span className="text-sm font-normal text-muted-foreground">ms</span>
+            <p className="text-2xl font-bold" style={{ color: avgGwLatency != null ? latencyColor(avgGwLatency) : undefined }}>
+              {avgGwLatency != null ? fmt(avgGwLatency, 0) : fmt(avgLatency, 0)} <span className="text-sm font-normal text-muted-foreground">ms</span>
             </p>
           </CardContent>
         </Card>
@@ -339,13 +365,13 @@ export function NetworkDiagnosticsTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Machine</TableHead>
-                  <TableHead>Down (Mbps)</TableHead>
-                  <TableHead>Up (Mbps)</TableHead>
-                  <TableHead>Latency</TableHead>
+                  <TableHead>Down</TableHead>
+                  <TableHead>Up</TableHead>
+                  <TableHead>Gateway</TableHead>
+                  <TableHead>Internet</TableHead>
                   <TableHead>DNS</TableHead>
-                  <TableHead>Cloud</TableHead>
-                  <TableHead className="text-center">VPN</TableHead>
-                  <TableHead className="text-center">Adapters</TableHead>
+                  <TableHead>M365</TableHead>
+                  <TableHead className="text-center">NICs</TableHead>
                   <TableHead className="text-center">Routes</TableHead>
                   <TableHead>Scanned</TableHead>
                 </TableRow>

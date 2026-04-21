@@ -31,9 +31,14 @@ export interface NetworkDiag {
   downloadMbps: number;
   uploadMbps: number;
   internetLatencyMs: number;
+  gatewayLatencyMs: number | null;
+  gatewayIp: string | null;
   routeCount: number;
   vpnDetected: boolean;
   adapterCount: number;
+  wifiCount: number;
+  vpnAdapterCount: number;
+  ethCount: number;
   bandwidthSendMbps: number;
   bandwidthRecvMbps: number;
   dnsResolutionMs: number | null;
