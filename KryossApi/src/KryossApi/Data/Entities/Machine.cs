@@ -44,10 +44,22 @@ public class Machine : IAuditable
     // Network
     public string? IpAddress { get; set; }
     public string? MacAddress { get; set; }
+    public string? LastPublicIp { get; set; }
+    public DateTime? LastPublicIpAt { get; set; }
 
     // Identity
     public string? DomainStatus { get; set; }
     public string? DomainName { get; set; }
+
+    // OS role: 1=Workstation, 2=DomainController, 3=Server (from Win32_OperatingSystem.ProductType)
+    public short? ProductType { get; set; }
+
+    // Agent
+    public string? AgentVersion { get; set; }
+
+    // A-13: Scan orchestrator — per-machine slot offset within org scan window.
+    public int? ScanSlotOffsetSec { get; set; }
+    public DateTime? LastCheckinAt { get; set; }
 
     // Lifecycle
     public int? SystemAgeDays { get; set; }

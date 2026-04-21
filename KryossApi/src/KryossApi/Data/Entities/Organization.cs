@@ -25,6 +25,10 @@ public class Organization : IAuditable
     public string? IndustrySubcode { get; set; }
     public string? EmployeeCountBand { get; set; }
 
+    // A-13: Scan orchestrator — org-level scan window (UTC).
+    public TimeSpan ScanWindowStart { get; set; } = new TimeSpan(2, 0, 0);
+    public TimeSpan ScanWindowEnd { get; set; } = new TimeSpan(6, 0, 0);
+
     // Audit
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -10,7 +10,7 @@ public interface IEnrollmentService
     Task<string> GenerateCodeAsync(Guid organizationId, int? assessmentId, string? label, int expiryDays = 7, int? maxUses = null);
     Task<EnrollmentResult?> RedeemCodeAsync(
         string code, string hostname, string? os, string? osVersion, string? osBuild,
-        string? hwid = null);
+        string? hwid = null, int? productType = null);
 }
 
 public record EnrollmentResult(
@@ -28,12 +28,14 @@ public class EnrollmentService : IEnrollmentService
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
     private readonly IPlatformResolver _platformResolver;
+    private readonly IScanScheduleService _schedule;
 
-    public EnrollmentService(KryossDbContext db, ICurrentUserService user, IPlatformResolver platformResolver)
+    public EnrollmentService(KryossDbContext db, ICurrentUserService user, IPlatformResolver platformResolver, IScanScheduleService schedule)
     {
         _db = db;
         _user = user;
         _platformResolver = platformResolver;
+        _schedule = schedule;
     }
 
     public async Task<string> GenerateCodeAsync(Guid organizationId, int? assessmentId, string? label, int expiryDays = 7, int? maxUses = null)
@@ -57,7 +59,7 @@ public class EnrollmentService : IEnrollmentService
 
     public async Task<EnrollmentResult?> RedeemCodeAsync(
         string code, string hostname, string? os, string? osVersion, string? osBuild,
-        string? hwid = null)
+        string? hwid = null, int? productType = null)
     {
         var enrollment = await _db.EnrollmentCodes
             .Include(x => x.Organization)
@@ -74,11 +76,7 @@ public class EnrollmentService : IEnrollmentService
         if (enrollment is null)
             return null;
 
-        // Resolve Phase 1 platform scope from OS strings (W10/W11/MS*).
-        // Returns null for unsupported OSes -- those machines will receive
-        // an empty control list from /v1/controls, which is the intended
-        // Phase 1 behavior for non-workstation targets.
-        var platformId = await _platformResolver.ResolveIdAsync(os, osVersion, osBuild);
+        var platformId = await _platformResolver.ResolveIdAsync(os, osVersion, osBuild, productType);
 
         // Find existing machine by hostname in same org (re-enrollment case)
         var machine = await _db.Machines
@@ -96,6 +94,8 @@ public class EnrollmentService : IEnrollmentService
             machine.OsBuild = osBuild;
             machine.PlatformId = platformId;
             machine.Hwid = string.IsNullOrWhiteSpace(hwid) ? null : hwid;
+            if (productType is > 0)
+                machine.ProductType = (short)productType;
             machine.LastSeenAt = DateTime.UtcNow;
             machine.IsActive = true;
         }
@@ -112,6 +112,7 @@ public class EnrollmentService : IEnrollmentService
                 OsVersion = osVersion,
                 OsBuild = osBuild,
                 PlatformId = platformId,
+                ProductType = productType is > 0 ? (short)productType : null,
                 Hwid = string.IsNullOrWhiteSpace(hwid) ? null : hwid,
                 FirstSeenAt = DateTime.UtcNow,
                 LastSeenAt = DateTime.UtcNow,
@@ -188,6 +189,8 @@ public class EnrollmentService : IEnrollmentService
         }
 
         await _db.SaveChangesAsync();
+
+        await _schedule.AssignSlotAsync(machine.Id, machine.OrganizationId);
 
         return new EnrollmentResult(
             AgentId: agentId,

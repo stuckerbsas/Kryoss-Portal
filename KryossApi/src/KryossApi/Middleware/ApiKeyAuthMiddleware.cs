@@ -23,9 +23,9 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
 {
     private static readonly TimeSpan MaxTimestampSkew = TimeSpan.FromMinutes(5);
 
-    // ── HIGH-05: In-memory rate limiter per organization ──
-    private static readonly ConcurrentDictionary<Guid, (int Count, DateTime WindowStart)> _rateLimits = new();
-    private const int MaxRequestsPerMinute = 60;
+    // ── HIGH-05: In-memory rate limiter per API key (= per machine) ──
+    private static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _rateLimits = new();
+    private const int MaxRequestsPerMinute = 15;
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
@@ -44,8 +44,10 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        // Enroll endpoint is public (uses enrollment code, not API key)
-        if (path.EndsWith("/enroll", StringComparison.OrdinalIgnoreCase))
+        // Enroll and speedtest endpoints are public (no sensitive data)
+        if (path.EndsWith("/enroll", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith("/speedtest", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith("/schedule", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
@@ -85,17 +87,21 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        // ── HIGH-05: Rate limiting per org ──
+        // ── HIGH-05: Rate limiting per machine (X-Agent-Id) ──
         {
+            var agentIdHeader = httpReq.Headers.TryGetValues("X-Agent-Id", out var aidValues)
+                ? aidValues.FirstOrDefault() : null;
+            var rateLimitKey = !string.IsNullOrEmpty(agentIdHeader) ? agentIdHeader : apiKey;
+
             var now = DateTime.UtcNow;
-            var entry = _rateLimits.GetOrAdd(org.Id, _ => (0, now));
+            var entry = _rateLimits.GetOrAdd(rateLimitKey, _ => (0, now));
             if (now - entry.WindowStart > TimeSpan.FromMinutes(1))
             {
-                _rateLimits[org.Id] = (1, now);
+                _rateLimits[rateLimitKey] = (1, now);
             }
             else if (entry.Count >= MaxRequestsPerMinute)
             {
-                logger.LogWarning("Rate limit exceeded for org {OrgId}", org.Id);
+                logger.LogWarning("Rate limit exceeded for {RateLimitKey}", rateLimitKey[..Math.Min(8, rateLimitKey.Length)]);
                 var resp = httpReq.CreateResponse((System.Net.HttpStatusCode)429);
                 await resp.WriteAsJsonAsync(new { error = "Rate limit exceeded" });
                 context.GetInvocationResult().Value = resp;
@@ -103,7 +109,7 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             }
             else
             {
-                _rateLimits[org.Id] = (entry.Count + 1, entry.WindowStart);
+                _rateLimits[rateLimitKey] = (entry.Count + 1, entry.WindowStart);
             }
         }
 
@@ -163,8 +169,15 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
         {
             currentUser.OrganizationId = org.Id;
             currentUser.FranchiseId = org.FranchiseId;
-            currentUser.IpAddress = httpReq.Headers.TryGetValues("X-Forwarded-For", out var fwdValues)
-                ? fwdValues.FirstOrDefault() : null;
+            currentUser.IpAddress =
+                (httpReq.Headers.TryGetValues("X-Forwarded-For", out var fwdValues) ? fwdValues.FirstOrDefault() : null)
+                ?? (httpReq.Headers.TryGetValues("X-Azure-ClientIP", out var azValues) ? azValues.FirstOrDefault() : null)
+                ?? (httpReq.Headers.TryGetValues("X-Client-IP", out var cliValues) ? cliValues.FirstOrDefault() : null);
+            logger.LogInformation("IP resolution: XFF={Xff} AzureClientIP={AzCli} XClientIP={XCli} → resolved={Ip}",
+                httpReq.Headers.TryGetValues("X-Forwarded-For", out var xff2) ? xff2.FirstOrDefault() : "(none)",
+                httpReq.Headers.TryGetValues("X-Azure-ClientIP", out var az2) ? az2.FirstOrDefault() : "(none)",
+                httpReq.Headers.TryGetValues("X-Client-IP", out var cli2) ? cli2.FirstOrDefault() : "(none)",
+                currentUser.IpAddress ?? "(null)");
         }
 
         await next(context);

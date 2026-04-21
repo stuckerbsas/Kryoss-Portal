@@ -6,6 +6,7 @@ using KryossApi.Services.CloudAssessment;
 using KryossApi.Services.Reports;
 using KryossApi.Services.CloudAssessment.Helpers;
 using KryossApi.Services.CopilotReadiness;
+using KryossApi.Services.InfraAssessment;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -72,6 +73,13 @@ builder.Services.AddScoped<IBenchmarkService, BenchmarkService>();
 builder.Services.AddScoped<IFindingStatusService, FindingStatusService>();
 builder.Services.AddScoped<IConsentOrchestrator, ConsentOrchestrator>();
 builder.Services.AddScoped<ICloudAssessmentReportService, CloudAssessmentReportService>();
+builder.Services.AddScoped<IInfraAssessmentService, InfraAssessmentService>();
+builder.Services.AddScoped<KryossApi.Services.InfraAssessment.Pipelines.IHypervisorPipeline, KryossApi.Services.InfraAssessment.Pipelines.HypervisorPipeline>();
+builder.Services.AddSingleton<IGeoIpService, IpApiGeoIpService>();
+builder.Services.AddSingleton<IFabricAdminService, FabricAdminService>();
+builder.Services.AddScoped<IPublicIpTracker, PublicIpTracker>();
+builder.Services.AddScoped<ISiteClusterService, SiteClusterService>();
+builder.Services.AddScoped<IScanScheduleService, ScanScheduleService>();
 
 // ── M365 multi-tenant admin consent config ──
 builder.Services.AddSingleton(new M365Config
