@@ -57,7 +57,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="px-5 py-4 border-t border-white/5">
-        <p className="text-[10px] text-white/20 uppercase tracking-wider">Powered by Kryoss</p>
+        <p className="text-[10px] text-white/20 uppercase tracking-wider">Powered by Kryoss v{__APP_VERSION__}</p>
       </div>
     </aside>
   );
