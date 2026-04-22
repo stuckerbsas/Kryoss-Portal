@@ -8,6 +8,9 @@ import {
   Wifi,
   Clock,
   MapPin,
+  Network,
+  Cable,
+  ArrowRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -16,6 +19,8 @@ import {
   useSaveSnmpConfig,
   type SnmpDevice,
   type SnmpConfigPayload,
+  type LldpNeighbor,
+  type CdpNeighbor,
 } from '@/api/snmp';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -41,8 +46,67 @@ function ifStatusBadge(status: number | null) {
   return <Badge variant="secondary" className="bg-gray-100 text-gray-500">Unknown</Badge>;
 }
 
+function NeighborTable({ lldp, cdp }: { lldp: LldpNeighbor[] | null; cdp: CdpNeighbor[] | null }) {
+  const hasLldp = lldp && lldp.length > 0;
+  const hasCdp = cdp && cdp.length > 0;
+  if (!hasLldp && !hasCdp) return null;
+
+  return (
+    <div className="mt-3">
+      <h5 className="text-sm font-semibold mb-2 flex items-center gap-2">
+        <Cable className="h-4 w-4 text-blue-500" />
+        Port Mapping ({(lldp?.length ?? 0) + (cdp?.length ?? 0)} neighbors)
+      </h5>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Local Port</TableHead>
+            <TableHead></TableHead>
+            <TableHead>Remote Device</TableHead>
+            <TableHead>Remote Port</TableHead>
+            <TableHead>Protocol</TableHead>
+            <TableHead>Details</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lldp?.map((n, i) => (
+            <TableRow key={`lldp-${i}`}>
+              <TableCell className="font-mono text-xs font-medium">{n.localPort ?? '—'}</TableCell>
+              <TableCell><ArrowRight className="h-3 w-3 text-muted-foreground" /></TableCell>
+              <TableCell className="font-medium text-sm">
+                {n.remoteSysName ?? n.remoteChassisId ?? '—'}
+              </TableCell>
+              <TableCell className="font-mono text-xs">{n.remotePortId ?? n.remotePortDesc ?? '—'}</TableCell>
+              <TableCell><Badge variant="secondary" className="bg-blue-100 text-blue-700">LLDP</Badge></TableCell>
+              <TableCell className="text-xs text-muted-foreground max-w-xs truncate">
+                {n.remoteSysDesc ?? ''}
+              </TableCell>
+            </TableRow>
+          ))}
+          {cdp?.map((n, i) => (
+            <TableRow key={`cdp-${i}`}>
+              <TableCell className="font-mono text-xs font-medium">{n.localPort ?? '—'}</TableCell>
+              <TableCell><ArrowRight className="h-3 w-3 text-muted-foreground" /></TableCell>
+              <TableCell className="font-medium text-sm">
+                {n.remoteDeviceId ?? '—'}
+                {n.remoteIp && <span className="text-muted-foreground ml-1">({n.remoteIp})</span>}
+              </TableCell>
+              <TableCell className="font-mono text-xs">{n.remotePortId ?? '—'}</TableCell>
+              <TableCell><Badge variant="secondary" className="bg-orange-100 text-orange-700">CDP</Badge></TableCell>
+              <TableCell className="text-xs text-muted-foreground max-w-xs truncate">
+                {n.remotePlatform ?? ''}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function DeviceRow({ device }: { device: SnmpDevice }) {
   const [expanded, setExpanded] = useState(false);
+  const neighborCount = (device.lldpNeighborCount ?? 0) + (device.cdpNeighborCount ?? 0);
 
   return (
     <>
@@ -65,6 +129,13 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
         </TableCell>
         <TableCell className="font-mono text-xs">{device.entityFirmware ?? '—'}</TableCell>
         <TableCell className="text-center">{device.interfaceCount}</TableCell>
+        <TableCell className="text-center">
+          {neighborCount > 0 ? (
+            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+              {neighborCount}
+            </Badge>
+          ) : '—'}
+        </TableCell>
         <TableCell>
           {device.uptimeDays != null ? (
             <span className="font-mono tabular-nums">{Math.floor(device.uptimeDays)}d</span>
@@ -75,48 +146,56 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
         </TableCell>
       </TableRow>
 
-      {expanded && device.interfaces.length > 0 && (
+      {expanded && (
         <TableRow>
-          <TableCell colSpan={8} className="bg-muted/30 p-4">
-            <h4 className="text-sm font-semibold mb-2">Interfaces ({device.interfaces.length})</h4>
-            <div className="overflow-x-auto max-h-64 overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Speed</TableHead>
-                    <TableHead>MAC</TableHead>
-                    <TableHead>Admin</TableHead>
-                    <TableHead>Oper</TableHead>
-                    <TableHead>In Errors</TableHead>
-                    <TableHead>Out Errors</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {device.interfaces.map((iface) => (
-                    <TableRow key={iface.ifIndex}>
-                      <TableCell className="font-mono text-xs">{iface.ifIndex}</TableCell>
-                      <TableCell className="text-xs">{iface.name ?? '—'}</TableCell>
-                      <TableCell className="text-xs max-w-xs truncate">{iface.description ?? '—'}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {iface.speedMbps != null ? `${iface.speedMbps} Mbps` : '—'}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{iface.macAddress ?? '—'}</TableCell>
-                      <TableCell>{ifStatusBadge(iface.adminStatus)}</TableCell>
-                      <TableCell>{ifStatusBadge(iface.operStatus)}</TableCell>
-                      <TableCell className="font-mono tabular-nums" style={{ color: iface.inErrors > 0 ? '#C0392B' : undefined }}>
-                        {iface.inErrors}
-                      </TableCell>
-                      <TableCell className="font-mono tabular-nums" style={{ color: iface.outErrors > 0 ? '#C0392B' : undefined }}>
-                        {iface.outErrors}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          <TableCell colSpan={9} className="bg-muted/30 p-4">
+            {/* Interfaces */}
+            {device.interfaces.length > 0 && (
+              <>
+                <h4 className="text-sm font-semibold mb-2">Interfaces ({device.interfaces.length})</h4>
+                <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>#</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Speed</TableHead>
+                        <TableHead>MAC</TableHead>
+                        <TableHead>Admin</TableHead>
+                        <TableHead>Oper</TableHead>
+                        <TableHead>In Errors</TableHead>
+                        <TableHead>Out Errors</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {device.interfaces.map((iface) => (
+                        <TableRow key={iface.ifIndex}>
+                          <TableCell className="font-mono text-xs">{iface.ifIndex}</TableCell>
+                          <TableCell className="text-xs">{iface.name ?? '—'}</TableCell>
+                          <TableCell className="text-xs max-w-xs truncate">{iface.description ?? '—'}</TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {iface.speedMbps != null ? `${iface.speedMbps} Mbps` : '—'}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{iface.macAddress ?? '—'}</TableCell>
+                          <TableCell>{ifStatusBadge(iface.adminStatus)}</TableCell>
+                          <TableCell>{ifStatusBadge(iface.operStatus)}</TableCell>
+                          <TableCell className="font-mono tabular-nums" style={{ color: iface.inErrors > 0 ? '#C0392B' : undefined }}>
+                            {iface.inErrors}
+                          </TableCell>
+                          <TableCell className="font-mono tabular-nums" style={{ color: iface.outErrors > 0 ? '#C0392B' : undefined }}>
+                            {iface.outErrors}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+
+            {/* Port Mapping (LLDP/CDP) */}
+            <NeighborTable lldp={device.lldpNeighbors} cdp={device.cdpNeighbors} />
           </TableCell>
         </TableRow>
       )}
@@ -186,7 +265,7 @@ function SnmpConfigCard({ orgId }: { orgId: string }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <span className="text-muted-foreground">Status</span>
-                <p>{config.enabled ? '✓ Enabled' : '✗ Disabled'}</p>
+                <p>{config.enabled ? 'Enabled' : 'Disabled'}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Version</span>
@@ -203,7 +282,7 @@ function SnmpConfigCard({ orgId }: { orgId: string }) {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              SNMP not configured. Click Configure to set up network device discovery.
+              SNMP not configured. Agent auto-scans with SNMPv2c &quot;public&quot; by default. Configure custom credentials here.
             </p>
           )
         ) : (
@@ -295,12 +374,16 @@ export function SnmpTab() {
   const { orgId } = useOrgParam();
   const { data: devices, isLoading } = useSnmpDevices(orgId);
 
+  const totalNeighbors = devices?.reduce(
+    (s, d) => s + (d.lldpNeighborCount ?? 0) + (d.cdpNeighborCount ?? 0), 0
+  ) ?? 0;
+
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold">SNMP Network Devices</h3>
         <p className="text-sm text-muted-foreground">
-          Discover and monitor switches, routers, firewalls, and access points via SNMP.
+          Switches, routers, firewalls, and access points discovered via SNMP. Port mapping via LLDP/CDP.
         </p>
       </div>
 
@@ -312,12 +395,12 @@ export function SnmpTab() {
         <EmptyState
           icon={<Router className="size-10" />}
           title="No SNMP devices discovered"
-          description="Configure SNMP targets above, then run the agent to discover network devices."
+          description="Run the agent to auto-discover network devices via SNMPv2c. Default community: public."
         />
       ) : (
         <>
           {/* KPI cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Devices</CardTitle>
@@ -329,13 +412,23 @@ export function SnmpTab() {
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Total Interfaces</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Interfaces</CardTitle>
                 <Wifi className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">
                   {devices.reduce((s, d) => s + d.interfaceCount, 0)}
                 </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Port Mappings</CardTitle>
+                <Network className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{totalNeighbors || '—'}</p>
+                <p className="text-xs text-muted-foreground">LLDP + CDP</p>
               </CardContent>
             </Card>
             <Card>
@@ -386,6 +479,7 @@ export function SnmpTab() {
                       <TableHead>Model</TableHead>
                       <TableHead>Firmware</TableHead>
                       <TableHead className="text-center">IFs</TableHead>
+                      <TableHead className="text-center">Neighbors</TableHead>
                       <TableHead>Uptime</TableHead>
                       <TableHead>Last Scan</TableHead>
                     </TableRow>

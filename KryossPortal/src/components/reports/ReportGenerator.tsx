@@ -38,6 +38,7 @@ const REPORT_TYPES = [
   { value: 'network',           label: 'Network Assessment'                },
   { value: 'framework',         label: 'Framework Compliance'              },
   { value: 'proposal',          label: 'Business Proposal'                 },
+  { value: 'cloud-executive',   label: 'Cloud Executive (Findings + Hours)'},
   { value: 'm365',              label: 'M365 Security & Copilot Readiness' },
 ] as const;
 

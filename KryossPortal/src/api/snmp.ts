@@ -39,6 +39,23 @@ export interface SnmpDeviceInterface {
   outErrors: number;
 }
 
+export interface LldpNeighbor {
+  localPort: string | null;
+  remoteChassisId: string | null;
+  remotePortId: string | null;
+  remotePortDesc: string | null;
+  remoteSysName: string | null;
+  remoteSysDesc: string | null;
+}
+
+export interface CdpNeighbor {
+  localPort: string | null;
+  remoteDeviceId: string | null;
+  remotePortId: string | null;
+  remoteIp: string | null;
+  remotePlatform: string | null;
+}
+
 export interface SnmpDevice {
   id: string;
   ipAddress: string;
@@ -51,8 +68,12 @@ export interface SnmpDevice {
   entityMfg: string | null;
   entityFirmware: string | null;
   interfaceCount: number;
+  lldpNeighborCount: number;
+  cdpNeighborCount: number;
   scannedAt: string;
   interfaces: SnmpDeviceInterface[];
+  lldpNeighbors: LldpNeighbor[] | null;
+  cdpNeighbors: CdpNeighbor[] | null;
 }
 
 export function useSnmpConfig(organizationId: string | undefined) {
