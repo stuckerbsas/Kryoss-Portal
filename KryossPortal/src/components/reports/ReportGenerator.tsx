@@ -40,6 +40,10 @@ const REPORT_TYPES = [
   { value: 'proposal',          label: 'Business Proposal'                 },
   { value: 'cloud-executive',   label: 'Cloud Executive (Findings + Hours)'},
   { value: 'm365',              label: 'M365 Security & Copilot Readiness' },
+  { value: 'compliance',        label: 'Compliance Scorecard'              },
+  { value: 'hygiene',           label: 'AD Hygiene Audit'                  },
+  { value: 'risk-assessment',   label: 'Risk & Threat Assessment'          },
+  { value: 'inventory',         label: 'Asset Inventory'                   },
 ] as const;
 
 const TONES = [
