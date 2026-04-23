@@ -23,6 +23,7 @@ import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryT
 import { MachineDetailPage } from './pages/MachineDetailPage';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { RecycleBinPage } from './pages/RecycleBinPage';
+import { ActivityLogPage } from './pages/ActivityLogPage';
 
 export const router = createBrowserRouter([
   {
@@ -78,6 +79,15 @@ export const router = createBrowserRouter([
             ],
           },
         ],
+      },
+      {
+        path: 'activity-log',
+        handle: { crumb: () => 'Activity Log' },
+        element: (
+          <RequirePermission slug="admin:read">
+            <ActivityLogPage />
+          </RequirePermission>
+        ),
       },
       {
         path: 'recycle-bin',

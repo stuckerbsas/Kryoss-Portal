@@ -119,9 +119,22 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
       }
       toast.success('Report opened');
     } catch (err: any) {
+      const fullUrl = `${API_BASE}${apiPath}`;
+      const debugHtml = `<html><body style="font-family:sans-serif;padding:40px">
+        <h2 style="color:#C0392B">Report generation failed</h2>
+        <p><strong>Error:</strong> ${err.message}</p>
+        <p><strong>URL:</strong> <code>${fullUrl}</code></p>
+        <p><strong>Type:</strong> ${err.name || 'Unknown'}</p>
+        <p style="margin-top:20px;color:#64748b;font-size:13px">
+          If "Failed to fetch" → API returned 502 (crash) or CORS blocked.<br>
+          Check: <code>/v2/version</code> returns expected version.<br>
+          Try <code>diag=1</code> param for block-by-block diagnostics.
+        </p>
+        <p style="margin-top:12px"><a href="${fullUrl}" target="_blank" style="color:#2563eb">Try direct link (needs auth)</a></p>
+      </body></html>`;
       if (newWindow) {
         newWindow.document.open();
-        newWindow.document.write(`<html><body style="font-family:sans-serif;padding:40px;color:#C0392B"><h2>Report generation failed</h2><p>${err.message}</p></body></html>`);
+        newWindow.document.write(debugHtml);
         newWindow.document.close();
       }
       toast.error(`Failed to generate report: ${err.message}`);
