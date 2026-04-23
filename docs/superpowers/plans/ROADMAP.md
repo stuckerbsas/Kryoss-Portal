@@ -32,7 +32,7 @@
 - **SNMP Scanner** — agent `SnmpScanner.cs` + API `SnmpConfigFunction`/`SnmpFunction` + DB tables (`snmp_configs`, `snmp_devices`). ⚠️ No portal UI yet (see PG-02 below)
 - **Network Diagnostics (Phase 5a)** — agent + API (`NetworkDiagnosticsFunction`, `SpeedTestFunction`, 3 tables, 50 controls NET-001..050) + `NetworkBlock`/`NetworkRecipe` report. ⚠️ No portal tab yet (see PG-01 below)
 - **Recycle Bin** — portal `RecycleBinPage` + API endpoints for soft-delete restore. NOT in previous roadmap
-- **Unified Report System** — `ReportComposer` with 17 blocks, 4 active recipes (C-Level, Technical, Preventa, Framework). Business Proposal + Monthly Progress NOT yet implemented (see RP-01, RP-06 below)
+- **Unified Report System** — `ReportComposer` with 24 blocks, 15 active recipes: C-Level, Technical, PreventaOpener, PreventaDetailed, Framework, Proposal, Monthly, Network, CloudExecutive, ExecOnePager, M365, Compliance, Hygiene, RiskAssessment, Inventory. All functional. Monthly may need Ninja data enrichment for full value.
 
 **In progress:** None
 
@@ -59,8 +59,11 @@ Execute in order. Each ships independently. Prompts ready below.
 | 3 | ~~**CA-13** Intune Deep verify/gap-fill~~ | ✅ shipped | 0-1 session | None |
 | 4 | ~~**CA-14** Auto-consent (Fabric + ARM)~~ | ✅ shipped | 1 session | None (UX win) |
 | 5 | ~~**IA-1** Server & Hypervisor Inventory~~ | ✅ shipped | 1 session | IA-10 report |
+| 6 | **RP-EXPANSION** Report Block Library Finalization | ⚪ queued | 3.25 sessions | Unlocks consistent reports across all tiers. Spec: `2026-04-20-report-block-library.md` (37 tasks, 5 phases) |
+| 7 | **IA-2** Network Topology Discovery | ⚪ queued | 2 sessions | IA-10 report |
+| 8 | **CA-15** Drift Alerts + Notifications | ⚪ queued | 1 session | MSP retention |
 
-After 5 complete → replan from Backlog.
+After active queue complete → replan from Backlog.
 
 ---
 
@@ -444,13 +447,20 @@ No new consent. No new tables. Pure code reuse.
 
 | # | Feature | Tier | Effort | Blocks |
 |---|---------|------|--------|--------|
-| RP-01 | Monthly Progress report | P2 | 1 session | Needs Ninja data |
+| ~~RP-01~~ | ~~Monthly Progress report~~ | ✅ shipped 2026-04-21 | 1 session | `MonthlyRecipe.cs` exists — functional but may need Ninja RMM data enrichment for full monthly delta |
 | RP-02 | SOC 2 Type II evidence report | P2 | 1 session | Needs AT-01..AT-04 |
 | RP-03 | Vendor risk report (SaaS inventory) | P3 | 1 session |  |
 | RP-04 | Insurance renewal questionnaire report | P3 | 1 session |  |
 | RP-05 | Board-level exec report | Icebox | 1 session |  |
 | ~~RP-06~~ | ~~Business Proposal report (auto-pricing from `service_catalog` + `franchise_service_rates`)~~ | ✅ shipped 2026-04-21 | 1 session | `ProposalRecipe.cs` + `ServiceCatalogBlock.cs` + portal dropdown added |
 | ~~RP-07~~ | ~~Network Assessment report (portal viewer for `NetworkRecipe` output)~~ | ✅ shipped 2026-04-20 | 0.5 session | `NetworkRecipe.cs` + `NetworkBlock.cs` + portal `ReportGenerator.tsx` has `network` type |
+| ~~RP-08~~ | ~~Cloud Executive report (findings + hours estimate, no remediation)~~ | ✅ shipped 2026-04-21 | 0.5 session | `CloudExecutiveRecipe.cs` + `CloudExecutiveBlock.cs` + portal dropdown added |
+| ~~RP-09~~ | ~~Executive One-Pager (2-page summary with grade + frameworks + top findings)~~ | ✅ shipped 2026-04-21 | 0.5 session | `ExecOnePagerRecipe.cs` + `ExecOnePagerBlock.cs` |
+| ~~RP-10~~ | ~~M365 Security & Copilot Readiness report~~ | ✅ shipped 2026-04-21 | 0.5 session | `M365Recipe.cs` + `M365Block.cs` (M365 findings by category + Copilot readiness page) |
+| ~~RP-11~~ | ~~Compliance Scorecard (multi-framework side-by-side + ring gauges + benchmarks)~~ | ✅ shipped 2026-04-21 | 0.5 session | `ComplianceRecipe.cs` + `ComplianceScorecardBlock.cs` |
+| ~~RP-12~~ | ~~AD Hygiene Audit (privileged accounts, stale objects, LAPS, kerberoastable, domain info)~~ | ✅ shipped 2026-04-21 | 0.5 session | `HygieneRecipe.cs` + `HygieneBlock.cs` |
+| ~~RP-13~~ | ~~Risk & Threat Assessment (threats + open ports + attack vectors + credential exposure)~~ | ✅ shipped 2026-04-21 | 0.5 session | `RiskAssessmentRecipe.cs` + `RiskSummaryBlock.cs` |
+| ~~RP-14~~ | ~~Asset Inventory (OS distribution, security coverage, storage, hardware table)~~ | ✅ shipped 2026-04-21 | 0.5 session | `InventoryRecipe.cs` + `InventoryBlock.cs` |
 
 ### Assessment & Controls
 
