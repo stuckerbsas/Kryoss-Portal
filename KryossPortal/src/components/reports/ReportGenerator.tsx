@@ -174,6 +174,11 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
                 {rt.label}
               </SelectItem>
             ))}
+            {isSuperAdmin && (
+              <SelectItem value="test-fixture" className="text-amber-600 font-semibold">
+                Test Fixture (All Blocks)
+              </SelectItem>
+            )}
           </SelectContent>
         </Select>
 
