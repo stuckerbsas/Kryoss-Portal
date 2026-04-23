@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ExternalLink, Download, Loader2, FlaskConical } from 'lucide-react';
+import { ExternalLink, Download, Loader2, FlaskConical, Stethoscope } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -241,6 +241,30 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
               >
                 <FlaskConical className="size-4 mr-1" />
                 Test Fixture
+              </Button>
+            )}
+            {isSuperAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                onClick={async () => {
+                  const w = window.open('about:blank', '_blank');
+                  if (w) w.document.write('<html><body style="font-family:sans-serif;padding:20px"><p>Running diagnostics...</p></body></html>');
+                  setLoading(true);
+                  try {
+                    const diagApi = buildApiPath(targetId, reportType, framework, lang) + '&diag=1';
+                    const json = await fetchReport(diagApi);
+                    if (w) { w.document.open(); w.document.write(`<html><body style="font-family:monospace;padding:20px;white-space:pre-wrap;font-size:12px">${json}</body></html>`); w.document.close(); }
+                  } catch (err: any) {
+                    if (w) { w.document.open(); w.document.write(`<html><body style="font-family:sans-serif;padding:40px;color:#C0392B"><h2>Failed</h2><p>${err.message}</p></body></html>`); w.document.close(); }
+                    toast.error(err.message);
+                  } finally { setLoading(false); }
+                }}
+                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+              >
+                <Stethoscope className="size-4 mr-1" />
+                Diagnose
               </Button>
             )}
           </div>
