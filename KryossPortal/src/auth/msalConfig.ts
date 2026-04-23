@@ -22,6 +22,5 @@ export const loginRequest = {
   scopes: [`api://83bd6db8-3cbb-40fa-bdd4-0ef5347b1923/.default`],
 };
 
-export const API_BASE = import.meta.env.DEV
-  ? 'http://localhost:7071'
-  : 'https://func-kryoss.azurewebsites.net';
+export const API_BASE = import.meta.env.VITE_API_BASE
+  ?? 'https://func-kryoss.azurewebsites.net';
