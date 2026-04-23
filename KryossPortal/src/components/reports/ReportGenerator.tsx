@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ExternalLink, Download, Loader2 } from 'lucide-react';
+import { ExternalLink, Download, Loader2, FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Can } from '@/components/auth/Can';
+import { usePermissions } from '@/hooks/usePermissions';
 import { API_BASE } from '@/auth/msalConfig';
 import { msalInstance } from '@/auth/msalInstance';
 import { loginRequest } from '@/auth/msalConfig';
@@ -31,25 +32,19 @@ const FRAMEWORKS = [
 const REPORT_TYPES = [
   { value: 'c-level',           label: 'C-Level'                          },
   { value: 'technical',         label: 'Technical'                         },
-  { value: 'executive',         label: 'Executive'                         },
-  { value: 'preventas',         label: 'Preventas'                         },
+  { value: 'preventa-opener',   label: 'Preventa (Opener)'                },
+  { value: 'preventa-detailed', label: 'Preventa (Detailed)'              },
   { value: 'exec-onepager',     label: 'Executive One-Pager'               },
   { value: 'monthly-briefing',  label: 'Monthly Briefing (MRR)'            },
   { value: 'network',           label: 'Network Assessment'                },
   { value: 'framework',         label: 'Framework Compliance'              },
   { value: 'proposal',          label: 'Business Proposal'                 },
   { value: 'cloud-executive',   label: 'Cloud Executive (Findings + Hours)'},
-  { value: 'm365',              label: 'M365 Security & Copilot Readiness' },
-  { value: 'compliance',        label: 'Compliance Scorecard'              },
   { value: 'hygiene',           label: 'AD Hygiene Audit'                  },
   { value: 'risk-assessment',   label: 'Risk & Threat Assessment'          },
   { value: 'inventory',         label: 'Asset Inventory'                   },
 ] as const;
 
-const TONES = [
-  { value: 'opener',   label: 'Opener (2 pages)' },
-  { value: 'detailed', label: 'Detailed (6 pages)' },
-] as const;
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -61,13 +56,11 @@ function buildApiPath(
   reportType: string,
   framework: string,
   lang: string,
-  tone: string,
 ): string {
   const params = new URLSearchParams();
   params.set('type', reportType);
   if (framework !== 'all') params.set('framework', framework);
   if (lang !== 'en') params.set('lang', lang);
-  if (reportType === 'preventas') params.set('tone', tone);
   return `/v2/reports/org/${orgId}?${params}`;
 }
 
@@ -103,10 +96,10 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
   const [framework, setFramework] = useState('all');
   const [reportType, setReportType] = useState('technical');
   const [lang, setLang] = useState<'en' | 'es'>('en');
-  const [tone, setTone] = useState<'opener' | 'detailed'>('opener');
   const [loading, setLoading] = useState(false);
+  const { isSuperAdmin } = usePermissions();
 
-  const apiPath = buildApiPath(targetId, reportType, framework, lang, tone);
+  const apiPath = buildApiPath(targetId, reportType, framework, lang);
 
   const handleOpenTab = async () => {
     // Open window IMMEDIATELY on user click (before async fetch)
@@ -184,19 +177,6 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
           </SelectContent>
         </Select>
 
-        {reportType === 'preventas' && (
-          <Select value={tone} onValueChange={(v) => setTone(v as 'opener' | 'detailed')}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Tone" />
-            </SelectTrigger>
-            <SelectContent>
-              {TONES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
         <Select value={lang} onValueChange={(v) => setLang(v as 'en' | 'es')}>
           <SelectTrigger className="w-[120px]">
             <SelectValue placeholder="Language" />
@@ -238,6 +218,31 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
               )}
               Download HTML
             </Button>
+            {isSuperAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                onClick={async () => {
+                  const w = window.open('about:blank', '_blank');
+                  if (w) w.document.write('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#666"><p>Generating test fixture...</p></body></html>');
+                  setLoading(true);
+                  try {
+                    const fixtureApi = buildApiPath(targetId, 'test-fixture', 'all', lang);
+                    const html = await fetchReport(fixtureApi);
+                    if (w) { w.document.open(); w.document.write(html); w.document.close(); }
+                    toast.success('Test fixture opened');
+                  } catch (err: any) {
+                    if (w) { w.document.open(); w.document.write(`<html><body style="font-family:sans-serif;padding:40px;color:#C0392B"><h2>Failed</h2><p>${err.message}</p></body></html>`); w.document.close(); }
+                    toast.error(err.message);
+                  } finally { setLoading(false); }
+                }}
+                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+              >
+                <FlaskConical className="size-4 mr-1" />
+                Test Fixture
+              </Button>
+            )}
           </div>
         </Can>
       </div>
