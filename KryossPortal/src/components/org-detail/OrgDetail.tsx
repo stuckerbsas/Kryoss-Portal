@@ -25,15 +25,10 @@ const tabs = [
   { label: 'Software', to: 'software-inventory', end: false, permission: 'machines:read' },
   { label: 'Reports', to: 'reports', end: false, permission: 'reports:read' },
   { label: 'AD Hygiene', to: 'hygiene', end: false, permission: 'assessment:read' },
-  { label: 'Ports', to: 'ports', end: false, permission: 'machines:read' },
   { label: 'Threats', to: 'threats', end: false, permission: 'machines:read' },
-  { label: 'External Scan', to: 'external-scan', end: false, permission: 'assessment:read' },
+  { label: 'Network', to: 'network', end: false, permission: 'machines:read' },
   { label: 'Cloud Assessment', to: 'cloud-assessment', end: false, permission: 'assessment:read' },
-  { label: 'Network Diag', to: 'network-diagnostics', end: false, permission: 'machines:read' },
-  { label: 'SNMP Devices', to: 'snmp', end: false, permission: 'machines:read' },
-  { label: 'Network Sites', to: 'network-sites', end: false, permission: 'machines:read' },
   { label: 'Infra Assessment', to: 'infra-assessment', end: false, permission: 'assessment:read' },
-  { label: 'Protocol Usage', to: 'protocol-usage', end: false, permission: 'assessment:read' },
 ] as const;
 
 export function OrgDetail() {

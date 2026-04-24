@@ -9,15 +9,10 @@ import { FleetTab } from './components/org-detail/FleetTab';
 import { EnrollmentTab } from './components/org-detail/EnrollmentTab';
 import { ReportsTab } from './components/org-detail/ReportsTab';
 import { HygieneTab } from './components/org-detail/HygieneTab';
-import { PortsTab } from './components/org-detail/PortsTab';
 import { ThreatsTab } from './components/org-detail/ThreatsTab';
-import { ExternalScanTab } from './components/org-detail/ExternalScanTab';
 import { CloudAssessmentTab } from './components/org-detail/CloudAssessmentTab';
-import { ProtocolUsageTab } from './components/org-detail/ProtocolUsageTab';
-import { NetworkDiagnosticsTab } from './components/org-detail/NetworkDiagnosticsTab';
-import { SnmpTab } from './components/org-detail/SnmpTab';
 import { InfraAssessmentTab } from './components/org-detail/InfraAssessmentTab';
-import { NetworkSitesTab } from './components/org-detail/NetworkSitesTab';
+import { NetworkTab } from './components/org-detail/NetworkTab';
 import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
 import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
@@ -54,16 +49,17 @@ export const router = createBrowserRouter([
               { path: 'software-inventory', element: <SoftwareInventoryTab /> },
               { path: 'reports', element: <ReportsTab /> },
               { path: 'hygiene', element: <HygieneTab /> },
-              { path: 'ports', element: <PortsTab /> },
               { path: 'threats', element: <ThreatsTab /> },
-              { path: 'external-scan', element: <ExternalScanTab /> },
+              { path: 'network', element: <NetworkTab /> },
               { path: 'm365', element: <Navigate to="../cloud-assessment" replace /> },
               { path: 'cloud-assessment', element: <CloudAssessmentTab /> },
-              { path: 'network-diagnostics', element: <NetworkDiagnosticsTab /> },
-              { path: 'snmp', element: <SnmpTab /> },
-              { path: 'network-sites', element: <NetworkSitesTab /> },
               { path: 'infra-assessment', element: <InfraAssessmentTab /> },
-              { path: 'protocol-usage', element: <ProtocolUsageTab /> },
+              { path: 'ports', element: <Navigate to="../network?section=ports" replace /> },
+              { path: 'external-scan', element: <Navigate to="../network?section=external-scan" replace /> },
+              { path: 'network-diagnostics', element: <Navigate to="../network?section=diagnostics" replace /> },
+              { path: 'snmp', element: <Navigate to="../network?section=snmp" replace /> },
+              { path: 'network-sites', element: <Navigate to="../network?section=sites" replace /> },
+              { path: 'protocol-usage', element: <Navigate to="../network?section=protocol-usage" replace /> },
               {
                 path: 'machines/:machineId',
                 handle: { crumb: (_: unknown, p: Record<string, string>) => p.machineId },
