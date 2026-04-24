@@ -19,6 +19,7 @@ import { MachineDetailPage } from './pages/MachineDetailPage';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { RecycleBinPage } from './pages/RecycleBinPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
+import { UsersPage } from './pages/UsersPage';
 
 export const router = createBrowserRouter([
   {
@@ -75,6 +76,15 @@ export const router = createBrowserRouter([
             ],
           },
         ],
+      },
+      {
+        path: 'users',
+        handle: { crumb: () => 'Users' },
+        element: (
+          <RequirePermission slug="admin:read">
+            <UsersPage />
+          </RequirePermission>
+        ),
       },
       {
         path: 'activity-log',

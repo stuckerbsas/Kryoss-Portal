@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   BarChart3, Shield, AlertTriangle, FileText,
   Presentation, BookOpen, Briefcase, Scale,
   KeyRound, Cloud, CalendarDays, Network, Package,
-  Download, Printer, Loader2, FlaskConical, Stethoscope,
+  Download, Printer, FlaskConical, Stethoscope,
   Globe, ZoomIn, ZoomOut,
   type LucideIcon,
 } from 'lucide-react';
