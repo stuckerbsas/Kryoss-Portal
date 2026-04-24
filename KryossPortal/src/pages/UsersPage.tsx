@@ -32,7 +32,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export function UsersPage() {
-  const { has, isSuperAdmin } = usePermissions();
+  const { has } = usePermissions();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [page, setPage] = useState(1);

@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { RequirePermission } from './components/auth/RequirePermission';
+import { SmartRedirect } from './components/auth/SmartRedirect';
 import { ForbiddenPage } from './pages/ForbiddenPage';
 import { OrganizationsPage } from './pages/OrganizationsPage';
 import { OrgDetailPage } from './pages/OrgDetailPage';
@@ -25,7 +26,7 @@ export const router = createBrowserRouter([
   {
     element: <AppShell />,
     children: [
-      { index: true, element: <Navigate to="/organizations" replace /> },
+      { index: true, element: <SmartRedirect /> },
       {
         path: 'organizations',
         handle: { crumb: () => 'Organizations' },
@@ -105,7 +106,7 @@ export const router = createBrowserRouter([
         ),
       },
       { path: 'forbidden', element: <ForbiddenPage /> },
-      { path: '*', element: <Navigate to="/organizations" replace /> },
+      { path: '*', element: <SmartRedirect /> },
     ],
   },
 ]);

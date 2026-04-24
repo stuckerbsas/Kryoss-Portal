@@ -2,10 +2,13 @@ import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { InteractionStatus } from '@azure/msal-browser';
 import { useMe } from '@/api/me';
 import { HqLayout } from './HqLayout';
+import { ClientLayout } from './ClientLayout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Shield } from 'lucide-react';
 import { loginRequest } from '@/auth/msalConfig';
+
+const CLIENT_ROLES = ['client_admin', 'client_viewer'];
 
 export function AppShell() {
   const { instance, inProgress } = useMsal();
@@ -66,5 +69,5 @@ export function AppShell() {
     );
   }
 
-  return <HqLayout />;
+  return CLIENT_ROLES.includes(me.role.code) ? <ClientLayout /> : <HqLayout />;
 }
