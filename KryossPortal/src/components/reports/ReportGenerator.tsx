@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   BarChart3, Shield, AlertTriangle, FileText,
   Presentation, BookOpen, Briefcase, Scale,
   KeyRound, Cloud, CalendarDays, Network, Package,
-  Eye, Download, Printer, Loader2, FlaskConical, Stethoscope,
-  Globe, ExternalLink, ZoomIn, ZoomOut, RotateCcw,
+  Download, Printer, Loader2, FlaskConical, Stethoscope,
+  Globe, ZoomIn, ZoomOut,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,7 +21,6 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -35,46 +34,45 @@ interface ReportGeneratorProps {
   targetId: string;
 }
 
-interface ReportTypeDef {
-  value: string;
+interface ReportDef {
+  id: string;
   label: string;
   icon: LucideIcon;
+  type: string;
+  framework?: string;
+  color?: string;
 }
 
-const REPORT_TYPES: ReportTypeDef[] = [
-  { value: 'c-level',           label: 'C-Level',            icon: BarChart3     },
-  { value: 'technical',         label: 'Technical',          icon: Shield        },
-  { value: 'risk-assessment',   label: 'Risk Assessment',    icon: AlertTriangle },
-  { value: 'exec-onepager',     label: 'One-Pager',          icon: FileText      },
-  { value: 'preventa-opener',   label: 'Preventa Opener',    icon: Presentation  },
-  { value: 'preventa-detailed', label: 'Preventa Detailed',  icon: BookOpen      },
-  { value: 'proposal',          label: 'Proposal',           icon: Briefcase     },
-  { value: 'framework',         label: 'Framework',          icon: Scale         },
-  { value: 'hygiene',           label: 'AD Hygiene',         icon: KeyRound      },
-  { value: 'cloud-executive',   label: 'Cloud Executive',    icon: Cloud         },
-  { value: 'monthly-briefing',  label: 'Monthly',            icon: CalendarDays  },
-  { value: 'network',           label: 'Network',            icon: Network       },
-  { value: 'inventory',         label: 'Inventory',          icon: Package       },
+const REPORTS: ReportDef[] = [
+  { id: 'c-level',           label: 'C-Level',            icon: BarChart3,      type: 'c-level' },
+  { id: 'technical',         label: 'Technical',          icon: Shield,         type: 'technical' },
+  { id: 'risk-assessment',   label: 'Risk Assessment',    icon: AlertTriangle,  type: 'risk-assessment' },
+  { id: 'exec-onepager',     label: 'One-Pager',          icon: FileText,       type: 'exec-onepager' },
+  { id: 'preventa-opener',   label: 'Pre-Sale Opener',    icon: Presentation,   type: 'preventa-opener' },
+  { id: 'preventa-detailed', label: 'Pre-Sale Detailed',  icon: BookOpen,       type: 'preventa-detailed' },
+  { id: 'proposal',          label: 'Proposal',           icon: Briefcase,      type: 'proposal' },
+  { id: 'hygiene',           label: 'AD Hygiene',         icon: KeyRound,       type: 'hygiene' },
+  { id: 'cloud-executive',   label: 'Cloud Executive',    icon: Cloud,          type: 'cloud-executive' },
+  { id: 'monthly-briefing',  label: 'Monthly',            icon: CalendarDays,   type: 'monthly-briefing' },
+  { id: 'network',           label: 'Network',            icon: Network,        type: 'network' },
+  { id: 'inventory',         label: 'Inventory',          icon: Package,        type: 'inventory' },
+  // Framework-specific reports
+  { id: 'fw-nist',           label: 'NIST',               icon: Scale,          type: 'framework', framework: 'NIST',     color: 'text-blue-700 border-blue-300 hover:bg-blue-50' },
+  { id: 'fw-cis',            label: 'CIS',                icon: Scale,          type: 'framework', framework: 'CIS',      color: 'text-emerald-700 border-emerald-300 hover:bg-emerald-50' },
+  { id: 'fw-hipaa',          label: 'HIPAA',              icon: Scale,          type: 'framework', framework: 'HIPAA',    color: 'text-purple-700 border-purple-300 hover:bg-purple-50' },
+  { id: 'fw-iso27001',       label: 'ISO 27001',          icon: Scale,          type: 'framework', framework: 'ISO27001', color: 'text-amber-700 border-amber-300 hover:bg-amber-50' },
+  { id: 'fw-pci',            label: 'PCI-DSS',            icon: Scale,          type: 'framework', framework: 'PCI-DSS',  color: 'text-red-700 border-red-300 hover:bg-red-50' },
 ];
-
-const FRAMEWORKS = [
-  { value: 'all',       label: 'All' },
-  { value: 'NIST',      label: 'NIST' },
-  { value: 'CIS',       label: 'CIS' },
-  { value: 'HIPAA',     label: 'HIPAA' },
-  { value: 'ISO27001',  label: 'ISO 27001' },
-  { value: 'PCI-DSS',   label: 'PCI-DSS' },
-] as const;
 
 const LANGUAGES: { value: string; label: string }[] = [
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Español' },
 ];
 
-function buildApiPath(orgId: string, reportType: string, framework: string, lang: string): string {
+function buildApiPath(orgId: string, type: string, lang: string, framework?: string): string {
   const params = new URLSearchParams();
-  params.set('type', reportType);
-  if (framework !== 'all') params.set('framework', framework);
+  params.set('type', type);
+  if (framework) params.set('framework', framework);
   if (lang !== 'en') params.set('lang', lang);
   return `/v2/reports/org/${orgId}?${params}`;
 }
@@ -108,70 +106,39 @@ async function fetchReport(apiPath: string): Promise<string> {
 }
 
 export function ReportGenerator({ targetId }: ReportGeneratorProps) {
-  const [framework, setFramework] = useState('all');
-  const [reportType, setReportType] = useState('technical');
   const [lang, setLang] = useState('en');
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
-  const [zoom, setZoom] = useState(0.8);
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [zoom, setZoom] = useState(1.5);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { isSuperAdmin } = usePermissions();
 
-  const apiPath = buildApiPath(targetId, reportType, framework, lang);
-  const selectedType = REPORT_TYPES.find(r => r.value === reportType);
-  const reportLabel = selectedType?.label ?? reportType;
+  const escHandler = useRef<((e: KeyboardEvent) => void) | null>(null);
+  escHandler.current = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') setPreviewOpen(false);
+  };
 
-  const handlePreview = async () => {
+  const onIframeLoad = () => {
+    try {
+      const cw = iframeRef.current?.contentWindow;
+      if (cw) {
+        cw.addEventListener('keydown', (e) => escHandler.current?.(e));
+      }
+    } catch {}
+  };
+
+  const handleGenerate = async (report: ReportDef) => {
+    setLoadingLabel(report.label);
     setLoading(true);
     try {
+      const apiPath = buildApiPath(targetId, report.type, lang, report.framework);
       const html = await fetchReport(apiPath);
       setPreviewHtml(html);
+      setPreviewTitle(report.label + (report.framework ? ` (${report.framework})` : ''));
       setPreviewOpen(true);
-    } catch (err: any) {
-      toast.error(`Failed: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOpenTab = async () => {
-    const newWindow = window.open('about:blank', '_blank');
-    if (newWindow) {
-      newWindow.document.write('<html><head><title>Generating report...</title></head><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#666"><p>Generating report...</p></body></html>');
-    }
-    setLoading(true);
-    try {
-      const html = await fetchReport(apiPath);
-      if (newWindow) {
-        newWindow.document.open();
-        newWindow.document.write(html);
-        newWindow.document.close();
-      }
-    } catch (err: any) {
-      const fullUrl = `${API_BASE}${apiPath}`;
-      if (newWindow) {
-        newWindow.document.open();
-        newWindow.document.write(`<html><body style="font-family:sans-serif;padding:40px"><h2 style="color:#C0392B">Report generation failed</h2><p>${err.message}</p><p><code>${fullUrl}</code></p><p style="color:#64748b;font-size:13px">Try <code>diag=1</code> for diagnostics.</p></body></html>`);
-        newWindow.document.close();
-      }
-      toast.error(`Failed: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    setLoading(true);
-    try {
-      const html = await fetchReport(apiPath);
-      const blob = new Blob([html], { type: 'text/html' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Report-${framework !== 'all' ? framework + '-' : ''}${reportType}-${lang}-${new Date().toISOString().slice(0, 10)}.html`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      toast.success('Report downloaded');
     } catch (err: any) {
       toast.error(`Failed: ${err.message}`);
     } finally {
@@ -188,10 +155,28 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
     const blob = new Blob([previewHtml], { type: 'text/html' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `Report-${framework !== 'all' ? framework + '-' : ''}${reportType}-${lang}-${new Date().toISOString().slice(0, 10)}.html`;
+    a.download = `Report-${previewTitle.replace(/\s+/g, '-')}-${lang}-${new Date().toISOString().slice(0, 10)}.html`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
+
+  const handleDiagnose = async () => {
+    const w = window.open('about:blank', '_blank');
+    if (w) w.document.write('<html><body style="font-family:sans-serif;padding:20px"><p>Running diagnostics...</p></body></html>');
+    setLoadingLabel('Diagnostics');
+    setLoading(true);
+    try {
+      const apiPath = buildApiPath(targetId, 'technical', lang) + '&diag=1';
+      const json = await fetchReport(apiPath);
+      if (w) { w.document.open(); w.document.write(`<html><body style="font-family:monospace;padding:20px;white-space:pre-wrap;font-size:12px">${json}</body></html>`); w.document.close(); }
+    } catch (err: any) {
+      if (w) { w.document.open(); w.document.write(`<html><body style="font-family:sans-serif;padding:40px;color:#C0392B"><h2>Failed</h2><p>${err.message}</p></body></html>`); w.document.close(); }
+      toast.error(err.message);
+    } finally { setLoading(false); }
+  };
+
+  const generalReports = REPORTS.filter(r => !r.framework);
+  const frameworkReports = REPORTS.filter(r => r.framework);
 
   return (
     <>
@@ -201,136 +186,107 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             Report Generator
           </h3>
-          <Select value={lang} onValueChange={setLang}>
-            <SelectTrigger className="w-[140px]">
-              <Globe className="size-3.5 mr-1.5 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LANGUAGES.map((l) => (
-                <SelectItem key={l.value} value={l.value}>
-                  {l.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Report type icon buttons */}
-        <div>
-          <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
-            Report Type
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {REPORT_TYPES.map((rt) => {
-              const Icon = rt.icon;
-              const active = reportType === rt.value;
-              return (
-                <button
-                  key={rt.value}
-                  onClick={() => setReportType(rt.value)}
-                  className={`
-                    flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium
-                    border transition-all cursor-pointer
-                    ${active
-                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                      : 'bg-background text-foreground border-border hover:bg-accent hover:border-accent-foreground/20'
-                    }
-                  `}
-                >
-                  <Icon className="size-3.5" />
-                  {rt.label}
-                </button>
-              );
-            })}
-            {isSuperAdmin && (
-              <button
-                onClick={() => setReportType('test-fixture')}
-                className={`
-                  flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium
-                  border transition-all cursor-pointer
-                  ${reportType === 'test-fixture'
-                    ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                    : 'bg-background text-amber-600 border-amber-300 hover:bg-amber-50'
-                  }
-                `}
-              >
-                <FlaskConical className="size-3.5" />
-                Test Fixture
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Framework pill buttons */}
-        <div>
-          <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
-            Framework
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {FRAMEWORKS.map((fw) => {
-              const active = framework === fw.value;
-              return (
-                <button
-                  key={fw.value}
-                  onClick={() => setFramework(fw.value)}
-                  className={`
-                    px-3 py-1 rounded-full text-xs font-medium border transition-all cursor-pointer
-                    ${active
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-muted/50 text-muted-foreground border-border hover:bg-accent'
-                    }
-                  `}
-                >
-                  {fw.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Action buttons */}
-        <Can permission="reports:export">
-          <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
-            <Button size="sm" disabled={loading} onClick={handlePreview}>
-              {loading ? <Loader2 className="size-4 mr-1.5 animate-spin" /> : <Eye className="size-4 mr-1.5" />}
-              Preview
-            </Button>
-            <Button variant="outline" size="sm" disabled={loading} onClick={handleOpenTab}>
-              <ExternalLink className="size-4 mr-1.5" />
-              New Tab
-            </Button>
-            <Button variant="outline" size="sm" disabled={loading} onClick={handleDownload}>
-              <Download className="size-4 mr-1.5" />
-              HTML
-            </Button>
+          <div className="flex items-center gap-2">
             {isSuperAdmin && (
               <Button
                 variant="outline"
                 size="sm"
+                onClick={handleDiagnose}
                 disabled={loading}
-                onClick={async () => {
-                  const w = window.open('about:blank', '_blank');
-                  if (w) w.document.write('<html><body style="font-family:sans-serif;padding:20px"><p>Running diagnostics...</p></body></html>');
-                  setLoading(true);
-                  try {
-                    const diagApi = apiPath + '&diag=1';
-                    const json = await fetchReport(diagApi);
-                    if (w) { w.document.open(); w.document.write(`<html><body style="font-family:monospace;padding:20px;white-space:pre-wrap;font-size:12px">${json}</body></html>`); w.document.close(); }
-                  } catch (err: any) {
-                    if (w) { w.document.open(); w.document.write(`<html><body style="font-family:sans-serif;padding:40px;color:#C0392B"><h2>Failed</h2><p>${err.message}</p></body></html>`); w.document.close(); }
-                    toast.error(err.message);
-                  } finally { setLoading(false); }
-                }}
-                className="ml-auto border-blue-300 text-blue-700 hover:bg-blue-50"
+                className="border-blue-300 text-blue-700 hover:bg-blue-50"
               >
-                <Stethoscope className="size-4 mr-1.5" />
+                <Stethoscope className="size-3.5 mr-1.5" />
                 Diagnose
               </Button>
             )}
+            <Select value={lang} onValueChange={setLang}>
+              <SelectTrigger className="w-[140px]">
+                <Globe className="size-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l.value} value={l.value}>
+                    {l.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Report buttons */}
+        <Can permission="reports:export">
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+              Reports
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+              {generalReports.map((r) => {
+                const Icon = r.icon;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => handleGenerate(r)}
+                    disabled={loading}
+                    className="flex flex-col items-center gap-1.5 p-3 rounded-lg text-xs font-medium border bg-background text-foreground border-border hover:bg-accent hover:border-accent-foreground/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Icon className="size-5 text-muted-foreground" />
+                    {r.label}
+                  </button>
+                );
+              })}
+              {isSuperAdmin && (
+                <button
+                  onClick={() => handleGenerate({ id: 'test-fixture', label: 'Test Fixture', icon: FlaskConical, type: 'test-fixture' })}
+                  disabled={loading}
+                  className="flex flex-col items-center gap-1.5 p-3 rounded-lg text-xs font-medium border bg-background text-amber-600 border-amber-300 hover:bg-amber-50 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FlaskConical className="size-5" />
+                  Test Fixture
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Framework reports */}
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+              Framework Compliance
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {frameworkReports.map((r) => {
+                const Icon = r.icon;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => handleGenerate(r)}
+                    disabled={loading}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${r.color ?? ''}`}
+                  >
+                    <Icon className="size-4" />
+                    {r.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </Can>
       </Card>
+
+      {/* Full-screen loading overlay */}
+      {loading && (
+        <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
+          <div className="relative">
+            <div className="size-20 rounded-full border-4 border-muted animate-spin border-t-primary" />
+            <Shield className="size-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          </div>
+          <div className="text-center space-y-1">
+            <p className="text-lg font-semibold">{loadingLabel}</p>
+            <p className="text-sm text-muted-foreground animate-pulse">Generating report...</p>
+          </div>
+        </div>
+      )}
 
       {/* Preview dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -339,17 +295,14 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
           showCloseButton={false}
         >
           <DialogHeader className="px-5 pt-4 pb-3 flex-none border-b flex-row items-center justify-between">
-            <DialogTitle className="text-base">
-              {reportLabel}
-              {framework !== 'all' && <span className="ml-2 text-xs font-normal text-muted-foreground">({framework})</span>}
-            </DialogTitle>
+            <DialogTitle className="text-base">{previewTitle}</DialogTitle>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1 border rounded-md px-1">
                 <Button variant="ghost" size="icon" className="size-7" onClick={() => setZoom(z => Math.max(0.3, z - 0.1))}>
                   <ZoomOut className="size-3.5" />
                 </Button>
                 <button
-                  onClick={() => setZoom(0.8)}
+                  onClick={() => setZoom(1.5)}
                   className="text-xs font-mono w-10 text-center text-muted-foreground hover:text-foreground cursor-pointer"
                 >
                   {Math.round(zoom * 100)}%
@@ -377,6 +330,7 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
               srcDoc={`<style>html{zoom:${zoom}}</style>${previewHtml}`}
               className="w-full h-full border-0"
               title="Report Preview"
+              onLoad={onIframeLoad}
             />
           </div>
         </DialogContent>
