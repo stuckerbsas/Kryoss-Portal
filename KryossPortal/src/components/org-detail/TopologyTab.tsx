@@ -85,15 +85,17 @@ function DeviceDetail({ node, onClose }: { node: SimNode; onClose: () => void })
 }
 
 export function TopologyTab() {
-  const { organizationId } = useOrgParam();
-  const { data, isLoading } = useTopology(organizationId);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const { orgId } = useOrgParam();
+  const { data, isLoading } = useTopology(orgId);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<SimNode | null>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
 
   const renderGraph = useCallback((topo: { nodes: TopologyNode[]; edges: TopologyEdge[] }) => {
-    const svg = d3.select(svgRef.current);
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const svg = d3.select(svgEl);
     svg.selectAll('*').remove();
 
     const container = containerRef.current;
@@ -156,7 +158,7 @@ export function TopologyTab() {
     const nodeRadius = (d: SimNode) => d.phantom ? 10 : Math.max(14, Math.min(22, 14 + (d.neighborCount ?? 0)));
 
     const node = g.append('g')
-      .selectAll('circle')
+      .selectAll<SVGCircleElement, SimNode>('circle')
       .data(simNodes)
       .join('circle')
       .attr('r', nodeRadius)
@@ -231,7 +233,8 @@ export function TopologyTab() {
         );
         const tx = width / 2 - (bounds.x + bounds.width / 2) * scale;
         const ty = height / 2 - (bounds.y + bounds.height / 2) * scale;
-        svg.transition().duration(500).call(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (svg.transition().duration(500) as any).call(
           zoom.transform,
           d3.zoomIdentity.translate(tx, ty).scale(scale),
         );
@@ -247,7 +250,7 @@ export function TopologyTab() {
 
   if (isLoading) return <Skeleton className="h-[500px] w-full" />;
   if (!data || (data.nodes.length === 0 && data.edges.length === 0)) {
-    return <EmptyState icon={Network} title="No topology data" description="SNMP devices with LLDP/CDP neighbors will appear here as an interactive network map." />;
+    return <EmptyState icon={<Network size={48} />} title="No topology data" description="SNMP devices with LLDP/CDP neighbors will appear here as an interactive network map." />;
   }
 
   const typeCounts: Record<string, number> = {};
