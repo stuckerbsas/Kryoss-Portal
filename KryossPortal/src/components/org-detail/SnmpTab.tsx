@@ -12,12 +12,10 @@ import {
   Cable,
   ArrowRight,
   Cpu,
-  HardDrive,
   MemoryStick,
   AlertTriangle,
   Monitor,
   Printer,
-  Shield,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -158,7 +156,7 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             <span className="font-mono text-xs">{device.ipAddress}</span>
             {device.isStale && <AlertTriangle className="h-3 w-3 text-amber-500" />}
-            {device.machineId && <Monitor className="h-3 w-3 text-green-600" title="Kryoss Agent" />}
+            {device.machineId && <span title="Kryoss Agent"><Monitor className="h-3 w-3 text-green-600" /></span>}
           </div>
         </TableCell>
         <TableCell className="font-medium text-sm">{device.sysName ?? '—'}</TableCell>
