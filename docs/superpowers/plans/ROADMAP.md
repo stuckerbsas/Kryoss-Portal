@@ -2,7 +2,7 @@
 
 > **Role of this file:** Single source of truth for what's done, what's queued, what's backlog. Use as orchestrator entry-point at start of every session. Update status inline as phases ship.
 >
-> **Last updated:** 2026-04-20 (audit sync)
+> **Last updated:** 2026-04-25 (agent v2.1.0 sync)
 > **Owner:** Federico
 > **Orchestrator:** Claude (caveman mode default)
 
@@ -18,10 +18,10 @@
 
 ---
 
-## Current State Snapshot (2026-04-20)
+## Current State Snapshot (2026-04-25)
 
 **Shipped in production:**
-- Kryoss Agent v1.5.1 — 767 active controls (647 baseline + 80 SRV + 40→100 DC), 12 engines (DcEngine added), AD hygiene, port scan, native (zero Process.Start)
+- Kryoss Agent v2.1.0 — 918 controls (827 active: 647 baseline + 80 SRV + 100 DC), 12 engines, Windows Service mode (compliance 24h / SNMP 4h / heartbeat 15min), passive discovery (NetBIOS/mDNS/SSDP), self-updater, closed-set remediation (~50 controls), port banner grab, reverse DNS + ping enrichment, WMI probe, external exposure (server-side), trial enrollment + auto-report, zero Process.Start
 - Assessment engine — 5 frameworks (CIS, NIST, HIPAA, ISO27001, PCI-DSS), 4 report types (C-Level, Technical, Preventas, Framework)
 - M365 Security Checks (50 checks) — DEPRECATED, rolled into Cloud Assessment. Portal M365 route redirects to `/cloud-assessment`. Dead files cleaned up 2026-04-20
 - Copilot Readiness Assessment — DEPRECATED as standalone (2026-04-18), Copilot Lens tab inside Cloud Assessment reads from CA scan data
@@ -29,18 +29,49 @@
 - **External Scan** — portal + API (`ExternalScanFunction`, `external_scans` table), IP range network vulnerability scans. NOT in previous roadmap
 - **Threat Detection** — agent `ThreatDetector.cs` + portal ThreatsTab + API endpoints. NOT in previous roadmap
 - **Protocol Usage Audit** — agent `ProtocolAuditService` + portal ProtocolUsageTab + 12 controls (AUDIT/NTLM/SMB1). Org-level toggle
-- **SNMP Scanner** — agent `SnmpScanner.cs` + API `SnmpConfigFunction`/`SnmpFunction` + DB tables (`snmp_configs`, `snmp_devices`). ⚠️ No portal UI yet (see PG-02 below)
-- **Network Diagnostics (Phase 5a)** — agent + API (`NetworkDiagnosticsFunction`, `SpeedTestFunction`, 3 tables, 50 controls NET-001..050) + `NetworkBlock`/`NetworkRecipe` report. ⚠️ No portal tab yet (see PG-01 below)
+- **SNMP Scanner** — agent `SnmpScanner.cs` + API `SnmpConfigFunction`/`SnmpFunction` + DB tables (`snmp_configs`, `snmp_devices`). MAC-based dedup, HOST-RESOURCES-MIB, ARP noise filter, machine correlation, stale marking, batched upload. Portal `SnmpTab.tsx`
+- **Network Diagnostics (Phase 5a)** — agent + API (`NetworkDiagnosticsFunction`, `SpeedTestFunction`, 3 tables, 50 controls NET-001..050) + `NetworkBlock`/`NetworkRecipe` report. Portal `NetworkDiagnosticsTab.tsx`
+- **Network Topology (IA-2 Phase 1)** — LLDP/CDP neighbor persistence, `TopologyFunction`, D3.js force-directed graph in portal `TopologyTab.tsx`
 - **Recycle Bin** — portal `RecycleBinPage` + API endpoints for soft-delete restore. NOT in previous roadmap
-- **Unified Report System** — `ReportComposer` with 24 blocks, 15 active recipes: C-Level, Technical, PreventaOpener, PreventaDetailed, Framework, Proposal, Monthly, Network, CloudExecutive, ExecOnePager, M365, Compliance, Hygiene, RiskAssessment, Inventory. All functional. Monthly may need Ninja data enrichment for full value.
+- **Unified Report System** — `ReportComposer` with 35+ blocks, 16 recipes: C-Level, Technical, PreventaOpener, PreventaDetailed, Framework, Proposal, Monthly, Network, CloudExecutive, ExecOnePager, M365, Compliance, Hygiene, RiskAssessment, Inventory, TestFixture. 3 SVG chart generators (Donut, Radar, Sparkline). All functional. Monthly may need Ninja data enrichment for full value.
 
 **In progress:** None
 
-**✅ Accuracy notes resolved (2026-04-20 housekeeping):**
-- Agent `.csproj` bumped to 1.5.1. All v1.5.0/v1.5.1 features verified in code (NativeCommandEngine, UserRightsApi, EventLogEngine event_count/event_top_sources, ProtocolAuditService, expanded ControlDef)
+**✅ Accuracy notes resolved (2026-04-25 housekeeping):**
+- Agent `.csproj` at 2.1.0. All v2.0.0/v2.1.0 features verified (ServiceWorker, ScanCycle, PassiveListener, SelfUpdater, RemediationExecutor, WmiProbe, ExternalExposure, TargetDiscovery)
 - Portal M365Tab dead files deleted, route already redirected to `/cloud-assessment`
 - CopilotReadinessFunction already returns 410 Gone (earlier audit was false negative)
-- Agent + master CLAUDE.md updated to match actual code state
+- Agent + API + master CLAUDE.md updated to match actual code state
+- SQL migrations 061-066 applied and verified (17/17 checks pass)
+
+**Codebase inventory (2026-04-25 audit):**
+
+| Pillar | Metric | Count |
+|--------|--------|-------|
+| **API** | Version | 1.19.0 |
+| | HTTP endpoints | 163 |
+| | Entity classes | 28 |
+| | Services | 50+ |
+| | Middleware | 7 (ApiKeyAuth, BearerAuth, RBAC, RLS, Actlog, ErrorSanitization, SecurityHeaders) |
+| | Report blocks | 35+ |
+| | Report recipes | 16 |
+| | CA pipelines | 7 (Identity, Endpoint, Data, Productivity, Azure, MailFlow, PowerBI) |
+| **Agent** | Version | 2.1.0 |
+| | Source files | 48 |
+| | Engines | 13 (12 + NetAccountCompat wrapper) |
+| | Services | 22 |
+| | CLI flags | 23 |
+| | Models | 11 files, 35+ classes |
+| **Portal** | Version | 1.10.0 |
+| | Pages | 8 |
+| | Tabs (org detail) | 18 |
+| | CA tabs | 7 |
+| | API modules | 20 |
+| | Routes | 30+ (incl. redirects) |
+| **DB** | SQL migrations | 66 (001-066, no gaps) |
+| | Seed files | 24 |
+| | Tables | 154+ |
+| | Check/utility scripts | 7 |
 
 **Customer context driving next priorities:**
 - Multi-site enterprise client expects infrastructure relevamiento (agenda: arquitectura actual, capacidad, conectividad entre sitios + yacimientos, optimización, evolución cloud)
@@ -59,9 +90,11 @@ Execute in order. Each ships independently. Prompts ready below.
 | 3 | ~~**CA-13** Intune Deep verify/gap-fill~~ | ✅ shipped | 0-1 session | None |
 | 4 | ~~**CA-14** Auto-consent (Fabric + ARM)~~ | ✅ shipped | 1 session | None (UX win) |
 | 5 | ~~**IA-1** Server & Hypervisor Inventory~~ | ✅ shipped | 1 session | IA-10 report |
-| 6 | **RP-EXPANSION** Report Block Library Finalization | ⚪ queued | 3.25 sessions | Unlocks consistent reports across all tiers. Spec: `2026-04-20-report-block-library.md` (37 tasks, 5 phases) |
-| 7 | **IA-2** Network Topology Discovery | ⚪ queued | 2 sessions | IA-10 report |
-| 8 | **CA-15** Drift Alerts + Notifications | ⚪ queued | 1 session | MSP retention |
+| 6 | ~~**IA-2** Network Topology Discovery~~ | ✅ Phase 1 shipped | 2 sessions | IA-10 report |
+| 7 | ~~**CA-15** Drift Alerts + Notifications~~ | ✅ shipped 2026-04-21 | 1 session | MSP retention |
+| 8 | ~~**A-SVC** Agent v2.0.0: Windows Service mode~~ | ✅ shipped 2026-04-25 | 1 session | ServiceWorker, ScanCycle, P/Invoke install |
+| 9 | ~~**A-NET** Agent v2.1.0: Full Network Pipeline + Remediation~~ | ✅ shipped 2026-04-25 | 1 session | 9 blocks: service, trial, banners, DNS+ping, WMI, passive, self-update, external exposure, remediation |
+| 10 | **RP-EXPANSION** Report Block Library Finalization | ⚪ queued | 3.25 sessions | Unlocks consistent reports across all tiers. Spec: `2026-04-20-report-block-library.md` (37 tasks, 5 phases) |
 
 After active queue complete → replan from Backlog.
 
@@ -124,9 +157,9 @@ Signature change: `EndpointPipeline.RunAsync` now takes `graphBetaHttp` param (l
 
 Result: ConnectCloudWizard Steps 2+3 become single-click per service.
 
-### CA-15: Drift Alerts + Notifications ✅
+### CA-15: Drift Alerts + Notifications ✅ SHIPPED 2026-04-21
 **Priority:** P0 — MSP retention
-**Effort:** 1 session — **SHIPPED 2026-04-21**
+**Effort:** 1 session
 
 - `cloud_assessment_alert_rules` table (per-franchise thresholds)
 - `AlertService` runs after each scan, detects drops
@@ -220,12 +253,23 @@ Hyper-V deferred to agent-side WMI module (IA-1b).
 ### IA-2: Network Topology Discovery
 **Priority:** P1
 **Effort:** 2 sessions
+**Phase 1 status:** 🟡 shipped 2026-04-24
 
-- Full L2/L3 via CDP/LLDP + SNMP
+**Phase 1 shipped (data + visualization):**
+- SQL migration `058_network_topology.sql`: `snmp_device_neighbors` table (persists LLDP/CDP neighbor data, was discarded before)
+- Entity `SnmpDeviceNeighbor` + DbContext mapping
+- `SnmpFunction.SubmitResults`: now persists LLDP + CDP neighbors (replace-on-scan, like interfaces)
+- `ResolveNeighborLinks`: auto-matches remoteSysName/remoteChassisId/remoteIp to known devices in same org
+- `TopologyFunction.cs`: `GET /v2/topology?organizationId=X` — returns nodes + edges + phantom devices (seen via LLDP/CDP but not scanned). Dedup edges, classify phantom device types from CDP platform strings
+- Portal: `TopologyTab.tsx` — D3.js force-directed graph with drag, zoom, node detail panel. Color by device type, dashed border for phantoms, green border for Kryoss agents. Port labels on edges. LLDP=blue, CDP=yellow links. KPI cards (devices, links, phantoms, type breakdown). Legend.
+- Wired as first sub-tab of Network tab (default view)
+
+**Phase 2 remaining:**
 - Switch/router config snapshots (read-only)
 - Wireless AP inventory + channel analysis
 - Firewall rules (where accessible)
-- D3.js topology visualization
+- VLAN topology overlay
+- Traffic flow visualization (from interface octets delta)
 
 Vendors: Cisco, Fortinet, Palo Alto, pfSense/OPNsense, MikroTik, SNMP generic.
 
@@ -388,12 +432,21 @@ No new consent. No new tables. Pure code reuse.
 
 ## Non-Cloud Roadmap (Kryoss Core)
 
-### Agent (KryossAgent v1.4+)
+### Agent (KryossAgent v2.1.0)
 
 | # | Feature | Tier | Effort |
 |---|---------|------|--------|
 | ~~A-VER~~ | ~~Version audit: verify v1.5.0/v1.5.1 features in code, bump `.csproj` to match~~ | ✅ | — |
 | ~~A-OFL~~ | ~~Offline collection mode (`--offline`/`--share`/`--collect`)~~ | ✅ | 0.5 session |
+| ~~A-SVC~~ | ~~Windows Service mode (`--install`/`--uninstall`/`--service`, `ServiceWorker`, `ScanCycle`, P/Invoke install)~~ | ✅ shipped 2026-04-25 | 1 session |
+| ~~A-TRI~~ | ~~Trial enrollment + auto-report (limited scan, one-shot PDF)~~ | ✅ shipped 2026-04-25 | — |
+| ~~A-BAN~~ | ~~Port banner grab + service detection~~ | ✅ shipped 2026-04-25 | — |
+| ~~A-DNS~~ | ~~Reverse DNS + ping enrichment for SNMP devices~~ | ✅ shipped 2026-04-25 | — |
+| ~~A-WMI~~ | ~~WMI probe for network devices~~ | ✅ shipped 2026-04-25 | — |
+| ~~A-PAS~~ | ~~Passive discovery (NetBIOS/mDNS/SSDP listener)~~ | ✅ shipped 2026-04-25 | — |
+| ~~A-UPD~~ | ~~Self-updater (checks `/v1/agent-version`, downloads, restarts service)~~ | ✅ shipped 2026-04-25 | — |
+| ~~A-EXT~~ | ~~External exposure (server-side port scan + findings)~~ | ✅ shipped 2026-04-25 | — |
+| ~~A-REM~~ | ~~Closed-set remediation (~50 controls, whitelist catalog, heartbeat delivery, rollback)~~ | ✅ shipped 2026-04-25 | — |
 | A-01 | CVE scanner (standalone, beyond Defender) | P1 | 1 session |
 | A-02 | Patch compliance tracking (WSUS/WUfB/Ninja) | P1 | 1 session |
 | A-03 | Backup verification (Veeam/Acronis/Ninja signal) | P2 | 1 session |
@@ -404,7 +457,7 @@ No new consent. No new tables. Pure code reuse.
 | A-08 | Browser saved passwords risk signal | P3 | 0.5 session |
 | ~~A-09~~ | ~~Agent version detection + drift dashboard~~ | ✅ shipped 2026-04-20 | 0.5 session |
 | A-10 | Sentinel decouple binary → registry (prereq for auto-update) | P2 | 1 session |
-| A-11 | Self-update helper binary (updater.exe + hash verify + rollback) | P2 | 2-3 sessions |
+| A-11 | Self-update helper binary (updater.exe + hash verify + rollback) | 🟡 basic self-updater shipped (A-UPD), full rollback + hash verify pending | 1 session |
 | A-11b | NinjaRMM auto-update alternative: version check in deploy script + download from URL or `KRYOSS_LATEST_VERSION` Script Variable. Lighter than A-11, no updater.exe needed | P2 | 0.5 session |
 | A-12 | Staged rollout + update channels (stable/beta, 5→25→100%, auto-rollback) | P3 | 2 sessions |
 | ~~A-13~~ | ~~Server-side scan orchestrator: agent polls `/v1/schedule`, server returns slot time~~ | ✅ shipped 2026-04-20 | 2-3 sessions |
@@ -489,6 +542,29 @@ No new consent. No new tables. Pure code reuse.
 | SE-08 | Phishing simulation | P3 | 3 sessions |
 | SE-09 | Security awareness training tracking | P3 | 2 sessions |
 
+### Security Hardening (Pre-Production) — do after reports, before go-live
+
+| # | Task | Tier | Effort | Notes |
+|---|------|------|--------|-------|
+| SH-01 | ✅ Rate limiting (enrollment brute-force + per-org) | P0 | — | **SHIPPED 2026-04-25** — SH-KEY: 5/15min per IP on enrollment, 200/min per org |
+| SH-02 | M365 client secret → Key Vault | P0 | 0.5 session | Currently in env var (`M365ScannerClientSecret`) |
+| SH-03 | ✅ Per-machine key rotation + session keys | P0 | — | **SHIPPED 2026-04-25** — SH-KEY: Kerberos-inspired 3-layer auth (machine_secret + session_key 48h + rotation via heartbeat). Supersedes org-level API key expiration. |
+| SH-04 | Report HTML CSP meta tag | P1 | 0.5 session | Defense-in-depth against XSS if report HTML rendered in browser |
+| SH-05 | Request size limits on `POST /v1/results` | P1 | 0.5 session | No max body size — potential abuse vector |
+| SH-06 | Enrollment code cryptographic randomness audit | P1 | 0.5 session | Verify codes use CSPRNG, not `Random` |
+| SH-07 | SPKI pinning activation (agent: log-only → enforce) | P1 | 0.5 session | Agent has it log-only until `SpkiPins` registry populated |
+| SH-08 | `dotnet list package --vulnerable` dependency audit | P2 | 0.5 session | No automated vuln check in CI today |
+| SH-09 | ✅ Per-machine key rotation (automated via heartbeat) | P2 | — | **SHIPPED 2026-04-25** — SH-KEY: session_key auto-rotates every 24h via heartbeat, machine_secret long-term, backward compat with org ApiSecret |
+| SH-10 | Anomaly scoring on agent payloads (server-side) | P2 | 1 session | Crafted but crypto-valid payloads = weakest link per security-baseline.md |
+| SH-11 | `Content-Disposition: attachment` on report HTML responses | P2 | 0.5 session | Prevents report HTML from executing in browser context |
+
+### Cross-Platform Agent
+
+| # | Task | Tier | Effort | Notes |
+|---|------|------|--------|-------|
+| XP-01 | Linux agent MVP (~50 controls: SSH, ufw, sysctl, PAM, cron, sudo, updates) | Icebox | 3-4 weeks | .NET 8 linux-x64. Framework (heartbeat, HMAC, key rotation) portable. New engines: file-config, systemd, sysctl. New catalog LIN-001..LIN-xxx |
+| XP-02 | Mac agent MVP (~30 controls: FileVault, Gatekeeper, SIP, MDM, profiles) | Icebox | 2-3 weeks | .NET 8 osx-arm64. New engines: profiles, defaults, csrutil. New catalog MAC-001..MAC-xxx |
+
 ### CMDB & Inventory
 
 | # | Feature | Tier | Effort |
@@ -527,15 +603,13 @@ No new consent. No new tables. Pure code reuse.
 
 ---
 
-## Portal Gaps (PG) — Backend exists, portal UI missing
+## Portal Gaps (PG) — All resolved ✅
 
-Features where API + agent work is done but portal has no tab/page.
-
-| # | Feature | Tier | Effort | Status |
-|---|---------|------|--------|--------|
-| ~~PG-01~~ | ~~Network Diagnostics portal tab~~ | ✅ | — | `NetworkDiagnosticsTab.tsx` + `api/networkDiagnostics.ts` + route + nav. KPIs (avg down/up/latency/VPN), per-machine expandable rows with latency peers + route table |
-| ~~PG-02~~ | ~~SNMP device management portal UI~~ | ✅ | — | `SnmpTab.tsx` + `api/snmp.ts` + route + nav. Config CRUD (v2c/v3, targets), device table with expandable interfaces, KPIs (devices/interfaces/uptime/locations) |
-| ~~PG-03~~ | ~~Network Assessment report viewer~~ | ✅ | — | Added `network` type to `ReportGenerator.tsx` dropdown → uses existing `NetworkRecipe` backend |
+| # | Feature | Status |
+|---|---------|--------|
+| ~~PG-01~~ | ~~Network Diagnostics portal tab~~ | ✅ `NetworkDiagnosticsTab.tsx` |
+| ~~PG-02~~ | ~~SNMP device management portal UI~~ | ✅ `SnmpTab.tsx` |
+| ~~PG-03~~ | ~~Network Assessment report viewer~~ | ✅ `ReportGenerator.tsx` network type |
 
 ---
 
@@ -559,11 +633,11 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 
 | Tier | Meaning | Items |
 |------|---------|-------|
-| **P0** | ~~Immediate~~ | ✅ All shipped (IA-0, IA-11, CA-13, CA-14, IA-1) |
-| **P1** | Month 1 | IA-2, IA-3, CA-16 A, CA-17 MFA, DC-02..03, AT-01..03, A-01..02, R-01..02, R-04 |
-| **P2** | Month 2-3 | RP-06, IA-4/5/10/12, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01 |
+| **P0** | ~~Immediate~~ | ✅ All shipped (IA-0, IA-11, CA-13, CA-14, IA-1, SH-01, SH-03). **Pre-prod:** SH-02 |
+| **P1** | Month 1 | IA-2, IA-3, CA-16 A, CA-17 MFA, DC-02..03, AT-01..03, A-01..02, R-01..02, R-04, SH-04..07 |
+| **P2** | Month 2-3 | RP-06, IA-4/5/10/12, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01, SH-08..11 |
 | **P3** | Month 3+ | IA-6..9, CA-19/20, A-07/08, AC-07, SE-05/08/09, CM-01/03..05, PL-01/03/05..10, RP-02..04, AT-04/05 |
-| **Icebox** | Needs demand signal | SE-06/07, RP-05, PL-11/12, UX-02..04 |
+| **Icebox** | Needs demand signal | SE-06/07, RP-05, PL-11/12, UX-02..04, XP-01 (Linux agent MVP), XP-02 (Mac agent MVP) |
 
 ---
 
@@ -583,6 +657,12 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 | 2026-04-20 | IA-12 External Scan Domain Health added as P2 | Reuses CA-10 DNS/SPF/DKIM logic, extends existing ExternalScan feature, 0.5 session effort |
 | 2026-04-20 | Full code audit: 9 dead folders → `archive/`, roadmap synced to actual code | Found: External Scan, Threat Detection, SNMP Scanner, Recycle Bin shipped but not in roadmap. Found: Network Diag + SNMP have no portal tab. Found: Agent version discrepancy (csproj 1.3.0 vs docs 1.5.1). Added PG-01..03, HK-01..07, RP-06..07, A-VER |
 | 2026-04-20 | Inactive folders archived: Kryoss Partner Portal, Kryoss-main, Kryoss.Portal, Kryoss, New Portal, The Final portal, Assesment, CopilotReadinessAssessment, antigravity | Declutter repo — only KryossApi, KryossAgent, KryossPortal, Scripts, docs, Web, Procedimientos, Propuesta remain active |
+| 2026-04-24 | SNMP refinements (10 migrations 051-060): gateway latency, LLDP/CDP counts, device classification, toner tracking, vendor profiles, HOST-RESOURCES-MIB, MAC-based dedup, topology persistence, interface traffic deltas, dedup cleanup | Incremental SNMP maturation — IP-only dedup was unreliable, vendor-specific OIDs needed two-pass scan |
+| 2026-04-24 | IA-2 Phase 1: Network Topology (LLDP/CDP neighbor persistence + D3.js graph) | Neighbor data was collected but discarded — now persisted + visualized |
+| 2026-04-25 | Agent v2.0.0: Windows Service mode replaces NinjaOne one-shot scheduling | Service self-manages scan intervals (compliance 24h, SNMP 4h, heartbeat 15min). Old NinjaOne script obsolete for production orgs |
+| 2026-04-25 | Agent v2.1.0: 9-block network pipeline + remediation | Trial enrollment, port banners, reverse DNS, WMI probe, passive discovery, self-updater, external exposure, closed-set remediation (~50 controls). SQL 061-066 |
+| 2026-04-25 | Remediation = closed-set whitelist only | Agent only executes pre-approved action types (set_registry, enable/disable_service, set_audit_policy). No arbitrary command execution. Heartbeat = task delivery channel |
+| 2026-04-25 | Self-updater checks `/v1/agent-version` every 6h | Downloads new binary, replaces exe, restarts service. No code signing yet (deferred to A-11 full version) |
 
 ---
 

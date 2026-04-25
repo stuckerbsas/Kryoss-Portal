@@ -1,0 +1,124 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using KryossAgent.Config;
+
+namespace KryossAgent.Services;
+
+public static class SelfUpdater
+{
+    private static readonly string LogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "Kryoss", "update-log.txt");
+
+    public static async Task<bool> CheckAndUpdateAsync(AgentConfig config, bool verbose)
+    {
+        try
+        {
+            using var client = new ApiClient(config);
+            var versionInfo = await client.CheckLatestVersionAsync();
+            if (versionInfo == null) return false;
+
+            var currentVersion = typeof(SelfUpdater).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+            if (versionInfo.Version == null || !IsNewer(versionInfo.Version, currentVersion))
+            {
+                if (verbose) Console.WriteLine($"[UPDATE] Current {currentVersion}, latest {versionInfo.Version ?? "unknown"} — no update needed");
+                return false;
+            }
+
+            Log($"Update available: {currentVersion} → {versionInfo.Version}");
+            Console.WriteLine($"[UPDATE] Downloading v{versionInfo.Version}...");
+
+            var exePath = Environment.ProcessPath ?? typeof(SelfUpdater).Assembly.Location;
+            var dir = Path.GetDirectoryName(exePath)!;
+            var tempPath = Path.Combine(dir, "KryossAgent.update.exe");
+            var backupPath = Path.Combine(dir, "KryossAgent.backup.exe");
+
+            // Download new binary
+            var bytes = await client.DownloadAgentBinaryAsync();
+            if (bytes == null || bytes.Length < 1024)
+            {
+                Log("Download failed or file too small");
+                return false;
+            }
+
+            // Verify hash if provided
+            if (!string.IsNullOrEmpty(versionInfo.Hash))
+            {
+                var hash = Convert.ToHexString(SHA256.HashData(bytes));
+                if (!hash.Equals(versionInfo.Hash, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log($"Hash mismatch: expected {versionInfo.Hash}, got {hash}");
+                    return false;
+                }
+            }
+
+            // Write to temp
+            await File.WriteAllBytesAsync(tempPath, bytes);
+
+            // Backup current
+            if (File.Exists(exePath))
+                File.Copy(exePath, backupPath, overwrite: true);
+
+            // Replace: can't replace running exe directly on Windows.
+            // Write a small batch script that waits, replaces, and restarts the service.
+            var batPath = Path.Combine(dir, "kryoss-update.bat");
+            var bat = $"""
+                @echo off
+                timeout /t 3 /nobreak >nul
+                sc stop KryossAgent >nul 2>&1
+                timeout /t 5 /nobreak >nul
+                copy /y "{tempPath}" "{exePath}" >nul
+                del "{tempPath}" >nul 2>&1
+                sc start KryossAgent >nul 2>&1
+                del "%~f0" >nul 2>&1
+                """;
+            File.WriteAllText(batPath, bat);
+
+            Log($"Update to v{versionInfo.Version} staged — restart will apply");
+            Console.WriteLine($"[UPDATE] Update staged. Service will restart with v{versionInfo.Version}");
+
+            // Launch the batch silently
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c \"{batPath}\"",
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            });
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log($"Update check failed: {ex.Message}");
+            if (verbose) Console.Error.WriteLine($"[UPDATE] Failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool IsNewer(string latest, string current)
+    {
+        if (Version.TryParse(latest, out var latestVer) && Version.TryParse(current, out var currentVer))
+            return latestVer > currentVer;
+        return false;
+    }
+
+    private static void Log(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+            File.AppendAllText(LogPath, $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] {message}\n");
+        }
+        catch { }
+    }
+}
+
+public class VersionInfo
+{
+    public string? Version { get; set; }
+    public string? Hash { get; set; }
+    public string? Url { get; set; }
+    public string? ReleaseNotes { get; set; }
+}

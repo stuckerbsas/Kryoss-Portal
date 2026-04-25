@@ -26,6 +26,8 @@ public static class NetworkScanner
     {
         // ── Parse arguments ──
         int threads = ParseIntArg(args, "--threads") ?? 10;
+        bool skipPorts = args.Contains("--no-ports", StringComparer.OrdinalIgnoreCase);
+        bool skipAd = args.Contains("--no-ad", StringComparer.OrdinalIgnoreCase);
 
         var totalSw = Stopwatch.StartNew();
 
@@ -34,7 +36,7 @@ public static class NetworkScanner
         List<TargetDiscovery.ScanTarget> targets;
         try
         {
-            targets = await TargetDiscovery.DiscoverAsync(args);
+            targets = await TargetDiscovery.DiscoverAsync(args, skipAd: skipAd);
         }
         catch (Exception ex)
         {
@@ -43,22 +45,24 @@ public static class NetworkScanner
         }
 
         // Cross-check stale machines with ARP (add alive ones to scan)
-        var staleRecovered = await TargetDiscovery.CrossCheckStaleWithArp();
-        if (staleRecovered.Count > 0)
+        if (!skipAd)
         {
-            // Dedup against existing targets
-            var existingNames = new HashSet<string>(targets.Select(t => t.Hostname), StringComparer.OrdinalIgnoreCase);
-            foreach (var s in staleRecovered)
+            var staleRecovered = await TargetDiscovery.CrossCheckStaleWithArp();
+            if (staleRecovered.Count > 0)
             {
-                if (existingNames.Add(s.Hostname))
-                    targets.Add(s);
+                var existingNames = new HashSet<string>(targets.Select(t => t.Hostname), StringComparer.OrdinalIgnoreCase);
+                foreach (var s in staleRecovered)
+                {
+                    if (existingNames.Add(s.Hostname))
+                        targets.Add(s);
+                }
             }
         }
 
         if (targets.Count == 0)
         {
-            Console.Error.WriteLine("[ERROR] No scan targets found.");
-            return 1;
+            if (!silent) Console.Error.WriteLine("[WARN] No scan targets found.");
+            return skipPorts ? 0 : 1;
         }
 
         if (!silent)
@@ -80,7 +84,7 @@ public static class NetworkScanner
             await semaphore.WaitAsync();
             try
             {
-                var result = await ScanTarget(target);
+                var result = await ScanTarget(target, skipPorts);
                 results[index] = result;
                 var seq = Interlocked.Increment(ref completed);
                 PrintProgress(seq, targets.Count, result, silent);
@@ -98,13 +102,20 @@ public static class NetworkScanner
         PrintSummary(results, silent, totalSw.Elapsed);
 
         // ── AD Hygiene Report ──
-        if (!silent) PrintHygieneReport();
-
-        // ── Upload hygiene to API ──
-        await UploadHygieneReport();
+        if (!skipAd)
+        {
+            if (!silent) PrintHygieneReport();
+            await UploadHygieneReport();
+        }
 
         // ── Upload port scan results to API ──
-        await UploadPortResults(results);
+        if (!skipPorts)
+            await UploadPortResults(results);
+
+        // ── SNMP auto-scan: probe all reachable targets with SNMPv2c "public" ──
+        bool skipSnmp = args.Contains("--no-snmp", StringComparer.OrdinalIgnoreCase);
+        if (!skipSnmp)
+            await RunSnmpScan(results, silent);
 
         // Return non-zero if any targets were unreachable
         bool anyFailed = results.Any(r => r.Status == "Unreachable");
@@ -114,7 +125,7 @@ public static class NetworkScanner
     /// <summary>
     /// Ping + port scan a single target. No remote deployment.
     /// </summary>
-    private static async Task<ScanResult> ScanTarget(TargetDiscovery.ScanTarget target)
+    private static async Task<ScanResult> ScanTarget(TargetDiscovery.ScanTarget target, bool skipPorts = false)
     {
         var sw = Stopwatch.StartNew();
 
@@ -141,11 +152,14 @@ public static class NetworkScanner
 
             // ── Port scan ──
             List<PortScanner.PortResult>? openPorts = null;
-            try
+            if (!skipPorts)
             {
-                openPorts = await PortScanner.ScanTcpAsync(target.Address, concurrency: 100, timeoutMs: 500);
+                try
+                {
+                    openPorts = await PortScanner.ScanTcpAsync(target.Address, concurrency: 100, timeoutMs: 500);
+                }
+                catch { /* non-critical */ }
             }
-            catch { /* non-critical */ }
 
             sw.Stop();
             return new ScanResult(target.Hostname, target.Address,
@@ -214,15 +228,18 @@ public static class NetworkScanner
         if (allRiskyPorts.Count > 0)
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"\n    Risky Open Ports ({allRiskyPorts.Count}):");
+            Console.WriteLine($"\n    Risky Open Ports: {allRiskyPorts.Count}");
             Console.ResetColor();
-            foreach (var rp in allRiskyPorts.OrderByDescending(p => p.Risk == "critical" ? 3 : p.Risk == "high" ? 2 : 1))
+            if (!silent)
             {
-                var riskColor = rp.Risk == "critical" ? ConsoleColor.Red : ConsoleColor.Yellow;
-                Console.ForegroundColor = riskColor;
-                Console.Write($"      [{rp.Risk?.ToUpperInvariant()}]");
-                Console.ResetColor();
-                Console.WriteLine($" {rp.Host,-20} :{rp.Port,-6} {rp.Service}");
+                foreach (var rp in allRiskyPorts.OrderByDescending(p => p.Risk == "critical" ? 3 : p.Risk == "high" ? 2 : 1))
+                {
+                    var riskColor = rp.Risk == "critical" ? ConsoleColor.Red : ConsoleColor.Yellow;
+                    Console.ForegroundColor = riskColor;
+                    Console.Write($"      [{rp.Risk?.ToUpperInvariant()}]");
+                    Console.ResetColor();
+                    Console.WriteLine($" {rp.Host,-20} :{rp.Port,-6} {rp.Service}");
+                }
             }
         }
 
@@ -239,56 +256,54 @@ public static class NetworkScanner
         var report = TargetDiscovery.LastHygieneReport;
         if (report is null) return;
 
-        var allFindings = new List<object>();
-        foreach (var m in report.StaleMachines)
-            allFindings.Add(new { m.Name, objectType = "Computer", status = "Stale", m.DaysInactive, m.Detail });
-        foreach (var m in report.DormantMachines)
-            allFindings.Add(new { m.Name, objectType = "Computer", status = "Dormant", m.DaysInactive, m.Detail });
-        foreach (var u in report.StaleUsers)
-            allFindings.Add(new { u.Name, objectType = "User", status = u.Status, u.DaysInactive, u.Detail });
-        foreach (var u in report.DormantUsers)
-            allFindings.Add(new { u.Name, objectType = "User", status = "Dormant", u.DaysInactive, u.Detail });
-        foreach (var u in report.DisabledUsers)
-            allFindings.Add(new { u.Name, objectType = "User", status = "Disabled", daysInactive = 0, u.Detail });
-        foreach (var u in report.NeverExpirePasswords)
-            allFindings.Add(new { u.Name, objectType = "User", status = "PwdNeverExpires", daysInactive = 0, u.Detail });
-        // Security findings
-        foreach (var p in report.PrivilegedAccounts)
-            allFindings.Add(new { p.Name, objectType = "Security", status = "PrivilegedAccount", daysInactive = 0, p.Detail });
-        foreach (var k in report.KerberoastableAccounts)
-            allFindings.Add(new { k.Name, objectType = "Security", status = "Kerberoastable", daysInactive = 0, k.Detail });
-        foreach (var u in report.UnconstrainedDelegation)
-            allFindings.Add(new { u.Name, objectType = "Security", status = "UnconstrainedDelegation", daysInactive = 0, u.Detail });
-        foreach (var a in report.AdminCountResidual)
-            allFindings.Add(new { a.Name, objectType = "Security", status = "AdminCountResidue", daysInactive = 0, a.Detail });
-        foreach (var l in report.NoLaps)
-            allFindings.Add(new { l.Name, objectType = "Security", status = "NoLAPS", daysInactive = 0, l.Detail });
-        foreach (var d in report.DomainInfo)
-            allFindings.Add(new { d.Name, objectType = "Config", status = d.Status, daysInactive = 0, d.Detail });
+        var findings = new List<Models.HygieneFinding>();
+        void Add(IEnumerable<TargetDiscovery.AdHygieneItem> items, string objType, string? statusOverride = null, int defaultDays = 0)
+        {
+            foreach (var i in items)
+                findings.Add(new Models.HygieneFinding
+                {
+                    Name = i.Name, ObjectType = objType,
+                    Status = statusOverride ?? i.Status,
+                    DaysInactive = statusOverride is "Disabled" or "PwdNeverExpires" ? defaultDays : i.DaysInactive,
+                    Detail = i.Detail
+                });
+        }
 
-        if (allFindings.Count == 0) return;
+        Add(report.StaleMachines, "Computer", "Stale");
+        Add(report.DormantMachines, "Computer", "Dormant");
+        Add(report.StaleUsers, "User");
+        Add(report.DormantUsers, "User", "Dormant");
+        Add(report.DisabledUsers, "User", "Disabled");
+        Add(report.NeverExpirePasswords, "User", "PwdNeverExpires");
+        Add(report.PrivilegedAccounts, "Security", "PrivilegedAccount");
+        Add(report.KerberoastableAccounts, "Security", "Kerberoastable");
+        Add(report.UnconstrainedDelegation, "Security", "UnconstrainedDelegation");
+        Add(report.AdminCountResidual, "Security", "AdminCountResidue");
+        Add(report.NoLaps, "Security", "NoLAPS");
+        Add(report.DomainInfo, "Config");
+
+        if (findings.Count == 0) return;
 
         try
         {
             var config = Config.AgentConfig.Load();
             if (!config.IsEnrolled) return;
 
-            // Calculate real totals (active + stale + dormant = all AD objects)
             var totalMachines = report.StaleMachines.Count + report.DormantMachines.Count
-                + (TargetDiscovery.LastDiscoveredActiveCount);
+                + TargetDiscovery.LastDiscoveredActiveCount;
             var totalUsers = report.StaleUsers.Count + report.DormantUsers.Count
                 + report.DisabledUsers.Count + report.NeverExpirePasswords.Count
-                + (TargetDiscovery.LastDiscoveredActiveUserCount);
+                + TargetDiscovery.LastDiscoveredActiveUserCount;
 
             using var client = new ApiClient(config);
-            await client.SubmitHygieneAsync(new
+            await client.SubmitHygieneAsync(new Models.HygienePayload
             {
-                scannedBy = Environment.MachineName,
-                totalMachines,
-                totalUsers,
-                findings = allFindings
+                ScannedBy = Environment.MachineName,
+                TotalMachines = totalMachines,
+                TotalUsers = totalUsers,
+                Findings = findings
             });
-            Console.WriteLine($"  AD Hygiene: {allFindings.Count} findings uploaded to portal");
+            Console.WriteLine($"  AD Hygiene: {findings.Count} findings uploaded to portal");
         }
         catch (Exception ex)
         {
@@ -310,30 +325,29 @@ public static class NetworkScanner
             if (!config.IsEnrolled) return;
 
             using var client = new ApiClient(config);
-            int totalUploaded = 0;
 
-            foreach (var machine in machinesWithPorts)
+            var bulkPayload = new Models.PortBulkPayload
             {
-                try
+                Machines = machinesWithPorts.Select(m => new Models.PortPayload
                 {
-                    await client.SubmitPortResultsAsync(new
+                    MachineHostname = m.Name,
+                    Ports = m.OpenPorts!.Select(p => new Models.PortEntry
                     {
-                        machineHostname = machine.Name,
-                        ports = machine.OpenPorts!.Select(p => new
-                        {
-                            port = p.Port,
-                            protocol = p.Protocol,
-                            status = p.Status,
-                            service = p.Service,
-                            risk = p.Risk
-                        }).ToList()
-                    });
-                    totalUploaded += machine.OpenPorts!.Count;
-                }
-                catch { /* skip individual machine failures */ }
-            }
+                        Port = p.Port,
+                        Protocol = p.Protocol,
+                        Status = p.Status,
+                        Service = p.Service,
+                        Risk = p.Risk,
+                        Banner = p.Banner?.Length > 512 ? p.Banner[..512] : p.Banner,
+                        ServiceName = p.ServiceName,
+                        ServiceVersion = p.ServiceVersion
+                    }).ToList()
+                }).ToList()
+            };
 
-            Console.WriteLine($"  Port Scan: {totalUploaded} open ports across {machinesWithPorts.Count} machines uploaded to portal");
+            var (saved, skipped) = await client.SubmitPortResultsBulkAsync(bulkPayload);
+            var totalPorts = machinesWithPorts.Sum(m => m.OpenPorts!.Count);
+            Console.WriteLine($"  Port Scan: {totalPorts} ports across {saved} machines uploaded ({skipped} skipped — not enrolled)");
         }
         catch (Exception ex)
         {
@@ -477,6 +491,181 @@ public static class NetworkScanner
         Console.WriteLine("\n  ══════════════════════════════════════════");
         Console.ResetColor();
         Console.WriteLine();
+    }
+
+    private static async Task RunSnmpScan(ScanResult[] results, bool silent)
+    {
+        var reachableIps = results
+            .Where(r => r.Status == "Scanned")
+            .Select(r => r.Address)
+            .Distinct()
+            .ToList();
+
+        try
+        {
+            var creds = new Models.SnmpCredentials { Version = 2, Community = "public" };
+
+            // Also try to fetch org-specific SNMP config from server
+            try
+            {
+                var config = Config.AgentConfig.Load();
+                if (config.IsEnrolled)
+                {
+                    using var apiClient = new ApiClient(config);
+                    var serverCreds = await apiClient.GetSnmpCredentialsAsync();
+                    if (serverCreds is not null) creds = serverCreds;
+                }
+            }
+            catch { /* use defaults */ }
+
+            // Subnet SNMP sweep — discovers switches, routers, APs, printers not in AD/ARP
+            if (!silent)
+            {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"\n  SNMP: subnet sweep for network devices...");
+                Console.ResetColor();
+            }
+
+            var subnetDevices = await SnmpScanner.DiscoverSubnetAsync(creds, verbose: !silent);
+
+            // Merge subnet discoveries with reachable IPs (dedup)
+            var allIps = new HashSet<string>(reachableIps);
+            int added = 0;
+            foreach (var ip in subnetDevices)
+            {
+                if (allIps.Add(ip)) added++;
+            }
+
+            if (!silent && added > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"  SNMP: {added} new device(s) found via subnet sweep (not in AD/ARP)");
+                Console.ResetColor();
+            }
+
+            if (allIps.Count == 0) return;
+
+            if (!silent)
+            {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"  SNMP: full scan on {allIps.Count} target(s)...");
+                Console.ResetColor();
+            }
+
+            var snmpResult = await SnmpScanner.ScanAsync(creds, allIps.ToList(), verbose: !silent);
+
+            if (!silent)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"  SNMP: {snmpResult.Devices.Count} device(s) responded, {snmpResult.Unreachable.Count} silent");
+                Console.ResetColor();
+
+                foreach (var dev in snmpResult.Devices)
+                {
+                    var ifCount = dev.Interfaces.Count;
+                    var lldpCount = dev.LldpNeighbors.Count;
+                    var cdpCount = dev.CdpNeighbors.Count;
+                    var neighborInfo = (lldpCount + cdpCount) > 0
+                        ? $", {lldpCount} LLDP + {cdpCount} CDP neighbors"
+                        : "";
+                    Console.WriteLine($"    {dev.Ip,-16} {dev.SysName ?? "?",-20} {ifCount} ifaces{neighborInfo}");
+
+                    foreach (var n in dev.LldpNeighbors)
+                        Console.WriteLine($"      {n.LocalPort,-14} → {n.RemoteSysName ?? n.RemoteChassisId ?? "?"} ({n.RemotePortId})");
+                    foreach (var n in dev.CdpNeighbors)
+                        Console.WriteLine($"      {n.LocalPort,-14} → {n.RemoteDeviceId ?? "?"} ({n.RemotePortId}) [{n.RemoteIp}]");
+                }
+            }
+
+            // Enrich SNMP devices with MAC from interfaces + OUI
+            foreach (var dev in snmpResult.Devices)
+            {
+                if (dev.MacAddress == null)
+                {
+                    var ifMac = dev.Interfaces.FirstOrDefault(i => !string.IsNullOrEmpty(i.MacAddress))?.MacAddress;
+                    if (ifMac != null) dev.MacAddress = ifMac;
+                }
+                if (dev.MacAddress != null)
+                {
+                    var oui = OuiLookup.Lookup(dev.MacAddress);
+                    if (oui != null)
+                    {
+                        dev.Vendor = oui.Value.Vendor;
+                        if (dev.DeviceType == "unknown")
+                            dev.DeviceType = oui.Value.Category;
+                    }
+                }
+            }
+
+            // Merge ARP-only devices (seen on network but no SNMP response)
+            var seenIps = new HashSet<string>(snmpResult.Devices.Select(d => d.Ip));
+            var arpEntries = TargetDiscovery.ReadNativeArpTable();
+            var arpDevices = new List<Models.SnmpDeviceResult>();
+            foreach (var (ip, mac) in arpEntries)
+            {
+                if (!seenIps.Add(ip)) continue;
+                if (mac is "ff-ff-ff-ff-ff-ff" or "00-00-00-00-00-00") continue;
+                var normalMac = mac.Replace('-', ':').ToUpperInvariant();
+                var oui = OuiLookup.Lookup(normalMac);
+                arpDevices.Add(new Models.SnmpDeviceResult
+                {
+                    Ip = ip,
+                    MacAddress = normalMac,
+                    Vendor = oui?.Vendor,
+                    DeviceType = oui?.Category ?? "unknown",
+                });
+            }
+
+            // Reverse DNS for ARP-only + SNMP devices without sysName
+            var needDns = arpDevices.Cast<Models.SnmpDeviceResult>()
+                .Concat(snmpResult.Devices.Where(d => d.SysName == null)).ToList();
+            if (needDns.Count > 0)
+            {
+                var dnsSem = new SemaphoreSlim(20);
+                await Task.WhenAll(needDns.Select(async dev =>
+                {
+                    await dnsSem.WaitAsync();
+                    try
+                    {
+                        var entry = await System.Net.Dns.GetHostEntryAsync(dev.Ip);
+                        if (!string.IsNullOrEmpty(entry.HostName) && entry.HostName != dev.Ip)
+                            dev.SysName = entry.HostName;
+                    }
+                    catch { }
+                    finally { dnsSem.Release(); }
+                }));
+            }
+
+            snmpResult.Devices.AddRange(arpDevices);
+
+            // Upload to API — always log result (same as ports/hygiene)
+            if (snmpResult.Devices.Count > 0)
+            {
+                try
+                {
+                    var config = Config.AgentConfig.Load();
+                    if (config.IsEnrolled)
+                    {
+                        using var apiClient = new ApiClient(config);
+                        await apiClient.SubmitSnmpResultsAsync(snmpResult);
+                        var arpOnly = snmpResult.Devices.Count(d => d.SysName == null && d.MacAddress != null);
+                        Console.WriteLine($"  SNMP: {snmpResult.Devices.Count} device(s) uploaded ({added} subnet, {arpOnly} ARP-only)");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"  [WARN] SNMP upload failed: {ex.Message}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"  SNMP: 0 devices responded (scanned {allIps.Count} IPs)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  [WARN] SNMP scan failed: {ex.Message}");
+        }
     }
 
     // ── CLI helpers (local to NetworkScanner) ──

@@ -52,6 +52,7 @@ public static class PlatformDetector
             DetectSecurity(info);
             DetectNetwork(info);
             DetectDomain(info);
+            DetectProductType(info);
             DetectLifecycle(info);
         }
         catch { /* non-critical */ }
@@ -277,6 +278,22 @@ public static class PlatformDetector
                 if (mac.Length == 12)
                     info.MacAddress = string.Join(":", Enumerable.Range(0, 6).Select(i => mac.Substring(i * 2, 2)));
 
+                break;
+            }
+        }
+        catch { /* non-critical */ }
+    }
+
+    private static void DetectProductType(HardwareInfo info)
+    {
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT ProductType FROM Win32_OperatingSystem");
+            foreach (System.Management.ManagementObject os in searcher.Get())
+            {
+                info.ProductType = Convert.ToInt32(os["ProductType"] ?? 0);
+                os.Dispose();
                 break;
             }
         }

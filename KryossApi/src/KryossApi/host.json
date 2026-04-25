@@ -2,7 +2,21 @@
     "version": "2.0",
     "extensions": {
         "http": {
-            "routePrefix": ""
+            "routePrefix": "",
+            "customHeaders": {
+                "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Agent-Id, X-Hwid, X-Timestamp, X-Signature, X-Nonce"
+            }
+        }
+    },
+    "Host": {
+        "CORS": {
+            "allowedOrigins": [
+                "https://zealous-dune-0ac672d10.6.azurestaticapps.net",
+                "http://localhost:5173",
+                "http://localhost:3000"
+            ],
+            "supportCredentials": true
         }
     },
     "logging": {

@@ -61,6 +61,24 @@ public class Machine : IAuditable
     public int? ScanSlotOffsetSec { get; set; }
     public DateTime? LastCheckinAt { get; set; }
 
+    // Service mode
+    public DateTime? LastHeartbeatAt { get; set; }
+    public string? AgentMode { get; set; }
+    public long? AgentUptimeSeconds { get; set; }
+
+    // Auth / key material
+    public string? MachineSecret { get; set; }
+    public string? SessionKey { get; set; }
+    public DateTime? SessionKeyExpiresAt { get; set; }
+    public string? PrevSessionKey { get; set; }
+    public DateTime? PrevKeyExpiresAt { get; set; }
+    public DateTime? KeyRotatedAt { get; set; }
+    public int AuthVersion { get; set; } = 1;
+
+    // Trial
+    public bool IsTrial { get; set; }
+    public DateTime? TrialExpiresAt { get; set; }
+
     // Lifecycle
     public int? SystemAgeDays { get; set; }
     public DateTime? LastBootAt { get; set; }

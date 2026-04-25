@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace KryossAgent.Services;
 
@@ -86,12 +88,17 @@ public static class PortScanner
         [27017] = "critical", // MongoDB - often no auth
     };
 
-    public record PortResult(int Port, string Protocol, string Status, string? Service, string? Risk);
+    public record PortResult(
+        int Port, string Protocol, string Status, string? Service, string? Risk,
+        string? Banner = null, string? ServiceName = null, string? ServiceVersion = null);
+
+    private static readonly HashSet<int> HttpPorts = [80, 81, 443, 4443, 7080, 7443, 8000, 8008, 8080, 8081, 8083, 8088, 8443, 8880, 8888, 9000, 9001, 9090, 9443, 9999, 10000];
+    private static readonly HashSet<int> BannerGrabPorts = [21, 22, 25, 110, 143, 389, 587, 993, 995, 1433, 3306, 3389, 5432, 5900, 6379, 11211, 27017];
 
     /// <summary>
     /// Scan TCP ports in parallel. 100 concurrent connections, 500ms timeout.
     /// </summary>
-    public static async Task<List<PortResult>> ScanTcpAsync(string host, int concurrency = 100, int timeoutMs = 500)
+    public static async Task<List<PortResult>> ScanTcpAsync(string host, int concurrency = 100, int timeoutMs = 500, bool grabBanners = true)
     {
         var results = new List<PortResult>();
         var semaphore = new SemaphoreSlim(concurrency);
@@ -108,11 +115,23 @@ public static class PortScanner
                     await tcp.ConnectAsync(host, port, cts.Token);
                     var service = TcpServiceNames.TryGetValue(port, out var s) ? s : null;
                     var risk = RiskyPorts.TryGetValue(port, out var r) ? r : null;
-                    return new PortResult(port, "TCP", "open", service, risk);
+
+                    string? banner = null;
+                    string? svcName = null;
+                    string? svcVersion = null;
+
+                    if (grabBanners)
+                    {
+                        banner = await GrabBannerAsync(tcp, host, port);
+                        if (banner is not null)
+                            (svcName, svcVersion) = ParseBanner(banner, port);
+                    }
+
+                    return new PortResult(port, "TCP", "open", service, risk, banner, svcName, svcVersion);
                 }
                 catch
                 {
-                    return null; // closed or filtered
+                    return null;
                 }
             }
             finally
@@ -188,4 +207,90 @@ public static class PortScanner
     /// <summary>Get the risk level for a port.</summary>
     public static string? GetRiskLevel(int port) =>
         RiskyPorts.TryGetValue(port, out var r) ? r : null;
+
+    private static async Task<string?> GrabBannerAsync(TcpClient tcp, string host, int port)
+    {
+        try
+        {
+            tcp.ReceiveTimeout = 3000;
+            tcp.SendTimeout = 3000;
+            var stream = tcp.GetStream();
+            var buf = new byte[512];
+
+            if (HttpPorts.Contains(port))
+            {
+                var probe = Encoding.ASCII.GetBytes($"HEAD / HTTP/1.0\r\nHost: {host}\r\n\r\n");
+                await stream.WriteAsync(probe);
+                using var cts = new CancellationTokenSource(3000);
+                var total = 0;
+                while (total < buf.Length)
+                {
+                    var n = await stream.ReadAsync(buf.AsMemory(total), cts.Token);
+                    if (n == 0) break;
+                    total += n;
+                    if (total > 4 && Encoding.ASCII.GetString(buf, 0, total).Contains("\r\n\r\n")) break;
+                }
+                return total > 0 ? Encoding.ASCII.GetString(buf, 0, total).Trim() : null;
+            }
+
+            if (BannerGrabPorts.Contains(port))
+            {
+                using var cts = new CancellationTokenSource(3000);
+                var n = await stream.ReadAsync(buf, cts.Token);
+                return n > 0 ? Encoding.ASCII.GetString(buf, 0, n).Trim() : null;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static (string? Name, string? Version) ParseBanner(string banner, int port)
+    {
+        // HTTP Server header
+        var serverMatch = Regex.Match(banner, @"Server:\s*(.+)", RegexOptions.IgnoreCase);
+        if (serverMatch.Success)
+        {
+            var server = serverMatch.Groups[1].Value.Trim();
+            var verMatch = Regex.Match(server, @"^([^\s/]+)[/\s]+(\S+)");
+            if (verMatch.Success)
+                return (verMatch.Groups[1].Value, verMatch.Groups[2].Value);
+            return (server, null);
+        }
+
+        // SSH: SSH-2.0-OpenSSH_8.9p1
+        if (banner.StartsWith("SSH-", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = banner.Split('-', 3);
+            if (parts.Length >= 3)
+            {
+                var impl = parts[2].Split(' ')[0];
+                var verMatch = Regex.Match(impl, @"^([A-Za-z]+)[_](.+)");
+                if (verMatch.Success)
+                    return (verMatch.Groups[1].Value, verMatch.Groups[2].Value);
+                return (impl, null);
+            }
+        }
+
+        // FTP/SMTP: 220 Microsoft FTP Service or 220 mail.example.com ESMTP Postfix
+        if (banner.StartsWith("220"))
+        {
+            var line = banner.Split('\n')[0][3..].Trim().TrimStart('-');
+            var verMatch = Regex.Match(line, @"([\w.-]+)\s+([\d.]+)");
+            if (verMatch.Success)
+                return (verMatch.Groups[1].Value, verMatch.Groups[2].Value);
+            return (line.Length > 60 ? line[..60] : line, null);
+        }
+
+        // Generic: first line, extract name/version pattern
+        var firstLine = banner.Split('\n')[0].Trim();
+        var generic = Regex.Match(firstLine, @"^[+*\s]*([A-Za-z][\w.-]*)\s+([\d]+[\d.]*\w*)");
+        if (generic.Success)
+            return (generic.Groups[1].Value, generic.Groups[2].Value);
+
+        return (null, null);
+    }
 }

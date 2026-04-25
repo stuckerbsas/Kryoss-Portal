@@ -517,71 +517,85 @@ public static class ReportHelpers
 
     public static void AppendDataDrivenRecommendations(StringBuilder sb, List<AssessmentRun> runs,
         List<OrgControlResult> allResults, HygieneScanDto? hygiene, OrgEnrichment enrichment,
-        ReportBranding brand)
+        ReportBranding brand, string lang = "en")
     {
+        var es = lang == "es";
         var recommendations = new List<(string Priority, string Title, string Description, string Effort)>();
         var totalMachines = runs.Count;
 
-        // AD hygiene recommendations
         if (hygiene != null)
         {
             var domainLevel = hygiene.Findings.FirstOrDefault(f => f.Status == "DomainLevel");
             if (domainLevel != null && (domainLevel.Detail?.Contains("2008") == true || domainLevel.Detail?.Contains("2003") == true))
-                recommendations.Add(("Critical", "Upgrade Domain Functional Level",
-                    $"Current level ({HtmlEncode(domainLevel.Detail ?? "outdated")}) prevents modern security features like Protected Users group and authentication silos.",
-                    "1-2 weeks"));
+                recommendations.Add((es ? "Crítico" : "Critical",
+                    es ? "Actualizar Nivel Funcional del Dominio" : "Upgrade Domain Functional Level",
+                    es ? $"El nivel actual ({HtmlEncode(domainLevel.Detail ?? "obsoleto")}) impide funciones de seguridad modernas como el grupo Protected Users y silos de autenticación."
+                       : $"Current level ({HtmlEncode(domainLevel.Detail ?? "outdated")}) prevents modern security features like Protected Users group and authentication silos.",
+                    es ? "1-2 semanas" : "1-2 weeks"));
 
             var lapsCount = hygiene.Findings.Count(f => f.Status == "NoLAPS");
             if (lapsCount > 0)
-                recommendations.Add(("Critical", $"Deploy LAPS Across {hygiene.TotalMachines} Machines",
-                    $"Currently {Math.Round(100.0 - (double)lapsCount / Math.Max(hygiene.TotalMachines, 1) * 100):F0}% coverage. LAPS prevents lateral movement by ensuring unique local admin passwords.",
-                    "1-2 days"));
+                recommendations.Add((es ? "Crítico" : "Critical",
+                    es ? $"Implementar LAPS en {hygiene.TotalMachines} Equipos" : $"Deploy LAPS Across {hygiene.TotalMachines} Machines",
+                    es ? $"Cobertura actual: {Math.Round(100.0 - (double)lapsCount / Math.Max(hygiene.TotalMachines, 1) * 100):F0}%. LAPS previene movimiento lateral asegurando contraseñas únicas de administrador local."
+                       : $"Currently {Math.Round(100.0 - (double)lapsCount / Math.Max(hygiene.TotalMachines, 1) * 100):F0}% coverage. LAPS prevents lateral movement by ensuring unique local admin passwords.",
+                    es ? "1-2 días" : "1-2 days"));
 
             if (hygiene.DormantMachines > 10)
-                recommendations.Add(("High", $"Remove {hygiene.DormantMachines} Dormant Computer Objects",
-                    "Orphaned computer accounts expand the attack surface and indicate poor lifecycle management.",
-                    "1 day"));
+                recommendations.Add((es ? "Alto" : "High",
+                    es ? $"Eliminar {hygiene.DormantMachines} Objetos de Equipo Inactivos" : $"Remove {hygiene.DormantMachines} Dormant Computer Objects",
+                    es ? "Las cuentas de equipo huérfanas amplían la superficie de ataque e indican mala gestión del ciclo de vida."
+                       : "Orphaned computer accounts expand the attack surface and indicate poor lifecycle management.",
+                    es ? "1 día" : "1 day"));
 
             if (hygiene.PwdNeverExpire > 10)
-                recommendations.Add(("High", $"Enforce Password Expiration for {hygiene.PwdNeverExpire} Accounts",
-                    "Non-expiring passwords violate NIST, CIS, and HIPAA requirements.",
-                    "1-2 days"));
+                recommendations.Add((es ? "Alto" : "High",
+                    es ? $"Forzar Expiración de Contraseñas en {hygiene.PwdNeverExpire} Cuentas" : $"Enforce Password Expiration for {hygiene.PwdNeverExpire} Accounts",
+                    es ? "Las contraseñas sin expiración violan requisitos de NIST, CIS e HIPAA."
+                       : "Non-expiring passwords violate NIST, CIS, and HIPAA requirements.",
+                    es ? "1-2 días" : "1-2 days"));
 
-            var privileged = hygiene.Findings.Count(f => f.Status == "Privileged");
+            var privileged = hygiene.Findings.Count(f => f.Status is "PrivilegedAccount" or "LocalAdmin");
             if (privileged > 10)
-                recommendations.Add(("High", $"Review {privileged} Privileged Accounts",
-                    "Excessive admin accounts increase the blast radius of credential compromise.",
-                    "1-2 days"));
+                recommendations.Add((es ? "Alto" : "High",
+                    es ? $"Revisar {privileged} Cuentas Privilegiadas" : $"Review {privileged} Privileged Accounts",
+                    es ? "El exceso de cuentas administrativas aumenta el radio de impacto ante compromiso de credenciales."
+                       : "Excessive admin accounts increase the blast radius of credential compromise.",
+                    es ? "1-2 días" : "1-2 days"));
         }
 
-        // Port-based recommendations
         var riskyPorts = enrichment.Ports.Where(p => p.Risk != null).ToList();
         var rdpCount = riskyPorts.Where(p => p.Port == 3389).Select(p => p.MachineId).Distinct().Count();
         if (rdpCount > 0)
-            recommendations.Add(("Critical", $"Close or Restrict RDP on {rdpCount} Machines",
-                "RDP is the leading ransomware attack vector. Implement VPN or RD Gateway instead of direct exposure.",
-                "1-3 days"));
+            recommendations.Add((es ? "Crítico" : "Critical",
+                es ? $"Cerrar o Restringir RDP en {rdpCount} Equipos" : $"Close or Restrict RDP on {rdpCount} Machines",
+                es ? "RDP es el principal vector de ataque de ransomware. Implemente VPN o RD Gateway en lugar de exposición directa."
+                   : "RDP is the leading ransomware attack vector. Implement VPN or RD Gateway instead of direct exposure.",
+                es ? "1-3 días" : "1-3 days"));
 
-        // Threat-based recommendations
         if (enrichment.Threats.Count > 0)
-            recommendations.Add(("Critical", $"Investigate {enrichment.Threats.Count} Threat Detections",
-                $"Active threats detected across {enrichment.Threats.Select(t => t.MachineId).Distinct().Count()} devices. Immediate forensic analysis recommended.",
-                "Immediate"));
+            recommendations.Add((es ? "Crítico" : "Critical",
+                es ? $"Investigar {enrichment.Threats.Count} Detecciones de Amenazas" : $"Investigate {enrichment.Threats.Count} Threat Detections",
+                es ? $"Amenazas activas detectadas en {enrichment.Threats.Select(t => t.MachineId).Distinct().Count()} dispositivos. Se recomienda análisis forense inmediato."
+                   : $"Active threats detected across {enrichment.Threats.Select(t => t.MachineId).Distinct().Count()} devices. Immediate forensic analysis recommended.",
+                es ? "Inmediato" : "Immediate"));
 
-        // Hardware recommendations
         var noBitlocker = runs.Count(r => r.Machine.Bitlocker != true);
         if (noBitlocker > 0)
-            recommendations.Add(("Medium", $"Enable BitLocker on {noBitlocker} Devices",
-                "Unencrypted drives expose data if devices are lost or stolen.",
-                "1-2 days"));
+            recommendations.Add((es ? "Medio" : "Medium",
+                es ? $"Habilitar BitLocker en {noBitlocker} Dispositivos" : $"Enable BitLocker on {noBitlocker} Devices",
+                es ? "Los discos sin cifrar exponen datos si los dispositivos se pierden o roban."
+                   : "Unencrypted drives expose data if devices are lost or stolen.",
+                es ? "1-2 días" : "1-2 days"));
 
         var noTpm = runs.Count(r => r.Machine.TpmPresent != true);
         if (noTpm > 0 && noTpm < totalMachines)
-            recommendations.Add(("Medium", $"Enable TPM on {noTpm} Devices",
-                "TPM enables hardware-backed security features including BitLocker and Windows Hello.",
-                "Varies"));
+            recommendations.Add((es ? "Medio" : "Medium",
+                es ? $"Habilitar TPM en {noTpm} Dispositivos" : $"Enable TPM on {noTpm} Devices",
+                es ? "TPM permite funciones de seguridad respaldadas por hardware incluyendo BitLocker y Windows Hello."
+                   : "TPM enables hardware-backed security features including BitLocker and Windows Hello.",
+                es ? "Variable" : "Varies"));
 
-        // Compliance-based recommendations
         var worstCategories = allResults
             .GroupBy(r => r.Category)
             .Select(g => new { Category = g.Key, Pct = g.Count() > 0 ? Math.Round((double)g.Count(x => x.Status == "pass") / g.Count() * 100) : 0 })
@@ -592,19 +606,23 @@ public static class ReportHelpers
 
         foreach (var cat in worstCategories)
         {
-            recommendations.Add(("Medium", $"Harden {cat.Category} ({cat.Pct:F0}% compliance)",
-                $"This category is significantly below target. Addressing these controls will have the highest impact on overall compliance.",
-                "1-2 weeks"));
+            var catName = ReportTranslations.TranslateCategory(cat.Category, lang);
+            recommendations.Add((es ? "Medio" : "Medium",
+                es ? $"Endurecer {catName} ({cat.Pct:F0}% cumplimiento)" : $"Harden {cat.Category} ({cat.Pct:F0}% compliance)",
+                es ? "Esta categoría está significativamente por debajo del objetivo. Abordar estos controles tendrá el mayor impacto en el cumplimiento general."
+                   : "This category is significantly below target. Addressing these controls will have the highest impact on overall compliance.",
+                es ? "1-2 semanas" : "1-2 weeks"));
         }
 
-        // Render recommendations table (top 10)
         sb.AppendLine("<table class='results-table'>");
-        sb.AppendLine("<tr><th>#</th><th>Priority</th><th>Recommendation</th><th>Effort</th></tr>");
+        sb.AppendLine(es
+            ? "<tr><th>#</th><th>Prioridad</th><th>Recomendación</th><th>Esfuerzo</th></tr>"
+            : "<tr><th>#</th><th>Priority</th><th>Recommendation</th><th>Effort</th></tr>");
         var recNum = 1;
         foreach (var rec in recommendations.Take(10))
         {
-            var sevClass = rec.Priority == "Critical" ? "critical" : rec.Priority == "High" ? "high" : "medium";
-            var rowClass = rec.Priority == "Critical" ? "fail" : rec.Priority == "High" ? "warn" : "pass";
+            var sevClass = rec.Priority is "Critical" or "Crítico" ? "critical" : rec.Priority is "High" or "Alto" ? "high" : "medium";
+            var rowClass = rec.Priority is "Critical" or "Crítico" ? "fail" : rec.Priority is "High" or "Alto" ? "warn" : "pass";
             sb.AppendLine($"<tr class='{rowClass}'>");
             sb.AppendLine($"<td class='num'>{recNum++}</td>");
             sb.AppendLine($"<td><span class='severity {sevClass}'>{HtmlEncode(rec.Priority)}</span></td>");

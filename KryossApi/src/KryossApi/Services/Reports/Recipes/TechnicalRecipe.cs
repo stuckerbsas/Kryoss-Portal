@@ -4,6 +4,9 @@ namespace KryossApi.Services.Reports.Recipes;
 
 public class TechnicalRecipe : IReportRecipe
 {
+    public ReportDataNeeds DataNeeds =>
+        ReportDataNeeds.EndpointCore | ReportDataNeeds.Cloud | ReportDataNeeds.Hygiene;
+
     public string ReportTitle(ReportOptions options) =>
         options.FrameworkName != null
             ? $"{options.FrameworkName} {(options.IsSpanish ? "Informe Técnico" : "Technical Report")}"
@@ -13,10 +16,14 @@ public class TechnicalRecipe : IReportRecipe
     {
         yield return new CoverBlock("technical");
         yield return new AssetMatrixBlock();
+        yield return new CategoryBreakdownBlock();
         yield return new TopFindingsBlock(topN: 10);
+        yield return new ControlDetailBlock();
         yield return new IronSixBlock();
         if (data.HasCloudData)
             yield return new CloudPostureBlock(compact: false);
         yield return new GapAnalysisBlock();
+        yield return new EvidenceAppendixBlock();
+        yield return new MethodologyBlock(AudiencePerspective.Technical);
     }
 }

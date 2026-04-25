@@ -255,10 +255,9 @@ public static class IdentityPipeline
                 }
             }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Identity CA policies: 403 - insufficient permissions");
+            log.LogWarning("Identity CA policies: skipped — license or permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -311,10 +310,9 @@ public static class IdentityPipeline
                 ins.PasswordlessPct = ins.PasswordlessEnabled * 100.0 / ins.TotalUsers;
             }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Identity MFA status: 403 - insufficient permissions");
+            log.LogWarning("Identity MFA status: skipped — license or permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -361,10 +359,11 @@ public static class IdentityPipeline
                 }
             }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401
+            || (ex.Error?.Message?.Contains("P2", StringComparison.OrdinalIgnoreCase) == true)
+            || (ex.Error?.Message?.Contains("license", StringComparison.OrdinalIgnoreCase) == true))
         {
-            err.MarkError();
-            log.LogWarning("Identity risky users: 403 - insufficient permissions");
+            log.LogWarning("Identity risky users: skipped — Entra ID P2 license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -480,10 +479,13 @@ public static class IdentityPipeline
             catch (ODataError) { /* policy read may require RoleManagementPolicy.Read.Directory */ }
             catch { /* non-fatal */ }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401
+            || (ex.Error?.Message?.Contains("P2", StringComparison.OrdinalIgnoreCase) == true)
+            || (ex.Error?.Message?.Contains("license", StringComparison.OrdinalIgnoreCase) == true)
+            || (ex.Error?.Message?.Contains("Governance", StringComparison.OrdinalIgnoreCase) == true))
         {
-            err.MarkError();
-            log.LogWarning("Identity PIM: 403 - insufficient permissions");
+            log.LogWarning("Identity PIM: skipped — Entra ID P2 or Governance license required (HTTP {Code})", ex.ResponseStatusCode);
+            ins.PimSkippedReason = "Entra ID P2 / Governance license required";
         }
         catch (Exception ex)
         {
@@ -554,10 +556,12 @@ public static class IdentityPipeline
                 }
             }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401
+            || (ex.Error?.Message?.Contains("P2", StringComparison.OrdinalIgnoreCase) == true)
+            || (ex.Error?.Message?.Contains("license", StringComparison.OrdinalIgnoreCase) == true)
+            || (ex.Error?.Message?.Contains("Governance", StringComparison.OrdinalIgnoreCase) == true))
         {
-            err.MarkError();
-            log.LogWarning("Identity access reviews: 403 - insufficient permissions");
+            log.LogWarning("Identity access reviews: skipped — Entra ID P2 or Governance license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -629,10 +633,9 @@ public static class IdentityPipeline
                 ? (int)Math.Round(encryptedWindows * 100.0 / totalWindows)
                 : 0;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Identity devices: 403 - insufficient permissions");
+            log.LogWarning("Identity devices: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -743,10 +746,9 @@ public static class IdentityPipeline
             catch (ODataError) { /* permission not granted */ }
             catch { /* non-fatal */ }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Identity B2B: 403 - insufficient permissions");
+            log.LogWarning("Identity B2B: skipped — license or permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -902,10 +904,9 @@ public static class IdentityPipeline
             }
             catch { /* optional endpoint */ }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Identity OAuth apps: 403 - insufficient permissions");
+            log.LogWarning("Identity OAuth apps: skipped — license or permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -968,10 +969,9 @@ public static class IdentityPipeline
                 else if (risk.Contains("medium")) ins.RiskySignInsMedium++;
             }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Identity sign-in logs: 403 - insufficient permissions");
+            log.LogWarning("Identity sign-in logs: skipped — Entra ID P1/P2 license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -1226,10 +1226,9 @@ public static class IdentityPipeline
             catch (ODataError) { /* directoryRoles permission missing */ }
             catch { /* non-fatal */ }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Identity user hygiene: 403 - insufficient permissions");
+            log.LogWarning("Identity user hygiene: skipped — license or permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {

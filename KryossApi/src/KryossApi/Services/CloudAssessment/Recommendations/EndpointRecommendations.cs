@@ -47,6 +47,7 @@ public static class EndpointRecommendations
         all.AddRange(GenerateBYODAppProtection(ins));
         all.AddRange(GeneratePerPlatformAppProtection(ins));
         all.AddRange(GenerateAutopilot(ins));
+        all.AddRange(GenerateConfigProfileDrift(ins));
         all.AddRange(GenerateDeviceEncryption(ins));
         all.AddRange(GenerateEnrollmentRestrictions(ins));
 
@@ -229,13 +230,64 @@ public static class EndpointRecommendations
         const string feature = "Windows Autopilot";
         var list = new List<RecommendationResult>();
 
-        if (ins.DevicesWindows >= 5 && ins.AutopilotProfileCount == 0)
+        if (ins.DevicesWindows < 5) return list;
+
+        if (ins.AutopilotProfileCount == 0)
         {
             list.Add(RecommendationResult.Warning(IntuneSvc, feature,
-                observation: "Windows Autopilot not configured — manual provisioning burden remains.",
-                recommendation: "Configure Windows Autopilot deployment profiles to automate zero-touch device enrollment.",
+                observation: $"{ins.DevicesWindows.ToString(Inv)} Windows devices enrolled with no Autopilot deployment profiles — manual provisioning burden remains.",
+                recommendation: "Configure Windows Autopilot deployment profiles to automate zero-touch device enrollment and reduce IT overhead.",
                 linkText: "Windows Autopilot overview",
                 linkUrl: "https://learn.microsoft.com/en-us/autopilot/overview"));
+        }
+        else
+        {
+            list.Add(RecommendationResult.Success(IntuneSvc, feature,
+                observation: $"{ins.AutopilotProfileCount.ToString(Inv)} Autopilot deployment profile(s) configured for zero-touch provisioning.",
+                linkText: "Windows Autopilot overview",
+                linkUrl: "https://learn.microsoft.com/en-us/autopilot/overview"));
+        }
+
+        return list;
+    }
+
+    // ================================================================
+    //  Intune — Configuration profile drift
+    // ================================================================
+
+    private static List<RecommendationResult> GenerateConfigProfileDrift(EndpointInsights ins)
+    {
+        const string feature = "Configuration Profile Drift";
+        var list = new List<RecommendationResult>();
+
+        if (ins.ConfigProfilesAssigned == 0) return list;
+
+        int driftCount = ins.ConfigProfilesFailed + ins.ConfigProfilesConflict;
+        double driftRate = (double)driftCount / ins.ConfigProfilesAssigned;
+        string driftLabel = driftRate.ToString("P1", Inv);
+
+        if (driftRate > 0.15)
+        {
+            list.Add(RecommendationResult.ActionRequired(IntuneSvc, feature, "high",
+                observation: $"{driftCount.ToString(Inv)} devices ({driftLabel}) have failed or conflicting configuration profiles — settings drift from intended baseline.",
+                recommendation: "Review failed/conflicting profile assignments in Intune. Resolve conflicts between overlapping profiles and remediate failed deployments.",
+                linkText: "Monitor device configuration profiles",
+                linkUrl: "https://learn.microsoft.com/en-us/mem/intune/configuration/device-profile-monitor"));
+        }
+        else if (driftRate > 0.05)
+        {
+            list.Add(RecommendationResult.Warning(IntuneSvc, feature,
+                observation: $"{driftCount.ToString(Inv)} devices ({driftLabel}) have failed or conflicting configuration profiles.",
+                recommendation: "Investigate profile assignment failures and conflicts. Target <5% drift rate for consistent endpoint posture.",
+                linkText: "Monitor device configuration profiles",
+                linkUrl: "https://learn.microsoft.com/en-us/mem/intune/configuration/device-profile-monitor"));
+        }
+        else
+        {
+            list.Add(RecommendationResult.Success(IntuneSvc, feature,
+                observation: $"Configuration profile compliance is healthy — {ins.ConfigProfilesSucceeded.ToString(Inv)} of {ins.ConfigProfilesAssigned.ToString(Inv)} devices have succeeded.",
+                linkText: "Monitor device configuration profiles",
+                linkUrl: "https://learn.microsoft.com/en-us/mem/intune/configuration/device-profile-monitor"));
         }
 
         return list;

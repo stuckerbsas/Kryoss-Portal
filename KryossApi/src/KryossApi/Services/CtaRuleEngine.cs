@@ -89,7 +89,7 @@ internal static class CtaRuleEngine
         }
 
         // 4. Privileged accounts excess → Hardening
-        var privilegedCount = hygiene?.Findings.Count(f => f.Status == "Privileged") ?? 0;
+        var privilegedCount = hygiene?.Findings.Count(f => f.Status is "PrivilegedAccount" or "LocalAdmin") ?? 0;
         if (privilegedCount > 10)
         {
             found.Add(new CtaCandidate(

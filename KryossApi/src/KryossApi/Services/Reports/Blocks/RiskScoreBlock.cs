@@ -7,9 +7,14 @@ namespace KryossApi.Services.Reports.Blocks;
 /// Preventa Opener report (page 2). Shows score with aggressive risk framing,
 /// and incorporates cloud gaps when cloud data is present.
 /// </summary>
-public class RiskScoreBlock : IReportBlock
+public class RiskScoreBlock : IFlowBlock
 {
-    public string Render(ReportData data, ReportOptions options)
+    public string? SectionTitle(ReportOptions options) =>
+        options.IsSpanish ? "Vectores de Compromiso Cr\u00edtico" : "Critical Compromise Vectors";
+
+    public int EstimateHeight(ReportData data) => data.HasCloudData ? 500 : 420;
+
+    public string RenderContent(ReportData data, ReportOptions options)
     {
         var sb = new StringBuilder();
         var es = options.IsSpanish;
@@ -25,13 +30,6 @@ public class RiskScoreBlock : IReportBlock
         var avgDurationSec = data.Runs.Count > 0 && data.Runs.Any(r => r.DurationMs > 0)
             ? Math.Max(1, (int)Math.Round(data.Runs.Where(r => r.DurationMs > 0).Average(r => (r.DurationMs ?? 0) / 1000.0)))
             : 0;
-
-        sb.AppendLine("<div class='page'>");
-        ReportHelpers.AppendPageHeader(sb,
-            es ? "Vectores de Compromiso Cr\u00edtico" : "Critical Compromise Vectors",
-            brand,
-            es ? "AN\u00c1LISIS DE EXPOSICI\u00d3N" : "EXPOSURE ANALYSIS");
-        sb.AppendLine("<div class='pb'>");
 
         // Big risk score
         sb.AppendLine($"<div class='big-number-box' style='border-color:{verdictColor};background:#fef2f2'>");
@@ -79,6 +77,20 @@ public class RiskScoreBlock : IReportBlock
         sb.AppendLine("</div>");
         sb.AppendLine("</div>");
 
+        return sb.ToString();
+    }
+
+    public string Render(ReportData data, ReportOptions options)
+    {
+        var sb = new StringBuilder();
+        var es = options.IsSpanish;
+        sb.AppendLine("<div class='page'>");
+        ReportHelpers.AppendPageHeader(sb,
+            SectionTitle(options)!,
+            data.Branding,
+            es ? "ANÁLISIS DE EXPOSICIÓN" : "EXPOSURE ANALYSIS");
+        sb.AppendLine("<div class='pb'>");
+        sb.Append(RenderContent(data, options));
         sb.AppendLine("</div></div>");
         return sb.ToString();
     }

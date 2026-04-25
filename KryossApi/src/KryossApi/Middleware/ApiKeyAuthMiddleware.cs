@@ -26,6 +26,7 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
     // ── HIGH-05: In-memory rate limiter per API key (= per machine) ──
     private static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _rateLimits = new();
     private const int MaxRequestsPerMinute = 15;
+    private const int MaxRequestsPerMinutePerOrg = 200;
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
@@ -113,6 +114,29 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             }
         }
 
+        // ── Per-org aggregate rate limit ──
+        {
+            var orgRateKey = $"org:{org.Id:N}";
+            var now2 = DateTime.UtcNow;
+            var orgEntry = _rateLimits.GetOrAdd(orgRateKey, _ => (0, now2));
+            if (now2 - orgEntry.WindowStart > TimeSpan.FromMinutes(1))
+            {
+                _rateLimits[orgRateKey] = (1, now2);
+            }
+            else if (orgEntry.Count >= MaxRequestsPerMinutePerOrg)
+            {
+                logger.LogWarning("Org rate limit exceeded for org {OrgId}", org.Id);
+                var resp = httpReq.CreateResponse((System.Net.HttpStatusCode)429);
+                await resp.WriteAsJsonAsync(new { error = "org_rate_limit_exceeded" });
+                context.GetInvocationResult().Value = resp;
+                return;
+            }
+            else
+            {
+                _rateLimits[orgRateKey] = (orgEntry.Count + 1, orgEntry.WindowStart);
+            }
+        }
+
         // ── CRIT-03: HMAC signature is MANDATORY when org has an ApiSecret ──
         // Previously, omitting X-Signature would skip HMAC validation entirely,
         // allowing an attacker with just the API key to bypass signature checks.
@@ -127,20 +151,87 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
                 return;
             }
 
-            var hmacResult = await ValidateHmac(httpReq, context, org.ApiSecret, signature, timestampStr, logger);
-            if (hmacResult != HmacValidationResult.Valid)
+            // Build the signing string and read body ONCE (shared across all key attempts)
+            var signingResult = await BuildSigningString(httpReq, context, timestampStr, logger);
+            if (signingResult.Result != HmacValidationResult.Valid)
             {
-                var errorMsg = hmacResult switch
+                var errorMsg = signingResult.Result switch
                 {
                     HmacValidationResult.TimestampMissing => "Missing or invalid X-Timestamp",
                     HmacValidationResult.TimestampSkew => "HMAC timestamp skew — check agent clock sync",
-                    HmacValidationResult.SignatureMismatch => "Invalid HMAC signature",
                     _ => "HMAC validation failed"
                 };
                 var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
                 await resp.WriteAsJsonAsync(new { error = errorMsg });
                 context.GetInvocationResult().Value = resp;
                 return;
+            }
+
+            // ── Per-machine HMAC validation chain (Kerberos-inspired) ──
+            // Try machine keys before org-level fallback.
+            var machineKeyUsed = false;
+            var agentIdHeaderForMachine = httpReq.Headers.TryGetValues("X-Agent-Id", out var aidMachineVals)
+                ? aidMachineVals.FirstOrDefault() : null;
+
+            if (!string.IsNullOrEmpty(agentIdHeaderForMachine) && Guid.TryParse(agentIdHeaderForMachine, out var machineGuid))
+            {
+                var machineAuth = await db.Machines
+                    .IgnoreQueryFilters()
+                    .Where(m => m.Id == machineGuid && m.OrganizationId == org.Id && m.DeletedAt == null)
+                    .Select(m => new
+                    {
+                        m.SessionKey,
+                        m.SessionKeyExpiresAt,
+                        m.PrevSessionKey,
+                        m.PrevKeyExpiresAt,
+                        m.MachineSecret,
+                        m.AuthVersion
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (machineAuth is not null && machineAuth.AuthVersion >= 2)
+                {
+                    var keyRotationSvc = context.InstanceServices.GetRequiredService<IKeyRotationService>();
+                    var sig = signature.ToLowerInvariant();
+
+                    // 1. Try session_key (if not expired)
+                    if (!string.IsNullOrEmpty(machineAuth.SessionKey)
+                        && machineAuth.SessionKeyExpiresAt.HasValue
+                        && machineAuth.SessionKeyExpiresAt.Value > DateTime.UtcNow
+                        && keyRotationSvc.ValidateHmac(signingResult.SigningString!, sig, machineAuth.SessionKey))
+                    {
+                        machineKeyUsed = true;
+                    }
+                    // 2. Try prev_session_key (grace period)
+                    else if (!string.IsNullOrEmpty(machineAuth.PrevSessionKey)
+                        && machineAuth.PrevKeyExpiresAt.HasValue
+                        && machineAuth.PrevKeyExpiresAt.Value > DateTime.UtcNow
+                        && keyRotationSvc.ValidateHmac(signingResult.SigningString!, sig, machineAuth.PrevSessionKey))
+                    {
+                        machineKeyUsed = true;
+                    }
+                    // 3. Try machine_secret (reauth fallback — forces key rotation)
+                    else if (!string.IsNullOrEmpty(machineAuth.MachineSecret)
+                        && keyRotationSvc.ValidateHmac(signingResult.SigningString!, sig, machineAuth.MachineSecret))
+                    {
+                        machineKeyUsed = true;
+                        context.Items["ForceKeyRotation"] = true;
+                    }
+                }
+            }
+
+            // 4. Org-level fallback (backward compat for agents < v2.2)
+            if (!machineKeyUsed)
+            {
+                var isOrgValid = ValidateHmacDirect(signingResult.SigningString!, signature, org.ApiSecret);
+                if (!isOrgValid)
+                {
+                    logger.LogWarning("HMAC validation failed for org {OrgId}", org.Id);
+                    var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
+                    await resp.WriteAsJsonAsync(new { error = "Invalid HMAC signature" });
+                    context.GetInvocationResult().Value = resp;
+                    return;
+                }
             }
 
             // Anti-replay: reject a signature we've already seen within the
@@ -184,18 +275,17 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
     }
 
     /// <summary>
-    /// Validates HMAC-SHA256 signature. Reads the body stream for hashing and stores
-    /// the raw bytes in FunctionContext.Items["RequestBodyBytes"] so downstream
-    /// functions can deserialize without re-reading the (possibly consumed) stream.
+    /// Builds the canonical signing string and validates the timestamp.
+    /// Reads the body stream once and stores bytes in context for downstream use.
+    /// Returns the signing string for multi-key validation.
     /// </summary>
-    private static async Task<HmacValidationResult> ValidateHmac(HttpRequestData req, FunctionContext context,
-        string secret, string signature, string? timestampStr, ILogger logger)
+    private static async Task<SigningStringResult> BuildSigningString(HttpRequestData req, FunctionContext context,
+        string? timestampStr, ILogger logger)
     {
-        // Validate timestamp (anti-replay)
         if (!long.TryParse(timestampStr, out var timestamp))
         {
             logger.LogWarning("HMAC validation failed: missing or invalid X-Timestamp");
-            return HmacValidationResult.TimestampMissing;
+            return new(HmacValidationResult.TimestampMissing, null);
         }
 
         var requestTime = DateTimeOffset.FromUnixTimeSeconds(timestamp);
@@ -205,18 +295,14 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             logger.LogWarning("HMAC validation failed: timestamp skew {Skew:F1}min exceeds max {Max}min (agent clock: {AgentTime:O}, server: {ServerTime:O})",
                 Math.Abs(skew.TotalMinutes), MaxTimestampSkew.TotalMinutes,
                 requestTime, DateTimeOffset.UtcNow);
-            return HmacValidationResult.TimestampSkew;
+            return new(HmacValidationResult.TimestampSkew, null);
         }
 
-        // Build signing string: timestamp + method + path + agentId + bodyHash
-        // Agent C-4: AgentId is now included in the canonical signing string
-        // to prevent replay attacks that swap the X-Agent-Id header.
         var method = req.Method.ToUpperInvariant();
         var path = req.Url.PathAndQuery;
         var agentIdForHmac = req.Headers.TryGetValues("X-Agent-Id", out var agentIdHmacVals)
             ? agentIdHmacVals.FirstOrDefault() ?? "" : "";
 
-        // Read body for hashing — must use async (Kestrel disallows sync IO)
         byte[] bodyBytes;
         if (req.Body.CanSeek)
         {
@@ -231,33 +317,32 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             using var ms = new MemoryStream();
             await req.Body.CopyToAsync(ms);
             bodyBytes = ms.ToArray();
-            // Stream is consumed — store bytes so downstream functions can read them
             context.Items["RequestBodyBytes"] = bodyBytes;
         }
 
         var bodyHash = Convert.ToHexString(SHA256.HashData(bodyBytes)).ToLowerInvariant();
         var signingString = $"{timestampStr}{method}{path}{agentIdForHmac}{bodyHash}";
 
+        return new(HmacValidationResult.Valid, signingString);
+    }
+
+    /// <summary>
+    /// Validates HMAC using fixed-time comparison against a given secret.
+    /// </summary>
+    private static bool ValidateHmacDirect(string signingString, string signature, string secret)
+    {
         var keyBytes = Encoding.UTF8.GetBytes(secret);
         var expectedSig = Convert.ToHexString(
             HMACSHA256.HashData(keyBytes, Encoding.UTF8.GetBytes(signingString))
         ).ToLowerInvariant();
 
-        var isValid = CryptographicOperations.FixedTimeEquals(
+        return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expectedSig),
             Encoding.UTF8.GetBytes(signature.ToLowerInvariant())
         );
-
-        if (!isValid)
-        {
-            // Log signing string components (NOT the signatures themselves — MED-03)
-            // to help diagnose agent/server mismatches.
-            logger.LogWarning("HMAC mismatch for {Method} {Path} agentId={AgentId} body={Len}B ts={Ts}",
-                method, path, agentIdForHmac, bodyBytes.Length, timestampStr);
-        }
-
-        return isValid ? HmacValidationResult.Valid : HmacValidationResult.SignatureMismatch;
     }
+
+    private readonly record struct SigningStringResult(HmacValidationResult Result, string? SigningString);
 }
 
 internal enum HmacValidationResult

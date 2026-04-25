@@ -15,6 +15,9 @@ public class AgentConfig
     public string ApiKey { get; set; } = "";
     public string ApiSecret { get; set; } = "";
     public string PublicKeyPem { get; set; } = "";
+    public string? MachineSecret { get; set; }
+    public string? SessionKey { get; set; }
+    public DateTime? SessionKeyExpiresAt { get; set; }
     public int? AssessmentId { get; set; }
     public string? AssessmentName { get; set; }
 
@@ -28,6 +31,9 @@ public class AgentConfig
     /// Two slots minimum in production (primary + backup for rotation).
     /// </summary>
     public string[]? SpkiPins { get; set; }
+
+    public int ScanIntervalMinutes { get; set; } = 240;
+    public int ComplianceIntervalHours { get; set; } = 24;
 
     public bool IsEnrolled => AgentId != Guid.Empty && !string.IsNullOrEmpty(ApiKey);
 
@@ -49,6 +55,9 @@ public class AgentConfig
             config.ApiKey = key.GetValue("ApiKey") as string ?? "";
             config.ApiSecret = key.GetValue("ApiSecret") as string ?? "";
             config.PublicKeyPem = key.GetValue("PublicKeyPem") as string ?? "";
+            config.MachineSecret = key.GetValue("MachineSecret") as string;
+            config.SessionKey = key.GetValue("SessionKey") as string;
+            config.SessionKeyExpiresAt = key.GetValue("SessionKeyExpiresAt") is string expStr && DateTime.TryParse(expStr, out var exp) ? exp : null;
             var assessmentIdStr = key.GetValue("AssessmentId") as string;
             if (int.TryParse(assessmentIdStr, out var assessmentId))
                 config.AssessmentId = assessmentId;
@@ -57,6 +66,11 @@ public class AgentConfig
             // SpkiPins is a comma-separated list in the registry (REG_SZ).
             // Split on comma, trim, drop empties. Nothing fancy — the base64
             // alphabet doesn't include comma so this is unambiguous.
+            if (int.TryParse(key.GetValue("ScanIntervalMinutes") as string, out var scanInterval) && scanInterval > 0)
+                config.ScanIntervalMinutes = scanInterval;
+            if (int.TryParse(key.GetValue("ComplianceIntervalHours") as string, out var compInterval) && compInterval > 0)
+                config.ComplianceIntervalHours = compInterval;
+
             var pinsRaw = key.GetValue("SpkiPins") as string;
             if (!string.IsNullOrWhiteSpace(pinsRaw))
             {
@@ -89,6 +103,9 @@ public class AgentConfig
         key.SetValue("ApiKey", ApiKey);
         key.SetValue("ApiSecret", ApiSecret);
         key.SetValue("PublicKeyPem", PublicKeyPem);
+        if (MachineSecret is not null) key.SetValue("MachineSecret", MachineSecret);
+        if (SessionKey is not null) key.SetValue("SessionKey", SessionKey);
+        if (SessionKeyExpiresAt is not null) key.SetValue("SessionKeyExpiresAt", SessionKeyExpiresAt.Value.ToString("O"));
         if (AssessmentId.HasValue)
             key.SetValue("AssessmentId", AssessmentId.Value.ToString());
         if (AssessmentName is not null)

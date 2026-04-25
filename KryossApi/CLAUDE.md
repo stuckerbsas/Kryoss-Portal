@@ -31,6 +31,8 @@
 
 | Method | Path | Function | Purpose |
 |---|---|---|---|
+| GET | `/v2/version` | `VersionFunction.Run` | API version, build time, runtime (no auth required) |
+| GET | `/v2/reports/diagnose/{orgId}?type=all` | `ReportsFunction.Diagnose` | Diagnostic: runs all 15 recipes with timing + error per block |
 | GET/POST/DEL | `/v2/enrollment-codes[/id]` | `EnrollmentCodesFunction` | Manage enrollment codes |
 | GET | `/v2/machines` | `MachinesFunction.List` | Fleet list (filterable by org), includes ipAddress + domainStatus |
 | GET | `/v2/machines/{id}` | `MachinesFunction.Detail` | Single machine (all ~30 fields) + latest snapshot |
@@ -57,6 +59,11 @@
 | GET | `/v2/cloud-assessment/connection-status?organizationId=X` | `CloudAssessmentFunction.ConnectionStatus` | Graph/Azure/PBI connection state + percentage (CA-12) |
 | GET | `/v2/cloud-assessment/copilot-lens/{scanId}` | `CloudAssessmentFunction.CopilotLens` | D1-D6 Copilot Readiness scores + filtered findings from CA scan (CA-12) |
 | * | `/v2/copilot-readiness/*` | `CopilotReadinessFunction` | **DEPRECATED** — returns HTTP 410 since CA-12 (sunset 2026-05-18). Use Cloud Assessment equivalents. |
+| GET | `/v2/users` | `UsersFunction.List` | List users (franchise-scoped, admin:read) |
+| GET | `/v2/users/{id}` | `UsersFunction.Get` | User detail (admin:read) |
+| PATCH | `/v2/users/{id}` | `UsersFunction.Update` | Update role/franchise/org (admin:edit) |
+| DELETE | `/v2/users/{id}` | `UsersFunction.Delete` | Soft-delete user (admin:delete) |
+| GET | `/v2/roles` | `UsersFunction.ListRoles` | List available roles (admin:read) |
 
 ### Agent API (v1) — additional endpoints
 
@@ -68,6 +75,30 @@
 | POST | `/v1/speedtest` | `SpeedTestFunction.Upload` | Accepts agent upload for speed test measurement |
 | GET | `/v1/schedule` | `ScheduleFunction.Run` | A-13: Returns assigned scan time slot for agent (exempt from auth, HMAC-signed) |
 | POST | `/v1/collect` | `CollectFunction.Run` | Offline collection: upload on behalf of other machines |
+| POST | `/v1/heartbeat` | `HeartbeatFunction.Run` | Agent heartbeat (updates last_seen, returns pendingTasks[]) |
+| POST | `/v1/task-result` | `TaskResultFunction.Run` | Agent reports remediation task execution result |
+| GET | `/v1/agent/latest-version` | `AgentVersionFunction.LatestVersion` | Check latest agent version (from blob storage) |
+| GET | `/v1/agent/download` | `AgentVersionFunction.Download` | Download latest agent binary (from blob storage) |
+| GET | `/v1/report?type=X&tone=Y` | `ReportDownloadFunction.Run` | Agent downloads HTML report (HMAC auth) |
+
+### Portal API (v2) — External Exposure
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| POST | `/v2/external-scan` | `ExternalExposureFunction.StartScan` | Start external port scan (requires consent) |
+| GET | `/v2/external-scan` | `ExternalExposureFunction.GetLatest` | Latest completed scan with results + findings |
+| GET | `/v2/external-scan/history` | `ExternalExposureFunction.History` | Last 20 external scans |
+| PATCH | `/v2/organizations/{id}/external-scan` | `OrganizationsFunction` | Toggle external scan consent |
+
+### Portal API (v2) — Remediation
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| POST | `/v2/remediation/tasks` | `RemediationFunction.CreateTask` | Create remediation task for machine (admin:write) |
+| GET | `/v2/remediation/tasks` | `RemediationFunction.ListTasks` | List tasks by machine or org |
+| POST | `/v2/remediation/tasks/{id}/rollback` | `RemediationFunction.Rollback` | Rollback completed task |
+| GET | `/v2/remediation/history` | `RemediationFunction.History` | Remediation audit trail by org |
+| GET | `/v2/remediation/catalog` | `RemediationFunction.GetCatalog` | List available remediation actions |
 
 ### Portal API (v2) — Network diagnostics
 
@@ -107,6 +138,12 @@
 | GET | `/v2/alerts/history` | `AlertFunction.History` | Alert history (last 100) |
 | POST | `/v2/alert-rules/{ruleId}/test` | `AlertFunction.TestRule` | Test alert delivery |
 
+### Portal API (v2) — Network Topology (IA-2)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/topology?organizationId=X` | `TopologyFunction.Get` | Network topology graph (nodes + edges from LLDP/CDP) |
+
 ---
 
 ## Folder layout
@@ -118,7 +155,10 @@ src/KryossApi/
 │   ├── Agent/                       <- v1 endpoints
 │   │   ├── EnrollFunction.cs
 │   │   ├── ControlsFunction.cs
-│   │   └── ResultsFunction.cs
+│   │   ├── ResultsFunction.cs
+│   │   ├── HeartbeatFunction.cs      <- POST /v1/heartbeat (returns pendingTasks[])
+│   │   ├── TaskResultFunction.cs     <- POST /v1/task-result (agent reports remediation results)
+│   │   └── AgentVersionFunction.cs   <- GET /v1/agent/latest-version + /v1/agent/download
 │   └── Portal/                      <- v2 endpoints
 │       ├── MachinesFunction.cs
 │       ├── EnrollmentCodesFunction.cs
@@ -133,7 +173,10 @@ src/KryossApi/
 │       ├── M365Function.cs            <- M365/Entra ID: connect, scan, get, disconnect
 │       ├── NetworkSitesFunction.cs    <- IA-11: list, rebuild, update, IP history
 │       ├── InfraAssessmentFunction.cs <- IA: start scan, latest, detail, history
+│       ├── TopologyFunction.cs         <- /v2/topology (IA-2: network graph from LLDP/CDP)
 │       ├── OrganizationsFunction.cs
+│       ├── ExternalExposureFunction.cs <- POST/GET /v2/external-scan (consent-gated port scan)
+│       ├── RemediationFunction.cs     <- /v2/remediation/* (create task, list, rollback, history, catalog)
 │       ├── MeFunction.cs
 │       └── RecycleBinFunction.cs
 ├── Middleware/
@@ -171,6 +214,7 @@ src/KryossApi/
 │   │   ├── IInfraAssessmentService.cs <- Interface (start, latest, detail, history)
 │   │   ├── InfraAssessmentService.cs  <- Stub orchestrator (creates scan row)
 │   │   └── Pipelines/                 <- Future: site discovery, device audit, etc.
+│   ├── ExternalScanner.cs            <- Server-side TCP port scan of public IPs (53 ports, banner grab, findings engine)
 │   └── AuditInterceptor.cs          <- EF Core CreatedBy/UpdatedBy interceptor
 ├── Data/
 │   ├── KryossDbContext.cs           <- All DbSets
@@ -187,6 +231,8 @@ src/KryossApi/
 │       ├── Brand.cs                 <- Brand/MSP customization
 │       ├── M365Tenant.cs            <- M365Tenant + M365Finding entities
 │       ├── InfraAssessment.cs       <- 6 entities: Scan, Site, Device, Connectivity, Capacity, Finding
+│       ├── ExternalScan.cs          <- ExternalScan + ExternalScanResult + ExternalScanFinding
+│       ├── Remediation.cs           <- RemediationAction + RemediationTask + OrgAutoRemediate
 │       ├── Organization.cs
 │       └── Auth.cs
 └── Models/                          <- (empty — DTOs inline in functions)
@@ -235,7 +281,10 @@ src/KryossApi/
 | CRM/Tickets | `crm_*`, `tickets_*` (tables exist, features Phase 5+) |
 | M365/Cloud | `m365_tenants`, `m365_findings` (Phase 4: Entra ID / M365 security checks) |
 | Network Sites | `network_sites`, `machine_public_ip_history` (IA-11: auto-derived sites from public IP clustering) |
+| SNMP/Topology | `snmp_configs`, `snmp_devices`, `snmp_device_interfaces`, `snmp_device_supplies`, `snmp_device_neighbors` (IA-2), `snmp_device_profiles`, `snmp_profile_oids` |
 | Infra Assessment | `infra_assessment_scans`, `_sites`, `_devices`, `_connectivity`, `_capacity`, `_findings` (IA-0 scaffold) |
+| External Exposure | `external_scans`, `external_scan_results`, `external_scan_findings` (server-side port scan with consent) |
+| Remediation | `remediation_actions` (whitelist catalog ~50 controls), `remediation_tasks` (per-machine work items), `org_auto_remediate` (per-org auto-fix opt-in) |
 
 **Schema files to read when DB-adjacent changes are needed:**
 - `sql/004_assessment.sql` — core catalog + assessment tables

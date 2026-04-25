@@ -1,6 +1,1 @@
-namespace KryossApi.Services.Reports;
-
-public interface IReportDataLoader
-{
-    Task<ReportData> LoadAsync(Guid orgId, ReportOptions options);
-}
+// Interface moved to ReportDataLoader.cs

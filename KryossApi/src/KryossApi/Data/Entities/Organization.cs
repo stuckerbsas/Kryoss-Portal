@@ -20,6 +20,10 @@ public class Organization : IAuditable
     public DateTime? ProtocolAuditEnabledAt { get; set; }
     public string? ProtocolAuditEnabledBy { get; set; }
 
+    public bool ExternalScanConsent { get; set; }
+    public DateTime? ExternalScanConsentAt { get; set; }
+    public Guid? ExternalScanConsentBy { get; set; }
+
     // CA-11: Industry tagging for benchmark comparisons.
     public string? IndustryCode { get; set; }
     public string? IndustrySubcode { get; set; }

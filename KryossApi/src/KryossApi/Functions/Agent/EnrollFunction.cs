@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
@@ -8,6 +9,10 @@ namespace KryossApi.Functions.Agent;
 
 public class EnrollFunction
 {
+    private static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _rateLimitCache = new();
+    private const int RateLimitMax = 5;
+    private static readonly TimeSpan RateLimitWindow = TimeSpan.FromMinutes(15);
+
     private readonly IEnrollmentService _enrollment;
     private readonly IActlogService _actlog;
     private readonly ILogger<EnrollFunction> _logger;
@@ -23,6 +28,29 @@ public class EnrollFunction
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/enroll")] HttpRequestData req)
     {
+        // IP-based rate limiting: 5 attempts per 15 minutes
+        var clientIp = req.Headers.TryGetValues("X-Forwarded-For", out var fwdValues)
+            ? (fwdValues.FirstOrDefault()?.Split(',')[0].Trim() ?? "unknown")
+            : "unknown";
+
+        var now = DateTime.UtcNow;
+        var entry = _rateLimitCache.AddOrUpdate(
+            clientIp,
+            _ => (1, now),
+            (_, existing) =>
+            {
+                if (now - existing.WindowStart > RateLimitWindow)
+                    return (1, now);
+                return (existing.Count + 1, existing.WindowStart);
+            });
+
+        if (entry.Count > RateLimitMax)
+        {
+            var tooMany = req.CreateResponse(HttpStatusCode.TooManyRequests);
+            await tooMany.WriteAsJsonAsync(new { error = "Too many enrollment attempts. Please try again later." });
+            return tooMany;
+        }
+
         var body = await req.ReadFromJsonAsync<EnrollRequest>();
         if (body is null || string.IsNullOrWhiteSpace(body.Code) || string.IsNullOrWhiteSpace(body.Hostname))
         {
@@ -40,7 +68,7 @@ public class EnrollFunction
             hwid = hwid[..128]; // defensive cap matches column width
 
         var result = await _enrollment.RedeemCodeAsync(
-            body.Code, body.Hostname, body.Os, body.OsVersion, body.OsBuild, hwid);
+            body.Code, body.Hostname, body.Os, body.OsVersion, body.OsBuild, hwid, body.ProductType);
         if (result is null)
         {
             await _actlog.LogAsync("SEC", "agent", "enrollment.failed",
@@ -67,7 +95,13 @@ public class EnrollFunction
             publicKey = result.PublicKeyPem,
             assessmentId = result.AssessmentId,
             assessmentName = result.AssessmentName,
-            protocolAuditEnabled = result.ProtocolAuditEnabled
+            protocolAuditEnabled = result.ProtocolAuditEnabled,
+            isTrial = result.IsTrial,
+            trialExpiresAt = result.TrialExpiresAt,
+            organizationId = result.OrganizationId,
+            machineSecret = result.MachineSecret,
+            sessionKey = result.SessionKey,
+            sessionKeyExpiresAt = result.SessionKeyExpiresAt
         });
         return response;
     }
@@ -80,4 +114,5 @@ public class EnrollRequest
     public string? Os { get; set; }
     public string? OsVersion { get; set; }
     public string? OsBuild { get; set; }
+    public int? ProductType { get; set; }
 }

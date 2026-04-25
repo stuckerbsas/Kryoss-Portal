@@ -1,6 +1,7 @@
 using System.DirectoryServices;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace KryossAgent.Services;
@@ -46,7 +47,7 @@ public static class TargetDiscovery
     /// results from all specified discovery methods. If no discovery flags are
     /// provided, tries AD first then falls back to ARP.
     /// </summary>
-    public static async Task<List<ScanTarget>> DiscoverAsync(string[] args)
+    public static async Task<List<ScanTarget>> DiscoverAsync(string[] args, bool skipAd = false)
     {
         var targets = new List<ScanTarget>();
         bool anyDiscoveryFlag = false;
@@ -81,7 +82,7 @@ public static class TargetDiscovery
         }
 
         // --discover-ad [OU]
-        if (HasFlag(args, "--discover-ad"))
+        if (!skipAd && HasFlag(args, "--discover-ad"))
         {
             anyDiscoveryFlag = true;
             var ouPath = GetArg(args, "--discover-ad");
@@ -109,19 +110,29 @@ public static class TargetDiscovery
             Console.WriteLine($"Subnet discovery: {subnetTargets.Count} hosts found");
         }
 
-        // Default: try AD first, then ARP fallback
+        // Default: try AD first (unless skipped), then ARP fallback
         if (!anyDiscoveryFlag && targets.Count == 0)
         {
-            Console.WriteLine("No discovery flags specified, trying AD...");
-            var adTargets = DiscoverAd(null);
-            if (adTargets.Count > 0)
+            if (!skipAd)
             {
-                targets.AddRange(adTargets);
-                Console.WriteLine($"AD discovery: {adTargets.Count} machines found");
+                Console.WriteLine("No discovery flags specified, trying AD...");
+                var adTargets = DiscoverAd(null);
+                if (adTargets.Count > 0)
+                {
+                    targets.AddRange(adTargets);
+                    Console.WriteLine($"AD discovery: {adTargets.Count} machines found");
+                }
+                else
+                {
+                    Console.WriteLine("AD not available, falling back to ARP...");
+                    var arpTargets = await DiscoverArpAsync();
+                    targets.AddRange(arpTargets);
+                    Console.WriteLine($"ARP discovery: {arpTargets.Count} hosts found");
+                }
             }
             else
             {
-                Console.WriteLine("AD not available, falling back to ARP...");
+                Console.WriteLine("AD skipped, using ARP discovery...");
                 var arpTargets = await DiscoverArpAsync();
                 targets.AddRange(arpTargets);
                 Console.WriteLine($"ARP discovery: {arpTargets.Count} hosts found");
@@ -157,7 +168,7 @@ public static class TargetDiscovery
     /// Dormant (&gt;60 days) are reported but not scanned.
     /// Also audits user accounts for hygiene report.
     /// </summary>
-    private static List<ScanTarget> DiscoverAd(string? ouPath)
+    internal static List<ScanTarget> DiscoverAd(string? ouPath)
     {
         var active = new List<ScanTarget>();
         var staleMachines = new List<AdHygieneItem>();
@@ -261,30 +272,8 @@ public static class TargetDiscovery
 
         try
         {
-            // Quick ARP grab without reverse DNS (fast)
-            using var proc = new System.Diagnostics.Process();
-            proc.StartInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "arp",
-                Arguments = "-a",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            proc.Start();
-            var output = await proc.StandardOutput.ReadToEndAsync();
-            proc.WaitForExit(5000);
+            var arpIps = new HashSet<string>(ReadNativeArpTable().Select(e => e.Ip));
 
-            // Collect all IPs from ARP
-            var arpIps = new HashSet<string>();
-            foreach (var line in output.Split('\n'))
-            {
-                var parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 3 && System.Net.IPAddress.TryParse(parts[0], out _))
-                    arpIps.Add(parts[0]);
-            }
-
-            // Try to resolve each stale machine's name to an IP and check ARP
             foreach (var stale in LastHygieneReport.StaleMachines)
             {
                 try
@@ -447,9 +436,9 @@ public static class TargetDiscovery
 
         try
         {
-            // ── 1. Privileged group members (Domain Admins, Enterprise Admins, Schema Admins, Administrators) ──
-            string[] privilegedGroups = ["Domain Admins", "Enterprise Admins", "Schema Admins", "Administrators"];
-            foreach (var groupName in privilegedGroups)
+            // ── 1a. AD Privileged group members (Domain Admins, Enterprise Admins, Schema Admins) ──
+            string[] adPrivilegedGroups = ["Domain Admins", "Enterprise Admins", "Schema Admins"];
+            foreach (var groupName in adPrivilegedGroups)
             {
                 try
                 {
@@ -465,7 +454,6 @@ public static class TargetDiscovery
                         foreach (var memberDn in groupResult.Properties["member"])
                         {
                             var memberName = memberDn?.ToString()?.Split(',')[0]?.Replace("CN=", "") ?? "Unknown";
-                            // Skip built-in Administrator
                             if (memberName.Equals("Administrator", StringComparison.OrdinalIgnoreCase)) continue;
                             privileged.Add(new AdHygieneItem(memberName, "Security", "PrivilegedAccount", 0,
                                 $"Member of {groupName}"));
@@ -474,6 +462,31 @@ public static class TargetDiscovery
                 }
                 catch { /* group might not exist */ }
             }
+
+            // ── 1b. Builtin Administrators group (local admins — separate category) ──
+            try
+            {
+                using var adminSearcher = new DirectorySearcher(root)
+                {
+                    Filter = "(&(objectClass=group)(cn=Administrators))",
+                    PageSize = 10,
+                };
+                adminSearcher.PropertiesToLoad.Add("member");
+                var adminResult = adminSearcher.FindOne();
+                if (adminResult?.Properties.Contains("member") == true)
+                {
+                    var adPrivNames = new HashSet<string>(privileged.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+                    foreach (var memberDn in adminResult.Properties["member"])
+                    {
+                        var memberName = memberDn?.ToString()?.Split(',')[0]?.Replace("CN=", "") ?? "Unknown";
+                        if (memberName.Equals("Administrator", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (adPrivNames.Contains(memberName)) continue;
+                        privileged.Add(new AdHygieneItem(memberName, "Security", "LocalAdmin", 0,
+                            "Member of Administrators (builtin)"));
+                    }
+                }
+            }
+            catch { /* group might not exist */ }
 
             // ── 2. Kerberoastable accounts (users with SPN set) ──
             using var spnSearcher = new DirectorySearcher(root)
@@ -592,7 +605,9 @@ public static class TargetDiscovery
             }
             catch { /* domain info not accessible */ }
 
-            Console.WriteLine($"  AD security: {privileged.Count} privileged, {kerberoastable.Count} kerberoastable, {unconstrained.Count} unconstrained deleg, {noLaps.Count} no-LAPS");
+            var adPriv = privileged.Count(p => p.Status == "PrivilegedAccount");
+            var localAdm = privileged.Count(p => p.Status == "LocalAdmin");
+            Console.WriteLine($"  AD security: {adPriv} AD privileged, {localAdm} local admins, {kerberoastable.Count} kerberoastable, {unconstrained.Count} unconstrained deleg, {noLaps.Count} no-LAPS");
         }
         catch (Exception ex)
         {
@@ -606,41 +621,82 @@ public static class TargetDiscovery
     /// Parse the ARP table and attempt reverse DNS on each entry.
     /// Skips broadcast addresses, gateways, and broadcast MACs.
     /// </summary>
+    // ── Native ARP table via iphlpapi.dll (no Process.Start) ──
+
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    private static extern int GetIpNetTable(IntPtr pIpNetTable, ref int pdwSize, bool bOrder);
+
+    // Read ARP table using direct buffer reads (no Marshal.PtrToStructure —
+    // that uses reflection internally which breaks on trimmed binaries).
+    // MIB_IPNETROW layout: dwIndex(4) + dwPhysAddrLen(4) + bPhysAddr(8) + dwAddr(4) + dwType(4) = 24 bytes
+    private const int ARP_ROW_SIZE = 24;
+
+    public static List<(string Ip, string Mac)> ReadNativeArpTable()
+    {
+        var entries = new List<(string, string)>();
+        try
+        {
+            int size = 0;
+            GetIpNetTable(IntPtr.Zero, ref size, false);
+            if (size == 0) return entries;
+
+            var buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                if (GetIpNetTable(buffer, ref size, false) != 0) return entries;
+
+                int count = Marshal.ReadInt32(buffer);
+                int offset = 4; // skip dwNumEntries
+
+                for (int i = 0; i < count && offset + ARP_ROW_SIZE <= size; i++)
+                {
+                    var physAddrLen = Marshal.ReadInt32(buffer, offset + 4);
+                    var dwAddr = (uint)Marshal.ReadInt32(buffer, offset + 16);
+                    var dwType = Marshal.ReadInt32(buffer, offset + 20);
+
+                    if (dwType is 3 or 4)
+                    {
+                        var ipBytes = BitConverter.GetBytes(dwAddr);
+                        var ip = new IPAddress(ipBytes).ToString();
+
+                        var macLen = Math.Min(physAddrLen, 6);
+                        var macBytes = new byte[macLen];
+                        if (macLen > 0) Marshal.Copy(buffer + offset + 8, macBytes, 0, macLen);
+                        var mac = string.Join("-", macBytes.Select(b => b.ToString("x2")));
+
+                        entries.Add((ip, mac));
+                    }
+
+                    offset += ARP_ROW_SIZE;
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[WARN] ARP table read failed: {ex.Message}");
+        }
+
+        return entries;
+    }
+
     private static async Task<List<ScanTarget>> DiscoverArpAsync()
     {
         var results = new List<ScanTarget>();
         try
         {
-            using var proc = new System.Diagnostics.Process();
-            proc.StartInfo = new System.Diagnostics.ProcessStartInfo
+            var arpEntries = ReadNativeArpTable();
+
+            foreach (var (ip, mac) in arpEntries)
             {
-                FileName = "arp",
-                Arguments = "-a",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            proc.Start();
-            var output = await proc.StandardOutput.ReadToEndAsync();
-            await proc.WaitForExitAsync();
+                if (mac == "ff-ff-ff-ff-ff-ff") continue;
 
-            // Parse lines like: "  192.168.1.10    00-aa-bb-cc-dd-ee     dynamic"
-            var lineRegex = new Regex(@"^\s+(\d+\.\d+\.\d+\.\d+)\s+([\w-]+)\s+", RegexOptions.Multiline);
-            foreach (Match m in lineRegex.Matches(output))
-            {
-                var ip = m.Groups[1].Value;
-                var mac = m.Groups[2].Value.ToLowerInvariant();
-
-                // Skip broadcast MAC
-                if (mac == "ff-ff-ff-ff-ff-ff")
-                    continue;
-
-                // Skip broadcast (.255) and typical gateway (.1)
                 var lastOctet = ip.Split('.').LastOrDefault();
-                if (lastOctet is "255" or "1")
-                    continue;
+                if (lastOctet is "255" or "1") continue;
 
-                // Reverse DNS best-effort
                 string hostname = ip;
                 try
                 {
@@ -648,10 +704,7 @@ public static class TargetDiscovery
                     if (!string.IsNullOrWhiteSpace(entry.HostName))
                         hostname = entry.HostName;
                 }
-                catch
-                {
-                    // Reverse DNS failed — use IP as hostname
-                }
+                catch { }
 
                 results.Add(new ScanTarget(hostname, ip, "arp"));
             }

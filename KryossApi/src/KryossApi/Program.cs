@@ -23,6 +23,7 @@ builder.ConfigureFunctionsWebApplication();
 // exception that escapes below is converted to a generic 500 with a trace
 // id — no stack traces or framework types on the wire.
 builder.UseMiddleware<ErrorSanitizationMiddleware>();
+builder.UseMiddleware<SecurityHeadersMiddleware>(); // HSTS, X-Frame-Options, nosniff, etc.
 builder.UseMiddleware<ApiKeyAuthMiddleware>();   // Agent auth: API Key + HMAC
 builder.UseMiddleware<BearerAuthMiddleware>();   // Portal auth: Entra ID / B2C
 builder.UseMiddleware<RbacMiddleware>();         // Permission check
@@ -50,6 +51,15 @@ builder.Services.AddDbContext<KryossDbContext>((sp, options) =>
     .UseSnakeCaseNamingConvention();
     options.AddInterceptors(sp.GetRequiredService<AuditInterceptor>());
 });
+builder.Services.AddDbContextFactory<KryossDbContext>((sp, options) =>
+{
+    options.UseSqlServer(sqlConfig.ConnectionString, sql =>
+    {
+        sql.CommandTimeout(30);
+        sql.EnableRetryOnFailure(3);
+    })
+    .UseSnakeCaseNamingConvention();
+}, ServiceLifetime.Scoped);
 
 // ── Services ──
 // NonceCache is a SINGLETON — the whole point is in-process state that
@@ -66,6 +76,7 @@ builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IReportDataLoader, ReportDataLoader>();
 builder.Services.AddScoped<IReportComposer, ReportComposer>();
 builder.Services.AddScoped<ExternalScanService>();
+builder.Services.AddScoped<IExternalScanner, ExternalScanner>();
 builder.Services.AddScoped<IM365ScannerService, M365ScannerService>();
 builder.Services.AddScoped<ICopilotReadinessService, CopilotReadinessService>();
 builder.Services.AddScoped<ICloudAssessmentService, CloudAssessmentService>();
@@ -81,6 +92,7 @@ builder.Services.AddScoped<IPublicIpTracker, PublicIpTracker>();
 builder.Services.AddScoped<ISiteClusterService, SiteClusterService>();
 builder.Services.AddScoped<IScanScheduleService, ScanScheduleService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
+builder.Services.AddSingleton<IKeyRotationService, KeyRotationService>();
 builder.Services.AddHttpClient();
 
 // ── M365 multi-tenant admin consent config ──

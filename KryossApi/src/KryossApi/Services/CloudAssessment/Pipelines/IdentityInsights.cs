@@ -165,6 +165,8 @@ public class IdentityInsights
     public int PimAuditEntriesLast30d { get; set; }
     public int PimRolesWithoutMfaRequirement { get; set; }
     public int PimRolesWithoutJustificationRequirement { get; set; }
+    public string? PimSkippedReason { get; set; }
+
 
     // --- Access review freshness ---
     public int AccessReviewsCompletedLast90d { get; set; }

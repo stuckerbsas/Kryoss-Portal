@@ -58,9 +58,11 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        // OAuth callbacks are browser redirects from Microsoft — no Bearer token
+        // Public endpoints and OAuth callbacks — no Bearer token required
         if (path.Contains("/consent-callback", StringComparison.OrdinalIgnoreCase) ||
-            path.Contains("/connect-callback", StringComparison.OrdinalIgnoreCase))
+            path.Contains("/connect-callback", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith("/v2/version", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("/v2/reports/diagnose/", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
@@ -70,32 +72,43 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
         var principalHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL", out var principalValues)
             ? principalValues.FirstOrDefault() : null;
 
-        if (string.IsNullOrEmpty(principalHeader))
+        EasyAuthPrincipal? principal = null;
+
+        if (!string.IsNullOrEmpty(principalHeader))
+        {
+            // HIGH-02: Additional header check
+            var principalIdHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL-ID", out var pidValues)
+                ? pidValues.FirstOrDefault() : null;
+            if (string.IsNullOrEmpty(principalIdHeader))
+            {
+                var logger2 = context.InstanceServices.GetRequiredService<ILogger<BearerAuthMiddleware>>();
+                logger2.LogWarning("X-MS-CLIENT-PRINCIPAL present but X-MS-CLIENT-PRINCIPAL-ID missing — possible forgery attempt");
+            }
+
+            var principalJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(principalHeader));
+            principal = JsonSerializer.Deserialize<EasyAuthPrincipal>(principalJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        else
+        {
+            // Fallback: decode JWT from Authorization header (for local dev / direct API calls)
+            var authHeader = httpReq.Headers.TryGetValues("Authorization", out var authValues)
+                ? authValues.FirstOrDefault() : null;
+
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                var jwt = authHeader["Bearer ".Length..];
+                principal = DecodeJwtToPrincipal(jwt);
+            }
+        }
+
+        if (principal is null)
         {
             var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
             await resp.WriteAsJsonAsync(new { error = "Authentication required" });
             context.GetInvocationResult().Value = resp;
             return;
         }
-
-        // HIGH-02: Additional header check. When Easy Auth processes a valid token,
-        // it sets BOTH X-MS-CLIENT-PRINCIPAL and X-MS-CLIENT-PRINCIPAL-ID.
-        // Checking for the secondary header raises the bar against forgery
-        // (an attacker would need to know which OID to put in both headers).
-        var principalIdHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL-ID", out var pidValues)
-            ? pidValues.FirstOrDefault() : null;
-        if (string.IsNullOrEmpty(principalIdHeader))
-        {
-            var logger2 = context.InstanceServices.GetRequiredService<ILogger<BearerAuthMiddleware>>();
-            logger2.LogWarning("X-MS-CLIENT-PRINCIPAL present but X-MS-CLIENT-PRINCIPAL-ID missing — possible forgery attempt");
-            // Allow for now (SWA may not always set this), but log for monitoring.
-            // TODO: Make this a hard reject once SWA header behavior is confirmed.
-        }
-
-        // Decode base64 principal (Azure EasyAuth / SWA format)
-        var principalJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(principalHeader));
-        var principal = JsonSerializer.Deserialize<EasyAuthPrincipal>(principalJson,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
         if (principal is null)
         {
@@ -283,6 +296,60 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
         }
 
         await next(context);
+    }
+
+    private static EasyAuthPrincipal? DecodeJwtToPrincipal(string jwt)
+    {
+        var parts = jwt.Split('.');
+        if (parts.Length < 2) return null;
+
+        try
+        {
+            var payload = parts[1];
+            // Fix base64url padding
+            payload = payload.Replace('-', '+').Replace('_', '/');
+            switch (payload.Length % 4)
+            {
+                case 2: payload += "=="; break;
+                case 3: payload += "="; break;
+            }
+
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            var claims = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+            if (claims is null) return null;
+
+            var claimList = new List<EasyAuthClaim>();
+            foreach (var (key, value) in claims)
+            {
+                if (value.ValueKind == JsonValueKind.String)
+                    claimList.Add(new EasyAuthClaim { Typ = key, Val = value.GetString()! });
+                else if (value.ValueKind == JsonValueKind.Number)
+                    claimList.Add(new EasyAuthClaim { Typ = key, Val = value.GetRawText() });
+            }
+
+            // Map standard JWT claims to the types EasyAuth uses
+            var oid = claims.TryGetValue("oid", out var oidEl) ? oidEl.GetString() : null;
+            if (oid != null)
+                claimList.Add(new EasyAuthClaim { Typ = "http://schemas.microsoft.com/identity/claims/objectidentifier", Val = oid });
+
+            var tid = claims.TryGetValue("tid", out var tidEl) ? tidEl.GetString() : null;
+            if (tid != null)
+                claimList.Add(new EasyAuthClaim { Typ = "http://schemas.microsoft.com/identity/claims/tenantid", Val = tid });
+
+            var email = claims.TryGetValue("preferred_username", out var emailEl) ? emailEl.GetString()
+                : claims.TryGetValue("email", out emailEl) ? emailEl.GetString() : null;
+
+            return new EasyAuthPrincipal
+            {
+                AuthTyp = "Bearer",
+                Claims = claimList,
+                UserDetails = email
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 

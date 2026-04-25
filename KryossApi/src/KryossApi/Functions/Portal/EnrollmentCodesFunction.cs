@@ -58,7 +58,9 @@ public class EnrollmentCodesFunction
             e.ExpiresAt,
             e.CreatedAt,
             isExpired = e.ExpiresAt < DateTime.UtcNow,
-            isUsed = e.UsedBy != null
+            isUsed = e.UsedBy != null,
+            e.IsTrial,
+            e.TrialDays
         }).ToListAsync();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -83,7 +85,9 @@ public class EnrollmentCodesFunction
             body.AssessmentId,
             body.Label,
             body.ExpiryDays ?? 7,
-            body.MaxUses
+            body.MaxUses,
+            body.IsTrial,
+            body.TrialDays
         );
 
         await _actlog.LogAsync("INFO", "assessment", "enrollment_code.created",
@@ -133,4 +137,6 @@ public class CreateEnrollmentCodeRequest
     public string? Label { get; set; }
     public int? ExpiryDays { get; set; }
     public int? MaxUses { get; set; }   // NULL = single-use, N = can enroll N machines
+    public bool IsTrial { get; set; }
+    public int? TrialDays { get; set; }  // NULL = 30 days default
 }

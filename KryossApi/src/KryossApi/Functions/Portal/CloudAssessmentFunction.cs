@@ -16,19 +16,22 @@ public class CloudAssessmentFunction
     private readonly ICloudAssessmentService _service;
     private readonly IFindingStatusService _statusService;
     private readonly IConsentOrchestrator _consent;
+    private readonly ICloudAssessmentReportService _reports;
 
     public CloudAssessmentFunction(
         KryossDbContext db,
         ICurrentUserService user,
         ICloudAssessmentService service,
         IFindingStatusService statusService,
-        IConsentOrchestrator consent)
+        IConsentOrchestrator consent,
+        ICloudAssessmentReportService reports)
     {
         _db = db;
         _user = user;
         _service = service;
         _statusService = statusService;
         _consent = consent;
+        _reports = reports;
     }
 
     /// <summary>
@@ -504,6 +507,46 @@ public class CloudAssessmentFunction
     }
 
     /// <summary>
+    /// Recompute compliance scores for an existing scan (e.g. after adding a new framework).
+    /// POST /v2/cloud-assessment/compliance/recompute?scanId={guid}
+    /// </summary>
+    [Function("CloudAssessment_ComplianceRecompute")]
+    [RequirePermission("assessment:create")]
+    public async Task<HttpResponseData> RecomputeComplianceScores(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/cloud-assessment/compliance/recompute")] HttpRequestData req)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        if (!Guid.TryParse(query["scanId"], out var scanId))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "scanId query parameter required" });
+            return bad;
+        }
+
+        var scan = await _db.CloudAssessmentScans.FindAsync(scanId);
+        if (scan is null)
+        {
+            var nf = req.CreateResponse(HttpStatusCode.NotFound);
+            await nf.WriteAsJsonAsync(new { error = "scan not found" });
+            return nf;
+        }
+
+        var accessDenied = await RequireOrgAccess(req, scan.OrganizationId);
+        if (accessDenied is not null) return accessDenied;
+
+        var scores = await ComplianceScoreEngine.RecomputeAsync(_db, scanId);
+
+        var resp = req.CreateResponse(HttpStatusCode.OK);
+        await resp.WriteAsJsonAsync(new
+        {
+            scanId,
+            frameworks = scores.Count,
+            scores = scores.Select(s => new { s.FrameworkId, s.ScorePct, s.Grade, s.TotalControls, s.PassingControls, s.FailingControls })
+        });
+        return resp;
+    }
+
+    /// <summary>
     /// Drill down into a specific framework's controls and their mapped findings.
     /// GET /v2/cloud-assessment/compliance/framework/{code}?scanId={guid}
     /// </summary>
@@ -948,6 +991,52 @@ public class CloudAssessmentFunction
             }
         });
         return response;
+    }
+
+    [Function("CloudAssessment_Report")]
+    [RequirePermission("assessment:read")]
+    public async Task<HttpResponseData> Report(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/cloud-assessment/reports/{orgId}")] HttpRequestData req,
+        string orgId)
+    {
+        if (!Guid.TryParse(orgId, out var parsedOrgId))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Invalid orgId" });
+            return bad;
+        }
+
+        var accessDenied = await RequireOrgAccess(req, parsedOrgId);
+        if (accessDenied is not null) return accessDenied;
+
+        var type = req.Url.Query?.Contains("type=") == true
+            ? System.Web.HttpUtility.ParseQueryString(req.Url.Query).Get("type") ?? "c-level"
+            : "c-level";
+        var lang = req.Url.Query?.Contains("lang=") == true
+            ? System.Web.HttpUtility.ParseQueryString(req.Url.Query).Get("lang") ?? "en"
+            : "en";
+
+        if (type is not ("c-level" or "franchise" or "technical" or "presales"))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "type must be c-level, franchise, technical, or presales" });
+            return bad;
+        }
+
+        try
+        {
+            var html = await _reports.GenerateAsync(parsedOrgId, type, lang);
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            response.Headers.Add("Content-Type", "text/html; charset=utf-8");
+            await response.WriteStringAsync(html);
+            return response;
+        }
+        catch (InvalidOperationException ex)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = ex.Message });
+            return notFound;
+        }
     }
 }
 

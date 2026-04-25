@@ -66,9 +66,14 @@ public class MachinesFunction
                 m.DiskType,
                 m.IpAddress,
                 m.DomainStatus,
+                m.AgentVersion,
                 m.IsActive,
+                m.IsTrial,
+                m.TrialExpiresAt,
                 m.LastSeenAt,
                 m.FirstSeenAt,
+                m.LastHeartbeatAt,
+                m.AgentMode,
                 // Latest assessment from runs
                 latestScore = _db.AssessmentRuns
                     .Where(r => r.MachineId == m.Id)
@@ -120,10 +125,14 @@ public class MachinesFunction
                 // Identity
                 m.DomainStatus,
                 m.DomainName,
+                // Agent
+                m.AgentVersion,
                 // Lifecycle
                 m.SystemAgeDays,
                 m.LastBootAt,
                 m.IsActive,
+                m.IsTrial,
+                m.TrialExpiresAt,
                 m.LastSeenAt,
                 m.FirstSeenAt,
                 // Assessment history (last 10 runs)
@@ -180,6 +189,22 @@ public class MachinesFunction
             })
             .ToListAsync();
 
+        // Load privileged/local admin accounts from latest hygiene scan
+        var latestScanId = await _db.AdHygieneScans
+            .Where(s => s.OrganizationId == machine.OrganizationId)
+            .OrderByDescending(s => s.ScannedAt)
+            .Select(s => (Guid?)s.Id)
+            .FirstOrDefaultAsync();
+
+        var adminAccounts = latestScanId.HasValue
+            ? await _db.AdHygieneFindings
+                .Where(f => f.ScanId == latestScanId.Value && (f.Status == "PrivilegedAccount" || f.Status == "LocalAdmin"))
+                .OrderBy(f => f.Status)
+                .ThenBy(f => f.Name)
+                .Select(f => new { f.Name, f.Status, f.Detail })
+                .ToListAsync()
+            : [];
+
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new
         {
@@ -213,7 +238,8 @@ public class MachinesFunction
             machine.LastSeenAt,
             machine.FirstSeenAt,
             machine.assessmentHistory,
-            disks
+            disks,
+            adminAccounts
         });
         return response;
     }

@@ -7,6 +7,28 @@
 
 ---
 
+## Version tracking
+
+| Component | Current | Where | Endpoint |
+|-----------|---------|-------|----------|
+| **API** | 1.20.1 | `KryossApi.csproj` `<Version>` | `GET /v2/version` (no auth) |
+| **Portal** | 1.10.0 | `KryossPortal/package.json` `"version"` | Sidebar footer "Powered by Kryoss vX.Y.Z" |
+| **Agent** | 2.2.1 | `KryossAgent.csproj` `<Version>` | Registry `HKLM\SOFTWARE\Kryoss\Agent\Version` |
+
+**MANDATORY — VERSION SYNC PROTOCOL:**
+
+1. Every code change that modifies behavior (new endpoint, bug fix, new block, schema change) MUST bump the version of the affected component(s). Same version = no way to tell if deploy landed.
+2. Bump BEFORE build/publish, not after.
+3. **This version table MUST stay in sync with the actual values in csproj/package.json.** If you bump a version in source, update this table in the same edit session. Stale versions here waste future sessions re-discovering the real state.
+4. When multiple components change in one session, bump ALL affected components.
+5. The `/v2/version` endpoint returns the API version at runtime — use it to verify deploys landed.
+
+- **Patch** (1.8.0 → 1.8.1): bug fix, minor tweak
+- **Minor** (1.8.0 → 1.9.0): new feature, new endpoint, new report type
+- **Major** (1.8.0 → 2.0.0): breaking API change, schema migration required
+
+---
+
 ## What Kryoss is
 
 A security assessment SaaS for MSPs (primary user: TeamLogic IT franchise, built by Geminis Computer). The platform has three pillars:
@@ -256,6 +278,11 @@ full list. Key ones:
 | 2026-04-20 | A-13: Server-side scan orchestrator (Phase 1) | Server assigns scan time slots per machine at enrollment. Agent v1.6.0: hourly check-in via `GET /v1/schedule`, replaces random 0-30min jitter. Org default window 2-6AM, uniform slot distribution (min 10s spacing, gap-filling). `ScanScheduleService` (slot assignment + schedule compute), `ScheduleFunction` (exempt from auth like /enroll). Agent uses `lastrun.txt` (not registry — gets wiped) to prevent double-run. NinjaOne deploy script v3.0: hourly trigger + 2h execution limit. Phase 2 adds portal UI for window config + redistribute. **Deploy requires**: `sql/049_scan_orchestrator.sql` + `sql/049b_backfill_scan_slots.sql`. |
 | 2026-04-21 | CA-15: Drift Alerts + Notifications | `AlertService.EvaluateAndFireAsync` hooks post-scan in `CloudAssessmentService`. 4 rule types: `score_drop` (threshold), `new_critical`, `new_high_regulated`, `framework_below`. Per-franchise config via `cloud_assessment_alert_rules`. Delivery: webhook (POST JSON) + email (SendGrid placeholder). `AlertFunction.cs`: CRUD rules + history + test (6 endpoints). Migration `050_cloud_assessment_alerts.sql` (2 tables). **Deploy requires**: `sql/050_cloud_assessment_alerts.sql`. |
 | 2026-04-21 | RP-06: Business Proposal report | Already implemented — `ProposalRecipe.cs` + `ServiceCatalogBlock.cs` (auto-pricing from `service_catalog` + `franchise_service_rates`). Portal dropdown added (`proposal` + `framework` types). |
+| 2026-04-24 | SNMP dedup + enrichment | MAC-based device dedup (replaces IP-only unique constraint), HOST-RESOURCES-MIB (CPU/memory/disk/processes), ARP noise filter, machine correlation, stale marking, batched upload (50/batch). API 1.16.2 + Agent 1.7.4. Migrations: `056_snmp_host_resources.sql`, `057_snmp_dedup_enrich.sql`, `seed_054b_snmp_profiles_expanded.sql` (12 vendor profiles). |
+| 2026-04-25 | Agent v2.0.0: Windows Service mode | `--install`/`--uninstall`/`--service` flags. `ServiceWorker` (BackgroundService) runs compliance scans every 24h, SNMP every 4h, heartbeat every 15min. P/Invoke service install (zero Process.Start). `ScanCycle.cs` extracts reusable scan logic. `POST /v1/heartbeat` endpoint. SQL: `061_agent_service_mode.sql`. Deploy: `Install-KryossService.ps1` + `Uninstall-KryossService.ps1`. |
+| 2026-04-24 | IA-2: Network Topology Discovery (Phase 1) | `snmp_device_neighbors` table persists LLDP/CDP neighbor data (was discarded, only counts stored). `TopologyFunction.cs` returns graph (nodes + edges + phantom devices). Auto-resolve: matches remoteSysName/remoteChassisId/remoteIp to known devices. Portal: D3.js force-directed graph in Network → Topology sub-tab. Migration: `058_network_topology.sql`. API 1.17.0, Portal 1.10.0. |
+| 2026-04-25 | Agent v2.1.0: Full Network Pipeline + Remediation | 9 blocks: (1) Windows Service, (2) Trial + auto-report, (3) Port banner grab, (4) Reverse DNS + ping enrichment, (5) WMI probe, (6) Passive discovery (NetBIOS/mDNS/SSDP), (7) Self-updater, (8) External exposure (server-side port scan + findings), (9) Closed-set remediation (whitelist catalog ~50 controls, tasks with rollback, agent executor). SQL: `061-066`. API 1.19.0, Agent 2.1.0. |
+| 2026-04-25 | SH-KEY: Per-machine key rotation + rate limiting | Kerberos-inspired 3-layer auth: (1) enrollment code (one-time), (2) machine_secret (long-term CSPRNG 64-byte hex), (3) session_key (48h, rotated via heartbeat). HMAC validation chain: session_key → prev_session_key (24h grace) → machine_secret (reauth) → org ApiSecret (backward compat). Per-IP enrollment rate limit (5/15min). Per-org rate limit (200/min). `KeyRotationService` handles CSPRNG generation + rotation logic. Migration `067_machine_auth_keys.sql` adds 7 columns to machines. Backward compatible: pre-v2.2 agents keep using org ApiSecret. API 1.20.0, Agent 2.2.0. |
 
 ---
 
@@ -359,3 +386,4 @@ full list. Key ones:
 - Cambios: directo, sin explicar lógica
 - Errors: reporta y sugiere fix, no narres
 - Sin saludos, cierres, resúmenes
+- NO mostrar código en las respuestas salvo que se esté discutiendo algo en particular. Solo reportar qué se hizo/cambió.

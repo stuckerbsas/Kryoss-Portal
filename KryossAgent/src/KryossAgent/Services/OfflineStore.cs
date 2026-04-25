@@ -1,4 +1,5 @@
 using System.Text.Json;
+using KryossAgent.Config;
 using KryossAgent.Models;
 
 namespace KryossAgent.Services;
@@ -21,13 +22,52 @@ public static class OfflineStore
             Directory.CreateDirectory(StorePath);
             var filename = $"result_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.json";
             var path = Path.Combine(StorePath, filename);
-            var json = JsonSerializer.Serialize(payload, KryossAgent.Models.KryossJsonContext.Default.AssessmentPayload);
+            var json = JsonSerializer.Serialize(payload, KryossJsonContext.Default.AssessmentPayload);
             File.WriteAllText(path, json);
             Console.WriteLine($"  Saved results offline: {filename}");
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"  [WARN] Could not save results offline: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Save payload as OfflineCollectPayload to a shared folder for later collection.
+    /// Includes machine identity so the collector can upload on behalf.
+    /// </summary>
+    public static void SaveCollectPayload(AssessmentPayload payload, AgentConfig config, string targetDir, bool silent)
+    {
+        try
+        {
+            Directory.CreateDirectory(targetDir);
+            var hostname = Environment.MachineName;
+            var platform = PlatformDetector.DetectPlatform();
+            var hw = PlatformDetector.DetectHardware();
+
+            var envelope = new OfflineCollectPayload
+            {
+                Hostname = hostname,
+                Hwid = HardwareFingerprint.Compute(),
+                EnrollmentCode = EmbeddedConfig.EnrollmentCode,
+                OsName = platform?.Os,
+                OsVersion = platform?.Version,
+                OsBuild = platform?.Build,
+                ProductType = hw.ProductType,
+                AgentVersion = "1.5.1",
+                CollectedAt = DateTime.UtcNow.ToString("o"),
+                Payload = payload,
+            };
+
+            var filename = $"collect_{hostname}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
+            var path = Path.Combine(targetDir, filename);
+            var json = JsonSerializer.Serialize(envelope, KryossJsonContext.Default.OfflineCollectPayload);
+            File.WriteAllText(path, json);
+            if (!silent) Console.WriteLine($"  Saved to shared folder: {filename}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  [ERROR] Could not save to shared folder: {ex.Message}");
         }
     }
 
@@ -42,8 +82,7 @@ public static class OfflineStore
             try
             {
                 var json = File.ReadAllText(file);
-                var payload = JsonSerializer.Deserialize(json,
-                    KryossAgent.Models.KryossJsonContext.Default.AssessmentPayload);
+                var payload = JsonSerializer.Deserialize(json, KryossJsonContext.Default.AssessmentPayload);
                 if (payload is not null)
                     results.Add((file, payload));
             }

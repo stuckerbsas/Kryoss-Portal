@@ -195,20 +195,16 @@ public class ApiClient : IDisposable
     /// <summary>
     /// POST /v1/hygiene — submit AD hygiene findings (HMAC signed).
     /// </summary>
-    [UnconditionalSuppressMessage("Trimming", "IL2026",
-        Justification = "Hygiene payloads use anonymous types that are rooted by callers.")]
-    [UnconditionalSuppressMessage("AOT", "IL3050",
-        Justification = "Hygiene payloads use anonymous types that are rooted by callers.")]
-    public async Task SubmitHygieneAsync(object hygienePayload)
+    public async Task SubmitHygieneAsync(Models.HygienePayload hygienePayload)
     {
-        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(hygienePayload);
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(hygienePayload, Models.KryossJsonContext.Default.HygienePayload);
         var path = "/v1/hygiene";
         var request = CreateSignedRequest(HttpMethod.Post, path, json);
         request.Content = new ByteArrayContent(json);
         request.Content.Headers.ContentType =
             new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
-        var response = await _http.SendAsync(request);
+        var response = await SendWithRetryAsync(request, json);
         if (!response.IsSuccessStatusCode)
         {
             string error;
@@ -221,20 +217,16 @@ public class ApiClient : IDisposable
     /// <summary>
     /// Upload port scan results from a network scan to the API.
     /// </summary>
-    [UnconditionalSuppressMessage("Trimming", "IL2026",
-        Justification = "Port payloads use anonymous types that are rooted by callers.")]
-    [UnconditionalSuppressMessage("AOT", "IL3050",
-        Justification = "Port payloads use anonymous types that are rooted by callers.")]
-    public async Task SubmitPortResultsAsync(object portPayload)
+    public async Task SubmitPortResultsAsync(Models.PortPayload portPayload)
     {
-        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(portPayload);
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(portPayload, Models.KryossJsonContext.Default.PortPayload);
         var path = "/v1/ports";
         var request = CreateSignedRequest(HttpMethod.Post, path, json);
         request.Content = new ByteArrayContent(json);
         request.Content.Headers.ContentType =
             new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
-        var response = await _http.SendAsync(request);
+        var response = await SendWithRetryAsync(request, json);
         if (!response.IsSuccessStatusCode)
         {
             string error;
@@ -242,6 +234,36 @@ public class ApiClient : IDisposable
             catch { error = response.StatusCode.ToString(); }
             Console.Error.WriteLine($"[WARN] Port scan upload failed ({response.StatusCode}): {error}");
         }
+    }
+
+    public async Task<(int Saved, int Skipped)> SubmitPortResultsBulkAsync(Models.PortBulkPayload bulkPayload)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(bulkPayload, Models.KryossJsonContext.Default.PortBulkPayload);
+        var path = "/v1/ports/bulk";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await SendWithRetryAsync(request, json);
+        if (!response.IsSuccessStatusCode)
+        {
+            string error;
+            try { error = await response.Content.ReadAsStringAsync(); }
+            catch { error = response.StatusCode.ToString(); }
+            Console.Error.WriteLine($"[WARN] Bulk port upload failed ({response.StatusCode}): {error}");
+            return (0, bulkPayload.Machines.Count);
+        }
+
+        try
+        {
+            var respBody = await response.Content.ReadAsStringAsync();
+            var doc = System.Text.Json.JsonDocument.Parse(respBody);
+            var saved = doc.RootElement.GetProperty("saved").GetInt32();
+            var skipped = doc.RootElement.GetProperty("skipped").GetInt32();
+            return (saved, skipped);
+        }
+        catch { return (bulkPayload.Machines.Count, 0); }
     }
 
     public async Task<Models.SnmpCredentials?> GetSnmpCredentialsAsync()
@@ -255,28 +277,116 @@ public class ApiClient : IDisposable
         return System.Text.Json.JsonSerializer.Deserialize(json, Models.KryossJsonContext.Default.SnmpCredentials);
     }
 
+    public async Task<Models.SnmpProfilesResponse?> GetSnmpProfilesAsync(List<string> sysObjectIds)
+    {
+        if (sysObjectIds.Count == 0) return null;
+        var qs = string.Join(",", sysObjectIds);
+        var path = $"/v1/snmp-profiles?sysObjectIds={Uri.EscapeDataString(qs)}";
+        var request = CreateSignedRequest(HttpMethod.Get, path);
+        var response = await _http.SendAsync(request);
+        if (!response.IsSuccessStatusCode) return null;
+        var json = await response.Content.ReadAsByteArrayAsync();
+        return System.Text.Json.JsonSerializer.Deserialize(json, Models.KryossJsonContext.Default.SnmpProfilesResponse);
+    }
+
     [UnconditionalSuppressMessage("AOT", "IL2026",
         Justification = "SNMP payloads use source-gen serializable types.")]
     [UnconditionalSuppressMessage("AOT", "IL3050",
         Justification = "SNMP payloads use source-gen serializable types.")]
     public async Task SubmitSnmpResultsAsync(Models.SnmpScanResult snmpResult)
     {
-        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
-            snmpResult, Models.KryossJsonContext.Default.SnmpScanResult);
-        var path = "/v1/snmp";
+        // Large networks can have 200+ devices — batch in chunks of 50
+        // to avoid HttpClient timeout and server-side processing bottleneck.
+        const int batchSize = 50;
+        var allDevices = snmpResult.Devices;
+
+        for (int i = 0; i < allDevices.Count; i += batchSize)
+        {
+            var batch = new Models.SnmpScanResult
+            {
+                Devices = allDevices.Skip(i).Take(batchSize).ToList(),
+                Unreachable = i == 0 ? snmpResult.Unreachable : [],
+                ScannedAt = snmpResult.ScannedAt,
+            };
+
+            var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                batch, Models.KryossJsonContext.Default.SnmpScanResult);
+            var path = "/v1/snmp";
+            var request = CreateSignedRequest(HttpMethod.Post, path, json);
+            request.Content = new ByteArrayContent(json);
+            request.Content.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+            var response = await SendWithRetryAsync(request, json);
+            if (!response.IsSuccessStatusCode)
+            {
+                string error;
+                try { error = await response.Content.ReadAsStringAsync(); }
+                catch { error = response.StatusCode.ToString(); }
+                Console.Error.WriteLine($"[WARN] SNMP upload batch {i / batchSize + 1} failed ({response.StatusCode}): {error}");
+            }
+        }
+    }
+
+    public async Task<string?> DownloadReportAsync(string type = "preventas", string tone = "detailed")
+    {
+        var path = $"/v1/report?type={type}&tone={tone}";
+        var request = CreateSignedRequest(HttpMethod.Get, path);
+        request.Headers.Add("Accept", "text/html");
+
+        try
+        {
+            var response = await _http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadAsStringAsync();
+        }
+        catch { return null; }
+    }
+
+    public async Task<HeartbeatResponse?> SendHeartbeatAsync(HeartbeatPayload heartbeat)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(heartbeat, KryossJsonContext.Default.HeartbeatPayload);
+        var path = "/v1/heartbeat";
         var request = CreateSignedRequest(HttpMethod.Post, path, json);
         request.Content = new ByteArrayContent(json);
         request.Content.Headers.ContentType =
             new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
-        var response = await _http.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            string error;
-            try { error = await response.Content.ReadAsStringAsync(); }
-            catch { error = response.StatusCode.ToString(); }
-            Console.Error.WriteLine($"[WARN] SNMP upload failed ({response.StatusCode}): {error}");
+            var response = await _http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return null;
+            var stream = await response.Content.ReadAsStreamAsync();
+            var hbResponse = await JsonSerializer.DeserializeAsync(stream, KryossJsonContext.Default.HeartbeatResponse);
+            if (hbResponse?.NewMachineSecret is not null)
+                _config.MachineSecret = hbResponse.NewMachineSecret;
+            if (hbResponse?.NewSessionKey is not null)
+            {
+                _config.SessionKey = hbResponse.NewSessionKey;
+                _config.SessionKeyExpiresAt = hbResponse.NewSessionKeyExpiresAt;
+            }
+            if (hbResponse?.NewMachineSecret is not null || hbResponse?.NewSessionKey is not null)
+                _config.Save();
+            return hbResponse;
         }
+        catch { return null; }
+    }
+
+    public async Task<bool> ReportTaskResultAsync(TaskResultPayload result)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(result, KryossJsonContext.Default.TaskResultPayload);
+        var path = "/v1/task-result";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        try
+        {
+            var response = await _http.SendAsync(request);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
     }
 
     /// <summary>
@@ -301,6 +411,54 @@ public class ApiClient : IDisposable
         }
     }
 
+    private async Task<HttpResponseMessage> SendWithRetryAsync(HttpRequestMessage request, byte[]? bodyBytes = null, string? contentType = null)
+    {
+        const int maxRetries = 3;
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            if (attempt > 0)
+            {
+                // Re-create the request (HttpRequestMessage can't be resent)
+                var path = request.RequestUri!.OriginalString;
+                var method = request.Method;
+                request.Dispose();
+                request = CreateSignedRequest(method, path, bodyBytes);
+                if (bodyBytes != null)
+                {
+                    request.Content = new ByteArrayContent(bodyBytes);
+                    request.Content.Headers.ContentType =
+                        new System.Net.Http.Headers.MediaTypeHeaderValue(contentType ?? "application/json");
+                }
+            }
+
+            var response = await _http.SendAsync(request);
+
+            if ((int)response.StatusCode == 429)
+            {
+                var retryAfter = response.Headers.RetryAfter?.Delta?.TotalMilliseconds
+                    ?? (1000 * Math.Pow(2, attempt));
+                var delay = (int)Math.Min(retryAfter, 30000);
+                if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
+                    Console.Error.WriteLine($"  [RETRY] 429 on attempt {attempt + 1}, waiting {delay}ms");
+                await Task.Delay(delay);
+                response.Dispose();
+                continue;
+            }
+
+            return response;
+        }
+
+        // Final attempt exhausted — return last 429 so caller can handle
+        request = CreateSignedRequest(request.Method, request.RequestUri!.OriginalString, bodyBytes);
+        if (bodyBytes != null)
+        {
+            request.Content = new ByteArrayContent(bodyBytes);
+            request.Content.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue(contentType ?? "application/json");
+        }
+        return await _http.SendAsync(request);
+    }
+
     private HttpRequestMessage CreateSignedRequest(HttpMethod method, string path, byte[]? body = null)
     {
         var request = new HttpRequestMessage(method, path);
@@ -314,7 +472,8 @@ public class ApiClient : IDisposable
         // Hardware fingerprint — see field comment at the top of the class.
         request.Headers.Add("X-Hwid", _hwid);
 
-        if (!string.IsNullOrEmpty(_config.ApiSecret))
+        var signingKey = _config.SessionKey ?? _config.MachineSecret ?? _config.ApiSecret;
+        if (!string.IsNullOrEmpty(signingKey))
         {
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
             var bodyHash = Convert.ToHexString(
@@ -328,7 +487,7 @@ public class ApiClient : IDisposable
             var signingString = $"{timestamp}{method.Method.ToUpperInvariant()}{path}{agentId}{bodyHash}";
             var signature = Convert.ToHexString(
                 HMACSHA256.HashData(
-                    Encoding.UTF8.GetBytes(_config.ApiSecret),
+                    Encoding.UTF8.GetBytes(signingKey),
                     Encoding.UTF8.GetBytes(signingString)
                 )
             ).ToLowerInvariant();
@@ -337,7 +496,7 @@ public class ApiClient : IDisposable
             {
                 Console.Error.WriteLine($"  [HMAC] ts={timestamp} method={method.Method.ToUpperInvariant()} path={path}");
                 Console.Error.WriteLine($"  [HMAC] agentId={agentId} bodyLen={body?.Length ?? 0} bodyHash={bodyHash[..16]}...");
-                Console.Error.WriteLine($"  [HMAC] secretLen={_config.ApiSecret.Length} apiKeyPrefix={_config.ApiKey[..Math.Min(8, _config.ApiKey.Length)]}...");
+                Console.Error.WriteLine($"  [HMAC] keyLen={signingKey.Length} keySource={(_config.SessionKey is not null ? "session" : _config.MachineSecret is not null ? "machine" : "org")} apiKeyPrefix={_config.ApiKey[..Math.Min(8, _config.ApiKey.Length)]}...");
                 Console.Error.WriteLine($"  [HMAC] localUtc={DateTimeOffset.UtcNow:O}");
             }
 
@@ -346,10 +505,38 @@ public class ApiClient : IDisposable
         }
         else if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
         {
-            Console.Error.WriteLine($"  [HMAC] WARNING: ApiSecret is empty — no HMAC signature will be sent");
+            Console.Error.WriteLine($"  [HMAC] WARNING: no signing key available — no HMAC signature will be sent");
         }
 
         return request;
+    }
+
+    public async Task<VersionInfo?> CheckLatestVersionAsync()
+    {
+        var path = "/v1/agent/latest-version";
+        var request = CreateSignedRequest(HttpMethod.Get, path);
+        try
+        {
+            var response = await _http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return null;
+            var json = await response.Content.ReadAsStringAsync();
+            return System.Text.Json.JsonSerializer.Deserialize<VersionInfo>(json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch { return null; }
+    }
+
+    public async Task<byte[]?> DownloadAgentBinaryAsync()
+    {
+        var path = "/v1/agent/download";
+        var request = CreateSignedRequest(HttpMethod.Get, path);
+        try
+        {
+            var response = await _http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadAsByteArrayAsync();
+        }
+        catch { return null; }
     }
 
     public void Dispose()

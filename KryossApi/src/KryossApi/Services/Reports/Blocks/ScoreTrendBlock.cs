@@ -1,16 +1,26 @@
 using System.Text;
 namespace KryossApi.Services.Reports.Blocks;
 
-public class ScoreTrendBlock : IReportBlock
+public class ScoreTrendBlock : IFlowBlock
 {
-    public string Render(ReportData data, ReportOptions options)
+    private readonly bool _showDelta;
+    public ScoreTrendBlock(bool showDelta = true) => _showDelta = showDelta;
+
+    public string? SectionTitle(ReportOptions options) =>
+        options.IsSpanish ? "Evolución del Score" : "Score Evolution";
+
+    public int EstimateHeight(ReportData data)
+    {
+        int h = 120;
+        if (data.ScoreHistory != null && data.ScoreHistory.Count > 1) h += 160;
+        if (_showDelta) h += 80;
+        return h;
+    }
+
+    public string RenderContent(ReportData data, ReportOptions options)
     {
         var sb = new StringBuilder();
         var es = options.IsSpanish;
-
-        sb.AppendLine("<div class='page'>");
-        ReportHelpers.AppendPageHeader(sb, es ? "Evolución del Score" : "Score Evolution", data.Branding);
-        sb.AppendLine("<div class='pb'>");
 
         sb.AppendLine("<div style='text-align:center;padding:1.5em 0;'>");
         sb.AppendLine($"<div style='font-size:3.5em;font-weight:700;'>{data.AvgScore:F1}%</div>");
@@ -31,8 +41,39 @@ public class ScoreTrendBlock : IReportBlock
         if (data.ScoreHistory != null && data.ScoreHistory.Count > 1)
             RenderSparkline(sb, data.ScoreHistory);
 
+        if (_showDelta)
+            RenderDeltaSummary(sb, data, es);
+
+        return sb.ToString();
+    }
+
+    public string Render(ReportData data, ReportOptions options)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<div class='page'>");
+        ReportHelpers.AppendPageHeader(sb, SectionTitle(options)!, data.Branding);
+        sb.AppendLine("<div class='pb'>");
+        sb.Append(RenderContent(data, options));
         sb.AppendLine("</div></div>");
         return sb.ToString();
+    }
+
+    private static void RenderDeltaSummary(StringBuilder sb, ReportData data, bool es)
+    {
+        var critical = data.ControlResults.Count(r => r.Status == "fail" && r.Severity == "critical");
+        var high = data.ControlResults.Count(r => r.Status == "fail" && r.Severity == "high");
+        var medium = data.ControlResults.Count(r => r.Status == "fail" && r.Severity == "medium");
+        var low = data.ControlResults.Count(r => r.Status == "fail" && r.Severity == "low");
+        var totalPass = data.ControlResults.Count(r => r.Status == "pass");
+
+        sb.AppendLine("<div class='summary-grid' style='margin-top:16px'>");
+        sb.AppendLine($"<div class='stat'><span class='stat-value' style='color:#008852;'>{totalPass}</span><span class='stat-label'>{(es ? "Controles Aprobados" : "Passing Controls")}</span></div>");
+        if (critical > 0)
+            sb.AppendLine($"<div class='stat fail-stat'><span class='stat-value'>{critical}</span><span class='stat-label'>{(es ? "Críticos" : "Critical")}</span></div>");
+        if (high > 0)
+            sb.AppendLine($"<div class='stat warn-stat'><span class='stat-value'>{high}</span><span class='stat-label'>{(es ? "Altos" : "High")}</span></div>");
+        sb.AppendLine($"<div class='stat'><span class='stat-value'>{medium + low}</span><span class='stat-label'>{(es ? "Medio/Bajo" : "Medium/Low")}</span></div>");
+        sb.AppendLine("</div>");
     }
 
     private static void RenderSparkline(StringBuilder sb, List<MonthlyScore> history)

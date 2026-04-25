@@ -20,8 +20,11 @@ public class ReportsFunction
 
     private static readonly HashSet<string> _composerTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "c-level", "technical", "preventa", "preventas", "presales", "presales-opener",
-        "monthly", "monthly-briefing", "framework", "proposal"
+        "c-level", "executive", "technical", "preventa", "preventas", "presales", "presales-opener",
+        "preventa-opener", "preventa-detailed",
+        "monthly", "monthly-briefing", "framework", "compliance", "proposal", "network",
+        "cloud-executive", "exec-onepager", "m365", "hygiene", "risk-assessment", "inventory",
+        "test-fixture"
     };
 
     public ReportsFunction(IReportService reports, IReportComposer composer, IActlogService actlog, KryossDbContext db, ICurrentUserService user)
@@ -31,6 +34,48 @@ public class ReportsFunction
         _actlog = actlog;
         _db = db;
         _user = user;
+    }
+
+    /// <summary>
+    /// Diagnostic endpoint: runs each block individually with timing + error capture.
+    /// GET /v2/reports/diagnose/{orgId}?type=technical
+    /// </summary>
+    [Function("Reports_Diagnose")]
+    public async Task<HttpResponseData> Diagnose(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/reports/diagnose/{orgId:guid}")] HttpRequestData req,
+        Guid orgId)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var reportType = query["type"] ?? "technical";
+        var lang = (query["lang"] ?? "en").ToLowerInvariant();
+        if (lang != "es") lang = "en";
+        var tone = query["tone"]?.ToLowerInvariant();
+        if (tone != "opener" && tone != "detailed") tone = "opener";
+        var frameworkCode = query["framework"];
+
+        try
+        {
+            string? frameworkName = null;
+            if (!string.IsNullOrEmpty(frameworkCode))
+            {
+                var fw = await _db.Frameworks.FirstOrDefaultAsync(f => f.Code == frameworkCode && f.IsActive);
+                frameworkName = fw?.Name;
+            }
+
+            var reportOptions = new ReportOptions(Lang: lang, FrameworkCode: frameworkCode, FrameworkName: frameworkName, Tone: tone);
+            string? singleType = reportType != "all" ? reportType : null;
+            var diag = await _composer.DiagnoseAsync(orgId, singleType, reportOptions);
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(diag);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            var error = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await error.WriteAsJsonAsync(new { error = ex.Message, type = ex.GetType().Name, stack = ex.StackTrace, inner = ex.InnerException?.Message });
+            return error;
+        }
     }
 
     /// <summary>
@@ -85,6 +130,26 @@ public class ReportsFunction
             }
         }
 
+        // Diagnostic mode: ?diag=1 runs block-by-block timing instead of generating HTML
+        var isDiag = query["diag"] == "1";
+        if (isDiag && _composerTypes.Contains(reportType))
+        {
+            try
+            {
+                var diagOpts = new ReportOptions(Lang: lang, FrameworkCode: frameworkCode, FrameworkName: null, Tone: tone);
+                var diag = await _composer.DiagnoseAsync(orgId, reportType, diagOpts);
+                var r = req.CreateResponse(HttpStatusCode.OK);
+                await r.WriteAsJsonAsync(diag);
+                return r;
+            }
+            catch (Exception ex)
+            {
+                var r = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await r.WriteAsJsonAsync(new { error = ex.Message, type = ex.GetType().Name, stack = ex.StackTrace, inner = ex.InnerException?.Message });
+                return r;
+            }
+        }
+
         try
         {
             string html;
@@ -124,14 +189,39 @@ public class ReportsFunction
 
             var response = req.CreateResponse(HttpStatusCode.OK);
             response.Headers.Add("Content-Type", "text/html; charset=utf-8");
+            if (req.Headers.TryGetValues("Origin", out var successOrigins))
+            {
+                response.Headers.TryAddWithoutValidation("Access-Control-Allow-Origin", successOrigins.First());
+                response.Headers.TryAddWithoutValidation("Access-Control-Allow-Credentials", "true");
+            }
             await response.WriteStringAsync(html);
             return response;
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
-            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
-            await notFound.WriteAsJsonAsync(new { error = ex.Message });
-            return notFound;
+            try
+            {
+                await _actlog.LogAsync("ERR", "reports", $"org_report.crash.{reportType}",
+                    $"{ex.GetType().Name}: {ex.Message} | inner: {ex.InnerException?.Message} | stack: {ex.StackTrace?[..Math.Min(500, ex.StackTrace?.Length ?? 0)]}",
+                    entityType: "Organization", entityId: orgId.ToString());
+            }
+            catch { }
+
+            var statusCode = ex is InvalidOperationException ? HttpStatusCode.NotFound : HttpStatusCode.InternalServerError;
+            var error = req.CreateResponse(statusCode);
+            if (req.Headers.TryGetValues("Origin", out var origins))
+            {
+                error.Headers.TryAddWithoutValidation("Access-Control-Allow-Origin", origins.First());
+                error.Headers.TryAddWithoutValidation("Access-Control-Allow-Credentials", "true");
+            }
+            await error.WriteAsJsonAsync(new
+            {
+                error = ex.Message,
+                type = ex.GetType().Name,
+                stack = ex.StackTrace,
+                inner = ex.InnerException?.Message
+            });
+            return error;
         }
     }
 }

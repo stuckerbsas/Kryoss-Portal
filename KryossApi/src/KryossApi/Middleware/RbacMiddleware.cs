@@ -24,9 +24,13 @@ public class RbacMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        // Agent routes don't use RBAC
+        // Agent routes and public endpoints don't use RBAC
         var path = httpReq.Url.AbsolutePath;
-        if (path.Contains("/v1/", StringComparison.OrdinalIgnoreCase))
+        if (path.Contains("/v1/", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("/v2/reports/diagnose/", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith("/v2/version", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("/consent-callback", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains("/connect-callback", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;

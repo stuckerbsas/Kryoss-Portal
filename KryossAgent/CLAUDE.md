@@ -1,4 +1,4 @@
-# KryossAgent v1.6.0 — Windows Assessment Agent (.NET 8)
+# KryossAgent v2.2.0 — Windows Assessment Agent (.NET 8)
 
 **Read `../CLAUDE.md` first.** This file is the detailed map of the agent only.
 
@@ -10,8 +10,9 @@
 - **Native AOT capable** (`PublishAot=true` in csproj, but `publish.ps1` currently overrides to false — see gap note)
 - **Self-contained single-file** publish (~12 MB trimmed, was ~68 MB pre-v1.4.0)
 - **Zero external runtime deps** on target machines
-- **NuGet:** `System.Text.Json` (source-gen), `System.ServiceProcess.ServiceController`, `Microsoft.Win32.Registry`, `System.Diagnostics.EventLog`, `System.Management` (WMI), `System.DirectoryServices`, `Lextm.SharpSnmpLib`
+- **NuGet:** `System.Text.Json` (source-gen), `System.ServiceProcess.ServiceController`, `Microsoft.Win32.Registry`, `System.Diagnostics.EventLog`, `System.Management` (WMI), `System.DirectoryServices`, `Lextm.SharpSnmpLib`, `Microsoft.Extensions.Hosting.WindowsServices`
 - **Zero Process.Start** since v1.4.0 — all engines use registry, WMI, P/Invoke, or .NET APIs
+- **Dual-mode** since v2.0.0 — runs as Windows Service (`--service`) or one-shot (default)
 
 ---
 
@@ -25,7 +26,8 @@ KryossAgent/
 │   └── KryossAgent.exe               <- ~68.7 MB compiled binary
 └── src/KryossAgent/
     ├── KryossAgent.csproj            <- net8.0-windows, PublishAot=true, SingleFile
-    ├── Program.cs                    <- entry point, enrollment, dispatch, upload, network scan
+    ├── Program.cs                    <- entry point, dual-mode (one-shot + service), enrollment, dispatch
+    │                                    --install/--uninstall/--service for Windows Service mode
     ├── Config/
     │   ├── AgentConfig.cs            <- loads/saves HKLM\SOFTWARE\Kryoss\Agent
     │   └── EmbeddedConfig.cs         <- binary patching sentinels (UTF-16LE, fixed-length)
@@ -48,8 +50,12 @@ KryossAgent/
     │   ├── AssessmentPayload.cs      <- top-level POST /v1/results body
     │   ├── ControlDef.cs             <- downloaded control definition from /v1/controls
     │   ├── CheckResult.cs            <- flexible result: object? Value + engine-specific fields
+    │   ├── RemediationModels.cs     <- HeartbeatResponse, PendingRemediationTask, TaskResultPayload
     │   └── JsonContext.cs            <- source-generated JSON context (AOT)
     ├── Services/
+    │   ├── ScanCycle.cs              <- extracted compliance scan logic (reused by one-shot + service)
+    │   ├── ServiceWorker.cs          <- BackgroundService for Windows Service mode
+    │   ├── ServiceInstaller.cs       <- P/Invoke service install/uninstall (zero Process.Start)
     │   ├── ApiClient.cs              <- HTTP client, HMAC signing
     │   ├── CryptoService.cs          <- RSA-OAEP + AES-GCM envelope (dormant)
     │   ├── HardwareFingerprint.cs    <- registry-based SHA-256 hardware ID
@@ -64,7 +70,11 @@ KryossAgent/
     │   ├── SnmpScanner.cs            <- SNMP device discovery (IF-MIB, ENTITY-MIB, etc.)
     │   ├── SoftwareInventory.cs      <- Uninstall registry keys (HKLM 64+32 bit)
     │   ├── ThreatDetector.cs         <- Endpoint threat detection
-    │   └── TargetDiscovery.cs        <- AD/ARP/subnet/explicit target discovery + AD hygiene
+    │   ├── TargetDiscovery.cs        <- AD/ARP/subnet/explicit target discovery + AD hygiene
+    │   ├── WmiProbe.cs               <- WMI remote probe for unenrolled Windows machines
+    │   ├── PassiveListener.cs        <- UDP listeners (NetBIOS/mDNS/SSDP) for passive discovery
+    │   ├── SelfUpdater.cs            <- Auto-update from blob storage (version check + download + service restart)
+    │   └── RemediationExecutor.cs    <- Executes whitelisted remediation tasks (registry/service/audit), reports results
     └── Helpers/                      <- (empty)
 ```
 
@@ -72,23 +82,31 @@ KryossAgent/
 
 ## Program.cs execution flow
 
-1. Parse CLI args (`--silent`, `--verbose`, `--alone`, `--scan`, `--code`, `--api-url`, `--reenroll`, `--credential`, `--threads`, discovery flags)
-2. Show branded banner (uses `EmbeddedConfig.MspName`/`OrgName` if patched, otherwise generic Kryoss banner)
-3. **A-13 Orchestrated scheduling** (silent mode only): check `lastrun.txt` → if already ran today, exit. Call `GET /v1/schedule` → sleep until assigned slot, exit if too far, or run immediately on catch-up/fallback.
+**v2.0.0 dual-mode:**
+- `--install`: installs as Windows Service via P/Invoke (CreateService), starts it
+- `--uninstall`: stops + removes Windows Service via P/Invoke
+- `--service`: runs as Windows Service using `Host.CreateApplicationBuilder()` + `ServiceWorker` (BackgroundService)
+- No flags / one-shot: original behavior (below)
+
+**One-shot mode:**
+1. Parse CLI args (`--silent`, `--verbose`, `--alone`, `--scan`, `--code`, `--api-url`, `--reenroll`, etc.)
+2. Show branded banner
+3. **A-13 Orchestrated scheduling** (silent mode only): check `lastrun.txt` → if already ran today, exit. Call `GET /v1/schedule` → sleep until assigned slot.
 4. If `--scan`: delegate to `NetworkScanner.RunAsync()` and exit
-5. If patched binary or `--reenroll`: wipe `HKLM\SOFTWARE\Kryoss\Agent` for clean enrollment
+5. If patched binary or `--reenroll`: wipe registry for clean enrollment
 6. Load `AgentConfig` from `HKLM\SOFTWARE\Kryoss\Agent`
-7. If not enrolled: resolve code from CLI > embedded > interactive prompt → `POST /v1/enroll` → save credentials
-8. Upload any pending offline payloads from `C:\ProgramData\Kryoss\PendingResults\`
-9. `GET /v1/controls?assessmentId=X` → receive list of `ControlDef`
-10. Detect platform + hardware (~25 fields, multi-disk) + enumerate software
-11. Group controls by `Type` → run 12 engines **in parallel** (`Task.WhenAll`)
-12. Build `AssessmentPayload` (v1.6.0) → `POST /v1/results` (HMAC signed)
-13. Server responds with `{score, grade, passCount, warnCount, failCount}` — printed to console
-14. Write `lastrun.txt` with today's date (prevents double-run on next hourly wake)
-15. Unless `--alone` or `--silent`: auto-run network scan (discovery + remote deploy + port scan + AD hygiene)
-16. Output `RESULT:` lines for deployment script parsing (`OK`, `SKIP`, `ERROR`, `OFFLINE`, `ENROLL_FAILED`)
-17. On upload failure → save payload to offline store, exit code 2
+7. If not enrolled: resolve code → `POST /v1/enroll` → save credentials
+8. Upload any pending offline payloads
+9. `GET /v1/controls` → run 12 engines in parallel → build payload → `POST /v1/results`
+10. Server responds with score/grade → printed to console
+11. Write `lastrun.txt`, run network scan (unless `--alone`/`--silent`), wipe registry
+
+**Service mode (ServiceWorker loop):**
+1. Load config, check enrollment
+2. Every `ComplianceIntervalHours` (default 24h): run full compliance scan via `ScanCycle`
+3. Every `ScanIntervalMinutes` (default 240 = 4h): run SNMP scan
+4. Every 15 min: send heartbeat (`POST /v1/heartbeat`)
+5. Sleep until next task, graceful shutdown on stop
 
 ---
 
@@ -210,7 +228,13 @@ class CheckResult {
 ## How the agent is invoked
 
 ```powershell
-# Default: scan local + entire network (AD discovery + remote deploy)
+# Install as Windows Service (auto-start, runs continuously)
+KryossAgent.exe --install
+
+# Uninstall Windows Service
+KryossAgent.exe --uninstall
+
+# Default: one-shot scan local + entire network
 KryossAgent.exe --code K7X9-M2P4-Q8R1-T5W3
 
 # Scan only this machine (skip network scan)
@@ -221,18 +245,6 @@ KryossAgent.exe --scan --threads 20
 
 # Silent mode (for RMM/PsExec remote execution)
 KryossAgent.exe --silent --code K7X9-M2P4-Q8R1-T5W3
-
-# Re-enrollment
-KryossAgent.exe --reenroll --code NEW-CODE-HERE
-
-# Subnet discovery scan
-KryossAgent.exe --scan --discover-subnet 10.0.0.0/24
-
-# Verbose (show engine + command detail)
-KryossAgent.exe --verbose
-
-# Custom API URL
-KryossAgent.exe --code K7X9-M2P4-Q8R1-T5W3 --api-url https://custom-url.azurewebsites.net
 
 # Offline collection (machines without internet)
 KryossAgent.exe --offline --share \\fileserver\kryoss-collect

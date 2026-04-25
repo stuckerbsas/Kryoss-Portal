@@ -226,6 +226,76 @@ public static class ReportStyles
         .pf-left { text-align: left; }
         .pf-right { text-align: right; }
 
+        /* Tier grid (ServiceCatalogBlock) */
+        .tier-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:16px 0; }
+        .tier-card { border:1px solid #E2E8F0; border-radius:6px; padding:18px; background:#FFFFFF; break-inside:avoid; }
+        .tier-card.highlight { border-width:2px; border-color:#15803D; box-shadow:0 4px 12px rgba(15,128,61,0.12); }
+        .tier-header { margin-bottom:10px; }
+        .tier-name { font-size:14px; font-weight:700; color:#0F172A; }
+        .tier-price { font-size:22px; font-weight:900; color:#15803D; margin:6px 0; }
+        .tier-bullets { list-style:none; padding:0; margin:12px 0; font-size:11px; }
+        .tier-bullets li { padding:4px 0 4px 18px; position:relative; }
+        .tier-bullets li::before { content:'✓'; position:absolute; left:0; color:#15803D; font-weight:700; }
+
+        /* Decisions matrix (DecisionsMatrixBlock) */
+        .decisions-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:12px 0; }
+        .decisions-col { border:1px solid #E2E8F0; border-radius:6px; padding:14px; }
+        .decisions-col h4 { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid currentColor; }
+        .decisions-col.approved h4 { color:#15803D; }
+        .decisions-col.pending h4 { color:#B45309; }
+        .decisions-col.recommended h4 { color:#2563EB; }
+        .decision-item { padding:8px 0; border-bottom:1px solid #F1F5F9; }
+        .decision-title { font-size:11px; font-weight:600; color:#1E293B; }
+        .decision-ask { font-size:9px; color:#64748B; margin-top:2px; }
+        .decision-cost { font-size:10px; font-weight:700; color:#15803D; margin-top:2px; }
+
+        /* Control detail cards (ControlDetailBlock) */
+        .control-card { border:1px solid #E2E8F0; border-radius:6px; padding:12px 14px; margin-bottom:8px; border-left:4px solid #94A3B8; }
+        .control-card.critical { border-left-color:#991B1B; background:#FEF2F2; }
+        .control-card.high { border-left-color:#C0392B; background:#FFF5F5; }
+        .control-card.medium { border-left-color:#B45309; background:#FFFBEB; }
+        .control-card.low { border-left-color:#2563EB; background:#EFF6FF; }
+        .control-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+        .control-code { font-family:monospace; font-size:10px; font-weight:700; color:#64748B; }
+        .control-title { font-size:11px; font-weight:600; color:#1E293B; flex:1; }
+        .control-req { font-size:9px; color:#475569; line-height:1.5; margin-bottom:6px; }
+        .control-meta { font-size:8px; color:#94A3B8; display:flex; justify-content:space-between; }
+
+        /* Evidence appendix (EvidenceAppendixBlock) */
+        .evidence-item { border-bottom:1px solid #E2E8F0; padding:8px 0; }
+        .evidence-head { font-size:11px; font-weight:600; color:#1E293B; }
+        .evidence-meta { font-size:9px; color:#64748B; margin-top:2px; }
+        .evidence-code { font-family:monospace; font-size:9px; color:#991B1B; margin-top:2px; }
+
+        /* Top 3 risk cards (Top3RiskBlock) */
+        .top-risk-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:12px 0; }
+        .top-risk-card { background:#FEF2F2; border:1px solid #FECACA; border-radius:8px; padding:16px; }
+        .top-risk-title { font-size:13px; font-weight:700; color:#7F1D1D; margin-bottom:6px; }
+        .top-risk-body { font-size:10px; color:#334155; line-height:1.5; }
+        .top-risk-cost { font-size:12px; font-weight:700; color:#991B1B; margin-top:8px; }
+
+        /* Framework cover audit meta (FrameworkCoverBlock) */
+        .cover-audit-meta { margin-top:16px; }
+        .cover-audit-meta dt { font-size:9px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:0.05em; margin-top:8px; }
+        .cover-audit-meta dd { font-size:12px; color:#fff; margin:2px 0 0; }
+
+        /* Network mini (NetworkMiniBlock) */
+        .network-mini-split { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:12px 0; }
+        .network-mini-map { background:#F1F5F9; border-radius:8px; display:flex; align-items:center; justify-content:center; min-height:180px; color:#94A3B8; font-size:11px; }
+        .network-mini-kpis { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+        /* Data table (CategoryBreakdownBlock) */
+        .data-table { width:100%; border-collapse:collapse; margin:10px 0; font-size:11px; }
+        .data-table th { background:#F8F9FA; color:#1E293B; padding:8px 10px; text-align:left; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:2px solid #0F172A; }
+        .data-table td { padding:6px 10px; border-bottom:1px solid #E2E8F0; }
+        .data-table tr:nth-child(even) { background:#F8F9FA; }
+
+        /* Badges (ControlDetailBlock) */
+        .badge { padding:2px 6px; border-radius:3px; font-size:9px; font-weight:600; }
+        .badge-action { background:#991B1B; color:#fff; }
+        .badge-warning { background:#B45309; color:#fff; }
+        .badge-muted { background:#E2E8F0; color:#64748B; }
+
         @media print { .page { margin: 0; box-shadow: none; } body { background: #fff; } }
         """;
 
@@ -449,6 +519,76 @@ public static class ReportStyles
         .pf-left { text-align: left; }
         .pf-right { text-align: right; }
 
+        /* Tier grid (ServiceCatalogBlock) */
+        .tier-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:16px 0; }
+        .tier-card { border:1px solid #E2E8F0; border-radius:6px; padding:18px; background:#FFFFFF; break-inside:avoid; }
+        .tier-card.highlight { border-width:2px; border-color:#15803D; box-shadow:0 4px 12px rgba(15,128,61,0.12); }
+        .tier-header { margin-bottom:10px; }
+        .tier-name { font-size:14px; font-weight:700; color:#0F172A; }
+        .tier-price { font-size:22px; font-weight:900; color:#15803D; margin:6px 0; }
+        .tier-bullets { list-style:none; padding:0; margin:12px 0; font-size:11px; }
+        .tier-bullets li { padding:4px 0 4px 18px; position:relative; }
+        .tier-bullets li::before { content:'✓'; position:absolute; left:0; color:#15803D; font-weight:700; }
+
+        /* Decisions matrix (DecisionsMatrixBlock) */
+        .decisions-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:12px 0; }
+        .decisions-col { border:1px solid #E2E8F0; border-radius:6px; padding:14px; }
+        .decisions-col h4 { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid currentColor; }
+        .decisions-col.approved h4 { color:#15803D; }
+        .decisions-col.pending h4 { color:#B45309; }
+        .decisions-col.recommended h4 { color:#2563EB; }
+        .decision-item { padding:8px 0; border-bottom:1px solid #F1F5F9; }
+        .decision-title { font-size:11px; font-weight:600; color:#1E293B; }
+        .decision-ask { font-size:9px; color:#64748B; margin-top:2px; }
+        .decision-cost { font-size:10px; font-weight:700; color:#15803D; margin-top:2px; }
+
+        /* Control detail cards (ControlDetailBlock) */
+        .control-card { border:1px solid #E2E8F0; border-radius:6px; padding:12px 14px; margin-bottom:8px; border-left:4px solid #94A3B8; }
+        .control-card.critical { border-left-color:#991B1B; background:#FEF2F2; }
+        .control-card.high { border-left-color:#C0392B; background:#FFF5F5; }
+        .control-card.medium { border-left-color:#B45309; background:#FFFBEB; }
+        .control-card.low { border-left-color:#2563EB; background:#EFF6FF; }
+        .control-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+        .control-code { font-family:monospace; font-size:10px; font-weight:700; color:#64748B; }
+        .control-title { font-size:11px; font-weight:600; color:#1E293B; flex:1; }
+        .control-req { font-size:9px; color:#475569; line-height:1.5; margin-bottom:6px; }
+        .control-meta { font-size:8px; color:#94A3B8; display:flex; justify-content:space-between; }
+
+        /* Evidence appendix (EvidenceAppendixBlock) */
+        .evidence-item { border-bottom:1px solid #E2E8F0; padding:8px 0; }
+        .evidence-head { font-size:11px; font-weight:600; color:#1E293B; }
+        .evidence-meta { font-size:9px; color:#64748B; margin-top:2px; }
+        .evidence-code { font-family:monospace; font-size:9px; color:#991B1B; margin-top:2px; }
+
+        /* Top 3 risk cards (Top3RiskBlock) */
+        .top-risk-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:12px 0; }
+        .top-risk-card { background:#FEF2F2; border:1px solid #FECACA; border-radius:8px; padding:16px; }
+        .top-risk-title { font-size:13px; font-weight:700; color:#7F1D1D; margin-bottom:6px; }
+        .top-risk-body { font-size:10px; color:#334155; line-height:1.5; }
+        .top-risk-cost { font-size:12px; font-weight:700; color:#991B1B; margin-top:8px; }
+
+        /* Framework cover audit meta (FrameworkCoverBlock) */
+        .cover-audit-meta { margin-top:16px; }
+        .cover-audit-meta dt { font-size:9px; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:0.05em; margin-top:8px; }
+        .cover-audit-meta dd { font-size:12px; color:#fff; margin:2px 0 0; }
+
+        /* Network mini (NetworkMiniBlock) */
+        .network-mini-split { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:12px 0; }
+        .network-mini-map { background:#F1F5F9; border-radius:8px; display:flex; align-items:center; justify-content:center; min-height:180px; color:#94A3B8; font-size:11px; }
+        .network-mini-kpis { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+        /* Data table (CategoryBreakdownBlock) */
+        .data-table { width:100%; border-collapse:collapse; margin:10px 0; font-size:11px; }
+        .data-table th { background:#F8F9FA; color:#1E293B; padding:8px 10px; text-align:left; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.05em; border-bottom:2px solid #0F172A; }
+        .data-table td { padding:6px 10px; border-bottom:1px solid #E2E8F0; }
+        .data-table tr:nth-child(even) { background:#F8F9FA; }
+
+        /* Badges (ControlDetailBlock) */
+        .badge { padding:2px 6px; border-radius:3px; font-size:9px; font-weight:600; }
+        .badge-action { background:#991B1B; color:#fff; }
+        .badge-warning { background:#B45309; color:#fff; }
+        .badge-muted { background:#E2E8F0; color:#64748B; }
+
         @media print { .page { margin: 0; box-shadow: none; } body { background: #fff; } }
         """;
 
@@ -475,7 +615,7 @@ public static class ReportStyles
             max-height: 296mm !important;
             box-sizing: border-box !important;
         }
-        .cover { overflow: hidden !important; }
+        .cover, .page { overflow: hidden !important; }
         /* On-screen preview: the A4 pages sit centered horizontally with a
            bottom gap between successive pages. Print rules below override
            these margins to 0 so the printed output remains edge-to-edge. */

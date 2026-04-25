@@ -316,10 +316,9 @@ public static class ProductivityPipeline
 
             ins.CopilotLicensesPurchased = copilotPurchased;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Productivity subscribed SKUs: 403 - insufficient permissions");
+            log.LogWarning("Productivity subscribed SKUs: skipped — permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -428,10 +427,9 @@ public static class ProductivityPipeline
             ins.WastedLicenseTotalSeats  = wastedSeats;
             ins.EstimatedAnnualWaste     = null;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Productivity users: 403 - insufficient permissions");
+            log.LogWarning("Productivity users: skipped — permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {

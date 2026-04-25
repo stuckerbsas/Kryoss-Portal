@@ -14,6 +14,9 @@ public class EnrollmentCode : IAuditable
     public int? MaxUses { get; set; }       // NULL = single-use, N = can enroll N machines
     public int UseCount { get; set; }        // how many machines have used this code
 
+    public bool IsTrial { get; set; }        // trial enrollment code → machines get trial_expires_at
+    public int? TrialDays { get; set; }      // NULL = 30 days default
+
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }
     public Guid? ModifiedBy { get; set; }

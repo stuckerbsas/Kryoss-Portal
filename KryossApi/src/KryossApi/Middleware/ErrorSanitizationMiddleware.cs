@@ -1,4 +1,5 @@
 using System.Net;
+using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
@@ -56,6 +57,17 @@ public class ErrorSanitizationMiddleware : IFunctionsWorkerMiddleware
                 "Unhandled exception in {FunctionName} (trace {TraceId}): {Type}",
                 context.FunctionDefinition.Name, traceId, ex.GetType().Name);
 
+            try
+            {
+                var actlog = context.InstanceServices.GetRequiredService<IActlogService>();
+                await actlog.LogAsync(
+                    severity: "ERR",
+                    module: "middleware",
+                    action: $"unhandled.{context.FunctionDefinition.Name}",
+                    message: $"[{traceId}] {ex.GetType().Name}: {ex.Message}");
+            }
+            catch { /* actlog write must never break error handling */ }
+
             var httpReq = await context.GetHttpRequestDataAsync();
             if (httpReq is null)
             {
@@ -65,12 +77,21 @@ public class ErrorSanitizationMiddleware : IFunctionsWorkerMiddleware
             }
 
             var resp = httpReq.CreateResponse(HttpStatusCode.InternalServerError);
-            // Frozen body shape — do NOT add fields over time. Any new field
-            // becomes an API contract and an info-leak surface.
+            resp.Headers.TryAddWithoutValidation("Access-Control-Allow-Origin",
+                httpReq.Headers.TryGetValues("Origin", out var origins)
+                    ? origins.First() : "*");
+            resp.Headers.TryAddWithoutValidation("Access-Control-Allow-Credentials", "true");
+
+            // DEBUG MODE: expose error details until pre-production hardening.
+            // TODO(SH): revert to frozen shape before go-live.
             await resp.WriteAsJsonAsync(new
             {
                 error = "internal_error",
-                traceId
+                traceId,
+                debug_type = ex.GetType().FullName,
+                debug_message = ex.Message,
+                debug_stack = ex.StackTrace,
+                debug_inner = ex.InnerException?.Message
             });
 
             var result = context.GetInvocationResult();

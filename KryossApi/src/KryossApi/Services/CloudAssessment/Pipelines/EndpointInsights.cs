@@ -44,6 +44,13 @@ public class EndpointInsights
     public int EnrollmentRestrictionCount { get; set; }
     public int AutopilotProfileCount { get; set; }
 
+    // Config profile drift
+    public int ConfigProfilesAssigned { get; set; }
+    public int ConfigProfilesSucceeded { get; set; }
+    public int ConfigProfilesFailed { get; set; }
+    public int ConfigProfilesPending { get; set; }
+    public int ConfigProfilesConflict { get; set; }
+
     // ============================================================
     // Defender for Endpoint
     // ============================================================

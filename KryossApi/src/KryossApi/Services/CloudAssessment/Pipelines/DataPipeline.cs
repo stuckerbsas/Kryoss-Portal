@@ -202,10 +202,9 @@ public static class DataPipeline
                 }
             }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Data Purview licensing: 403 - insufficient permissions");
+            log.LogWarning("Data Purview licensing: skipped — Purview/M365 E5 license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -336,10 +335,9 @@ public static class DataPipeline
                 ? ins.OversharedFiles * 100.0 / ins.TotalFilesScanned
                 : 0;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Data SharePoint sites: 403 - insufficient permissions");
+            log.LogWarning("Data SharePoint sites: skipped — SharePoint permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (ODataError ex) when (ex.ResponseStatusCode == 404)
         {
@@ -536,10 +534,9 @@ public static class DataPipeline
             // for CA-3; aggregate oversharing is already captured by HighRiskSites.
             ins.GuestsWithSiteAccess = 0;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Data external users: 403 - insufficient permissions");
+            log.LogWarning("Data external users: skipped — permissions required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -563,7 +560,7 @@ public static class DataPipeline
             var resp = await graph.Security.Alerts_v2.GetAsync(rc =>
             {
                 rc.QueryParameters.Filter =
-                    $"(serviceSource eq 'microsoftDefenderForCloudApps' or serviceSource eq 'office365') and createdDateTime ge {thirtyDaysAgoIso}";
+                    $"serviceSource eq 'microsoftDefenderForCloudApps' and createdDateTime ge {thirtyDaysAgoIso}";
                 rc.QueryParameters.Top = 50;
             }, cancellationToken: ct);
 

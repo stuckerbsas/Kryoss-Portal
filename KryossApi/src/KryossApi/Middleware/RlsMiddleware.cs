@@ -25,7 +25,9 @@ public class RlsMiddleware : IFunctionsWorkerMiddleware
         if (httpReq is not null)
         {
             var path = httpReq.Url.AbsolutePath;
-            if (path.Contains("/v1/", StringComparison.OrdinalIgnoreCase))
+            if (path.Contains("/v1/", StringComparison.OrdinalIgnoreCase) ||
+                path.Contains("/v2/reports/diagnose/", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith("/v2/version", StringComparison.OrdinalIgnoreCase))
             {
                 await next(context);
                 return;

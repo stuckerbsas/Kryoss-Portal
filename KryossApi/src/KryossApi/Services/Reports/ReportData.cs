@@ -106,6 +106,10 @@ public class ReportData
     // --- Monthly ---
     public List<MonthlyScore>? ScoreHistory { get; set; }
 
+    // --- Network diagnostics ---
+    public List<MachineNetworkDiag> NetworkDiags { get; set; } = new();
+    public bool HasNetworkData => NetworkDiags.Count > 0;
+
     // --- Computed convenience ---
     public decimal AvgScore => Runs.Count > 0 ? Math.Round(Runs.Average(r => r.GlobalScore ?? 0), 1) : 0;
     public int TotalMachines => Runs.Count;

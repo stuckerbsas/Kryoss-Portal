@@ -7,7 +7,7 @@ namespace KryossApi.Services;
 
 public interface IEnrollmentService
 {
-    Task<string> GenerateCodeAsync(Guid organizationId, int? assessmentId, string? label, int expiryDays = 7, int? maxUses = null);
+    Task<string> GenerateCodeAsync(Guid organizationId, int? assessmentId, string? label, int expiryDays = 7, int? maxUses = null, bool isTrial = false, int? trialDays = null);
     Task<EnrollmentResult?> RedeemCodeAsync(
         string code, string hostname, string? os, string? osVersion, string? osBuild,
         string? hwid = null, int? productType = null);
@@ -20,7 +20,13 @@ public record EnrollmentResult(
     string PublicKeyPem,
     int? AssessmentId,
     string? AssessmentName,
-    bool ProtocolAuditEnabled
+    bool ProtocolAuditEnabled,
+    bool IsTrial = false,
+    DateTime? TrialExpiresAt = null,
+    Guid OrganizationId = default,
+    string? MachineSecret = null,
+    string? SessionKey = null,
+    DateTime? SessionKeyExpiresAt = null
 );
 
 public class EnrollmentService : IEnrollmentService
@@ -29,16 +35,18 @@ public class EnrollmentService : IEnrollmentService
     private readonly ICurrentUserService _user;
     private readonly IPlatformResolver _platformResolver;
     private readonly IScanScheduleService _schedule;
+    private readonly IKeyRotationService _keyRotation;
 
-    public EnrollmentService(KryossDbContext db, ICurrentUserService user, IPlatformResolver platformResolver, IScanScheduleService schedule)
+    public EnrollmentService(KryossDbContext db, ICurrentUserService user, IPlatformResolver platformResolver, IScanScheduleService schedule, IKeyRotationService keyRotation)
     {
         _db = db;
         _user = user;
         _platformResolver = platformResolver;
         _schedule = schedule;
+        _keyRotation = keyRotation;
     }
 
-    public async Task<string> GenerateCodeAsync(Guid organizationId, int? assessmentId, string? label, int expiryDays = 7, int? maxUses = null)
+    public async Task<string> GenerateCodeAsync(Guid organizationId, int? assessmentId, string? label, int expiryDays = 7, int? maxUses = null, bool isTrial = false, int? trialDays = null)
     {
         var code = GenerateRandomCode(19); // K7X9-M2P4-Q8R1-T5W3 format
 
@@ -49,7 +57,9 @@ public class EnrollmentService : IEnrollmentService
             AssessmentId = assessmentId,
             Label = label,
             MaxUses = maxUses,
-            ExpiresAt = DateTime.UtcNow.AddDays(expiryDays)
+            ExpiresAt = DateTime.UtcNow.AddDays(expiryDays),
+            IsTrial = isTrial,
+            TrialDays = trialDays,
         };
 
         _db.EnrollmentCodes.Add(enrollment);
@@ -120,6 +130,21 @@ public class EnrollmentService : IEnrollmentService
             };
             _db.Machines.Add(machine);
         }
+
+        // Trial propagation
+        if (enrollment.IsTrial)
+        {
+            machine.IsTrial = true;
+            machine.TrialExpiresAt = DateTime.UtcNow.AddDays(enrollment.TrialDays ?? 30);
+        }
+
+        // Generate per-machine auth keys
+        var (machineSecret, sessionKey, expiresAt) = _keyRotation.GenerateInitialKeys();
+        machine.MachineSecret = machineSecret;
+        machine.SessionKey = sessionKey;
+        machine.SessionKeyExpiresAt = expiresAt;
+        machine.AuthVersion = 2;
+        machine.KeyRotatedAt = DateTime.UtcNow;
 
         // Mark enrollment code usage
         enrollment.UseCount++;
@@ -199,7 +224,13 @@ public class EnrollmentService : IEnrollmentService
             PublicKeyPem: cryptoKey?.PublicKeyPem ?? "",
             AssessmentId: assessmentId,
             AssessmentName: assessmentName,
-            ProtocolAuditEnabled: org.ProtocolAuditEnabled
+            ProtocolAuditEnabled: org.ProtocolAuditEnabled,
+            IsTrial: enrollment.IsTrial,
+            TrialExpiresAt: machine.TrialExpiresAt,
+            OrganizationId: enrollment.OrganizationId,
+            MachineSecret: machine.MachineSecret,
+            SessionKey: machine.SessionKey,
+            SessionKeyExpiresAt: machine.SessionKeyExpiresAt
         );
     }
 

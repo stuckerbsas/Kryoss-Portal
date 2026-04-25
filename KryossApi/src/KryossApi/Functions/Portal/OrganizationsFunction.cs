@@ -42,8 +42,10 @@ public class OrganizationsFunction
 
         IQueryable<Data.Entities.Organization> q = _db.Organizations;
 
-        // RLS scoping: non-admin users only see their franchise's orgs
-        if (!_user.IsAdmin && _user.FranchiseId.HasValue)
+        // RLS scoping: client users see only their org, franchise users see their franchise's orgs
+        if (!_user.IsAdmin && _user.OrganizationId.HasValue)
+            q = q.Where(o => o.Id == _user.OrganizationId.Value);
+        else if (!_user.IsAdmin && _user.FranchiseId.HasValue)
             q = q.Where(o => o.FranchiseId == _user.FranchiseId.Value);
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -53,33 +55,68 @@ public class OrganizationsFunction
             q = q.Where(o => o.Name.Contains(search) || (o.LegalName != null && o.LegalName.Contains(search)));
 
         var total = await q.CountAsync();
-        var items = await q
+        var orgs = await q
+            .AsNoTracking()
             .OrderBy(o => o.Name)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(o => new
             {
-                o.Id,
-                o.FranchiseId,
-                o.Name,
-                o.LegalName,
-                o.TaxId,
-                o.Status,
-                o.EntraTenantId,
-                o.BrandId,
-                brand = _db.Brands
-                    .Where(b => b.Id == o.BrandId)
-                    .Select(b => new { b.Id, b.Code, b.Name })
-                    .FirstOrDefault(),
-                machineCount = _db.Machines.Count(m => m.OrganizationId == o.Id && m.IsActive),
-                lastAssessmentAt = _db.AssessmentRuns
-                    .Where(r => r.OrganizationId == o.Id)
-                    .Max(r => (DateTime?)r.StartedAt),
-                enrollmentCodeCount = _db.EnrollmentCodes
-                    .Count(e => e.OrganizationId == o.Id),
-                o.CreatedAt,
-                o.ModifiedAt
+                o.Id, o.FranchiseId, o.Name, o.LegalName, o.TaxId,
+                o.Status, o.EntraTenantId, o.BrandId, o.CreatedAt, o.ModifiedAt
             }).ToListAsync();
+
+        var orgIds = orgs.Select(o => o.Id).ToList();
+
+        var brands = await _db.Brands.AsNoTracking()
+            .Where(b => orgs.Select(o => o.BrandId).Distinct().Contains(b.Id))
+            .Select(b => new { b.Id, b.Code, b.Name })
+            .ToDictionaryAsync(b => b.Id);
+
+        var machineCounts = await _db.Machines.AsNoTracking()
+            .Where(m => orgIds.Contains(m.OrganizationId) && m.IsActive)
+            .GroupBy(m => m.OrganizationId)
+            .Select(g => new { OrgId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.OrgId, x => x.Count);
+
+        var lastAssessments = await _db.AssessmentRuns.AsNoTracking()
+            .Where(r => orgIds.Contains(r.OrganizationId))
+            .GroupBy(r => r.OrganizationId)
+            .Select(g => new { OrgId = g.Key, LastAt = g.Max(r => r.StartedAt) })
+            .ToDictionaryAsync(x => x.OrgId, x => x.LastAt);
+
+        var enrollCounts = await _db.EnrollmentCodes.AsNoTracking()
+            .Where(e => orgIds.Contains(e.OrganizationId))
+            .GroupBy(e => e.OrganizationId)
+            .Select(g => new { OrgId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.OrgId, x => x.Count);
+
+        var latestRunIdsForAvg = await _db.Database
+            .SqlQueryRaw<Guid>(@"
+                SELECT id AS [Value] FROM (
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY started_at DESC) AS rn
+                    FROM assessment_runs
+                ) r WHERE r.rn = 1")
+            .ToListAsync();
+
+        var avgScores = await _db.AssessmentRuns
+            .AsNoTracking()
+            .Where(r => latestRunIdsForAvg.Contains(r.Id) && orgIds.Contains(r.OrganizationId) && r.GlobalScore != null)
+            .GroupBy(r => r.OrganizationId)
+            .Select(g => new { OrgId = g.Key, Avg = Math.Round(g.Average(r => (double)r.GlobalScore!.Value), 1) })
+            .ToDictionaryAsync(x => x.OrgId, x => x.Avg);
+
+        var items = orgs.Select(o => new
+        {
+            o.Id, o.FranchiseId, o.Name, o.LegalName, o.TaxId,
+            o.Status, o.EntraTenantId, o.BrandId,
+            brand = brands.TryGetValue(o.BrandId, out var b) ? b : null,
+            machineCount = machineCounts.TryGetValue(o.Id, out var mc) ? mc : 0,
+            avgScore = avgScores.TryGetValue(o.Id, out var avg) ? (double?)avg : null,
+            lastAssessmentAt = lastAssessments.TryGetValue(o.Id, out var la) ? (DateTime?)la : null,
+            enrollmentCodeCount = enrollCounts.TryGetValue(o.Id, out var ec) ? ec : 0,
+            o.CreatedAt, o.ModifiedAt
+        }).ToList();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { total, page, pageSize, items });
@@ -93,32 +130,14 @@ public class OrganizationsFunction
         Guid id)
     {
         var org = await _db.Organizations
+            .AsNoTracking()
             .Where(o => o.Id == id)
             .Select(o => new
             {
-                o.Id,
-                o.FranchiseId,
-                o.Name,
-                o.LegalName,
-                o.TaxId,
-                o.Status,
-                o.EntraTenantId,
-                o.BrandId,
-                brand = _db.Brands
-                    .Where(b => b.Id == o.BrandId)
-                    .Select(b => new { b.Id, b.Code, b.Name })
-                    .FirstOrDefault(),
-                machineCount = _db.Machines.Count(m => m.OrganizationId == o.Id && m.IsActive),
-                lastAssessmentAt = _db.AssessmentRuns
-                    .Where(r => r.OrganizationId == o.Id)
-                    .Max(r => (DateTime?)r.StartedAt),
-                enrollmentCodeCount = _db.EnrollmentCodes
-                    .Count(e => e.OrganizationId == o.Id),
-                o.ProtocolAuditEnabled,
-                o.ProtocolAuditEnabledAt,
-                o.ProtocolAuditEnabledBy,
-                o.CreatedAt,
-                o.ModifiedAt
+                o.Id, o.FranchiseId, o.Name, o.LegalName, o.TaxId,
+                o.Status, o.EntraTenantId, o.BrandId,
+                o.ProtocolAuditEnabled, o.ProtocolAuditEnabledAt, o.ProtocolAuditEnabledBy,
+                o.CreatedAt, o.ModifiedAt
             }).FirstOrDefaultAsync();
 
         if (org is null)
@@ -128,16 +147,46 @@ public class OrganizationsFunction
             return notFound;
         }
 
-        // RLS: non-admin can only see their franchise's org
-        if (!_user.IsAdmin && _user.FranchiseId.HasValue && org.FranchiseId != _user.FranchiseId.Value)
+        if (!_user.IsAdmin)
         {
-            var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
-            await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
-            return forbidden;
+            if (_user.OrganizationId.HasValue && org.Id != _user.OrganizationId.Value)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+            if (!_user.OrganizationId.HasValue && _user.FranchiseId.HasValue && org.FranchiseId != _user.FranchiseId.Value)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
         }
 
+        var brand = await _db.Brands.AsNoTracking()
+            .Where(b => b.Id == org.BrandId)
+            .Select(b => new { b.Id, b.Code, b.Name })
+            .FirstOrDefaultAsync();
+        var machineCount = await _db.Machines.CountAsync(m => m.OrganizationId == id && m.IsActive);
+        var lastAssessmentAt = await _db.AssessmentRuns
+            .Where(r => r.OrganizationId == id)
+            .OrderByDescending(r => r.StartedAt)
+            .Select(r => (DateTime?)r.StartedAt)
+            .FirstOrDefaultAsync();
+        var enrollmentCodeCount = await _db.EnrollmentCodes.CountAsync(e => e.OrganizationId == id);
+
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(org);
+        await response.WriteAsJsonAsync(new
+        {
+            org.Id, org.FranchiseId, org.Name, org.LegalName, org.TaxId,
+            org.Status, org.EntraTenantId, org.BrandId,
+            brand,
+            machineCount,
+            lastAssessmentAt,
+            enrollmentCodeCount,
+            org.ProtocolAuditEnabled, org.ProtocolAuditEnabledAt, org.ProtocolAuditEnabledBy,
+            org.CreatedAt, org.ModifiedAt
+        });
         return response;
     }
 
@@ -338,7 +387,9 @@ public class OrganizationsFunction
         var machineCount = await _db.Machines.CountAsync(m => m.OrganizationId == org.Id && m.IsActive);
         var lastAssessmentAt = await _db.AssessmentRuns
             .Where(r => r.OrganizationId == org.Id)
-            .MaxAsync(r => (DateTime?)r.StartedAt);
+            .OrderByDescending(r => r.StartedAt)
+            .Select(r => (DateTime?)r.StartedAt)
+            .FirstOrDefaultAsync();
         var enrollmentCodeCount = await _db.EnrollmentCodes
             .CountAsync(e => e.OrganizationId == org.Id);
 
@@ -441,6 +492,46 @@ public class OrganizationsFunction
             protocolAuditEnabled = org.ProtocolAuditEnabled,
             protocolAuditEnabledAt = org.ProtocolAuditEnabledAt,
             protocolAuditEnabledBy = org.ProtocolAuditEnabledBy
+        });
+        return response;
+    }
+
+    [Function("Organizations_ExternalScan")]
+    [RequirePermission("organizations:update")]
+    public async Task<HttpResponseData> ToggleExternalScan(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "v2/organizations/{id:guid}/external-scan")] HttpRequestData req,
+        Guid id)
+    {
+        var org = await _db.Organizations.FirstOrDefaultAsync(o => o.Id == id);
+        if (org is null)
+            return req.CreateResponse(System.Net.HttpStatusCode.NotFound);
+
+        var body = await req.ReadFromJsonAsync<Dictionary<string, object>>();
+        if (body is null || !body.ContainsKey("enabled"))
+        {
+            var bad = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Body must contain 'enabled' boolean" });
+            return bad;
+        }
+
+        var enabled = body["enabled"] is bool b ? b
+            : body["enabled"] is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.True;
+
+        org.ExternalScanConsent = enabled;
+        if (enabled)
+        {
+            org.ExternalScanConsentAt = DateTime.UtcNow;
+            org.ExternalScanConsentBy = _user.UserId;
+        }
+
+        await _db.SaveChangesAsync();
+
+        var response = req.CreateResponse(System.Net.HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            id = org.Id,
+            externalScanConsent = org.ExternalScanConsent,
+            externalScanConsentAt = org.ExternalScanConsentAt,
         });
         return response;
     }

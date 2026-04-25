@@ -1,20 +1,29 @@
 using System.Text;
 namespace KryossApi.Services.Reports.Blocks;
 
-public class FrameworkGaugeBlock : IReportBlock
+public class FrameworkGaugeBlock : IFlowBlock
 {
-    public string Render(ReportData data, ReportOptions options)
+    public string? SectionTitle(ReportOptions options) =>
+        options.FrameworkCode != null
+            ? (options.IsSpanish ? $"Cumplimiento {options.FrameworkName}" : $"{options.FrameworkName} Compliance")
+            : (options.IsSpanish ? "Cumplimiento por Framework" : "Framework Compliance");
+
+    public int EstimateHeight(ReportData data)
     {
+        int h = 40;
+        if (data.FrameworkScores.Count > 0) h += data.FrameworkScores.Count * 40;
+        if (data.PreviousMonthScore.HasValue) h += 30;
+        if (data.CloudFrameworkScores != null && data.CloudFrameworkScores.Count > 0) h += 120;
+        return Math.Min(h, 500);
+    }
+
+    public string RenderContent(ReportData data, ReportOptions options)
+    {
+        if (data.FrameworkScores.Count == 0 && options.FrameworkCode == null)
+            return "";
+
         var sb = new StringBuilder();
         var es = options.IsSpanish;
-
-        sb.AppendLine("<div class='page'>");
-        ReportHelpers.AppendPageHeader(sb,
-            options.FrameworkCode != null
-                ? (es ? $"Cumplimiento {options.FrameworkName}" : $"{options.FrameworkName} Compliance")
-                : (es ? "Cumplimiento por Framework" : "Framework Compliance"),
-            data.Branding);
-        sb.AppendLine("<div class='pb'>");
 
         if (options.FrameworkCode != null)
         {
@@ -30,7 +39,6 @@ public class FrameworkGaugeBlock : IReportBlock
                 sb.AppendLine("</div>");
             }
 
-            // Cloud framework score if available
             if (data.CloudFrameworkScores != null)
             {
                 var cloudFw = data.CloudFrameworkScores.FirstOrDefault(f =>
@@ -62,6 +70,18 @@ public class FrameworkGaugeBlock : IReportBlock
             sb.AppendLine($"<p style='color:{color};font-size:1.1em;margin-top:1em;text-align:center;'>{arrow} {Math.Abs(delta):F1} pts vs {(es ? "período anterior" : "previous period")}</p>");
         }
 
+        return sb.ToString();
+    }
+
+    public string Render(ReportData data, ReportOptions options)
+    {
+        var content = RenderContent(data, options);
+        if (string.IsNullOrEmpty(content)) return "";
+        var sb = new StringBuilder();
+        sb.AppendLine("<div class='page'>");
+        ReportHelpers.AppendPageHeader(sb, SectionTitle(options)!, data.Branding);
+        sb.AppendLine("<div class='pb'>");
+        sb.Append(content);
         sb.AppendLine("</div></div>");
         return sb.ToString();
     }

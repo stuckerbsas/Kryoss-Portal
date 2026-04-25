@@ -6,6 +6,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- AOT Publishing (disabled: conflicts with single-file;
          enable when migrating to full JSON source-gen) -->
@@ -36,7 +37,7 @@
     <DebuggerSupport>false</DebuggerSupport>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
     <EnableUnsafeUTF7Encoding>false</EnableUnsafeUTF7Encoding>
-    <BuiltInComInteropSupport>false</BuiltInComInteropSupport>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <UseNativeHttpHandler>true</UseNativeHttpHandler>
     <AutoreleasePoolSupport>false</AutoreleasePoolSupport>
     <CustomResourceTypesSupport>false</CustomResourceTypesSupport>
@@ -47,7 +48,7 @@
     <!-- Assembly info -->
     <AssemblyName>KryossAgent</AssemblyName>
     <RootNamespace>KryossAgent</RootNamespace>
-    <Version>1.6.0</Version>
+    <Version>2.2.1</Version>
     <Company>TeamLogic IT</Company>
     <Product>Kryoss Security Agent</Product>
     <Description>Security assessment agent for Kryoss platform</Description>
@@ -67,6 +68,11 @@
   <!-- WMI for native BitLocker + TPM engines (v1.4.0) -->
   <ItemGroup>
     <PackageReference Include="System.Management" Version="8.0.*" />
+  </ItemGroup>
+
+  <!-- v2.0.0: Windows Service hosting -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.*" />
   </ItemGroup>
 
   <!-- Preserve assemblies that use reflection internally (trimming would

@@ -65,10 +65,15 @@ public class KryossDbContext : DbContext
     public DbSet<SnmpConfig> SnmpConfigs => Set<SnmpConfig>();
     public DbSet<SnmpDevice> SnmpDevices => Set<SnmpDevice>();
     public DbSet<SnmpDeviceInterface> SnmpDeviceInterfaces => Set<SnmpDeviceInterface>();
+    public DbSet<SnmpDeviceSupply> SnmpDeviceSupplies => Set<SnmpDeviceSupply>();
+    public DbSet<SnmpDeviceProfile> SnmpDeviceProfiles => Set<SnmpDeviceProfile>();
+    public DbSet<SnmpProfileOid> SnmpProfileOids => Set<SnmpProfileOid>();
+    public DbSet<SnmpDeviceNeighbor> SnmpDeviceNeighbors => Set<SnmpDeviceNeighbor>();
 
     // External scans (cloud-side pentest)
     public DbSet<ExternalScan> ExternalScans => Set<ExternalScan>();
     public DbSet<ExternalScanResult> ExternalScanResults => Set<ExternalScanResult>();
+    public DbSet<ExternalScanFinding> ExternalScanFindings => Set<ExternalScanFinding>();
 
     // M365 / Entra ID
     public DbSet<M365Tenant> M365Tenants => Set<M365Tenant>();
@@ -132,6 +137,11 @@ public class KryossDbContext : DbContext
     // CA-15: Drift Alerts
     public DbSet<CloudAssessmentAlertRule> CloudAssessmentAlertRules => Set<CloudAssessmentAlertRule>();
     public DbSet<CloudAssessmentAlertSent> CloudAssessmentAlertsSent => Set<CloudAssessmentAlertSent>();
+
+    // Remediation
+    public DbSet<RemediationAction> RemediationActions => Set<RemediationAction>();
+    public DbSet<RemediationTask> RemediationTasks => Set<RemediationTask>();
+    public DbSet<OrgAutoRemediate> OrgAutoRemediates => Set<OrgAutoRemediate>();
 
     // Infrastructure Assessment (IA-0)
     public DbSet<InfraAssessmentScan> InfraAssessmentScans => Set<InfraAssessmentScan>();
@@ -243,6 +253,14 @@ public class KryossDbContext : DbContext
             // Platform scope resolved at enrollment time (Phase 1: W10/W11 only).
             // Nullable FK -- servers / unknown OS stay NULL and get 0 controls.
             e.HasOne(x => x.Platform).WithMany().HasForeignKey(x => x.PlatformId).IsRequired(false);
+            // Auth / key material column mappings
+            e.Property(x => x.MachineSecret).HasColumnName("machine_secret");
+            e.Property(x => x.SessionKey).HasColumnName("session_key");
+            e.Property(x => x.SessionKeyExpiresAt).HasColumnName("session_key_expires_at");
+            e.Property(x => x.PrevSessionKey).HasColumnName("prev_session_key");
+            e.Property(x => x.PrevKeyExpiresAt).HasColumnName("prev_key_expires_at");
+            e.Property(x => x.KeyRotatedAt).HasColumnName("key_rotated_at");
+            e.Property(x => x.AuthVersion).HasColumnName("auth_version");
         });
 
         // ── Assessment ──
@@ -394,10 +412,15 @@ public class KryossDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
             e.HasOne(x => x.Run).WithMany().HasForeignKey(x => x.RunId);
+            e.Property(x => x.GatewayLatencyMs).HasColumnName("gateway_latency_ms");
+            e.Property(x => x.GatewayIp).HasColumnName("gateway_ip");
             e.Property(x => x.DnsResolutionMs).HasColumnName("dns_resolution_ms");
             e.Property(x => x.CloudEndpointCount).HasColumnName("cloud_endpoint_count");
             e.Property(x => x.CloudEndpointAvgMs).HasColumnName("cloud_endpoint_avg_ms");
             e.Property(x => x.TriggeredByIpChange).HasColumnName("triggered_by_ip_change");
+            e.Property(x => x.WifiCount).HasColumnName("wifi_count");
+            e.Property(x => x.VpnAdapterCount).HasColumnName("vpn_adapter_count");
+            e.Property(x => x.EthCount).HasColumnName("eth_count");
             e.HasMany(x => x.LatencyPeers).WithOne(x => x.Diag).HasForeignKey(x => x.DiagId);
             e.HasMany(x => x.Routes).WithOne(x => x.Diag).HasForeignKey(x => x.DiagId);
         });
@@ -439,10 +462,36 @@ public class KryossDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasMany(x => x.Interfaces).WithOne(x => x.Device).HasForeignKey(x => x.DeviceId);
+            e.HasMany(x => x.Supplies).WithOne(x => x.Device).HasForeignKey(x => x.DeviceId);
+            e.HasMany(x => x.Neighbors).WithOne(x => x.Device).HasForeignKey(x => x.DeviceId);
+            e.Property(x => x.LldpNeighborCount).HasColumnName("lldp_neighbor_count");
+            e.Property(x => x.CdpNeighborCount).HasColumnName("cdp_neighbor_count");
+        });
+        mb.Entity<SnmpDeviceNeighbor>(e =>
+        {
+            e.ToTable("snmp_device_neighbors");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.ResolvedDevice).WithMany().HasForeignKey(x => x.ResolvedDeviceId);
         });
         mb.Entity<SnmpDeviceInterface>(e =>
         {
             e.ToTable("snmp_device_interfaces");
+            e.HasKey(x => x.Id);
+        });
+        mb.Entity<SnmpDeviceSupply>(e =>
+        {
+            e.ToTable("snmp_device_supplies");
+            e.HasKey(x => x.Id);
+        });
+        mb.Entity<SnmpDeviceProfile>(e =>
+        {
+            e.ToTable("snmp_device_profiles");
+            e.HasKey(x => x.Id);
+            e.HasMany(x => x.Oids).WithOne(x => x.Profile).HasForeignKey(x => x.ProfileId);
+        });
+        mb.Entity<SnmpProfileOid>(e =>
+        {
+            e.ToTable("snmp_profile_oids");
             e.HasKey(x => x.Id);
         });
 
@@ -453,11 +502,19 @@ public class KryossDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasMany(x => x.Results).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Findings).WithOne(x => x.Scan).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.NoAction);
         });
 
         mb.Entity<ExternalScanResult>(e =>
         {
             e.ToTable("external_scan_results");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+        });
+
+        mb.Entity<ExternalScanFinding>(e =>
+        {
+            e.ToTable("external_scan_findings");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
         });
@@ -1104,6 +1161,65 @@ public class KryossDbContext : DbContext
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasIndex(x => x.ScanId);
             e.HasIndex(x => x.OrganizationId);
+        });
+
+        // ── Remediation ──
+        mb.Entity<RemediationAction>(e =>
+        {
+            e.ToTable("remediation_actions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.ControlDefId).HasColumnName("control_def_id");
+            e.Property(x => x.ActionType).HasColumnName("action_type").HasMaxLength(30);
+            e.Property(x => x.ParamsTemplate).HasColumnName("params_template");
+            e.Property(x => x.RiskLevel).HasColumnName("risk_level").HasMaxLength(10);
+            e.Property(x => x.Description).HasColumnName("description").HasMaxLength(500);
+            e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.ControlDef).WithMany().HasForeignKey(x => x.ControlDefId);
+        });
+
+        mb.Entity<RemediationTask>(e =>
+        {
+            e.ToTable("remediation_tasks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.MachineId).HasColumnName("machine_id");
+            e.Property(x => x.ControlDefId).HasColumnName("control_def_id");
+            e.Property(x => x.ActionId).HasColumnName("action_id");
+            e.Property(x => x.ActionType).HasColumnName("action_type").HasMaxLength(30);
+            e.Property(x => x.Params).HasColumnName("params");
+            e.Property(x => x.Status).HasColumnName("status").HasMaxLength(20);
+            e.Property(x => x.PreviousValue).HasColumnName("previous_value");
+            e.Property(x => x.NewValue).HasColumnName("new_value");
+            e.Property(x => x.ErrorMessage).HasColumnName("error_message").HasMaxLength(1000);
+            e.Property(x => x.CreatedBy).HasColumnName("created_by");
+            e.Property(x => x.ApprovedBy).HasColumnName("approved_by");
+            e.Property(x => x.ApprovedAt).HasColumnName("approved_at");
+            e.Property(x => x.ExecutedAt).HasColumnName("executed_at");
+            e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasOne(x => x.ControlDef).WithMany().HasForeignKey(x => x.ControlDefId);
+            e.HasOne(x => x.Action).WithMany().HasForeignKey(x => x.ActionId);
+            e.HasIndex(x => new { x.MachineId, x.Status }).HasDatabaseName("ix_rem_task_machine");
+            e.HasIndex(x => new { x.OrganizationId, x.CreatedAt }).HasDatabaseName("ix_rem_task_org");
+        });
+
+        mb.Entity<OrgAutoRemediate>(e =>
+        {
+            e.ToTable("org_auto_remediate");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.OrganizationId).HasColumnName("organization_id");
+            e.Property(x => x.ControlDefId).HasColumnName("control_def_id");
+            e.Property(x => x.EnabledBy).HasColumnName("enabled_by");
+            e.Property(x => x.EnabledAt).HasColumnName("enabled_at");
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasOne(x => x.ControlDef).WithMany().HasForeignKey(x => x.ControlDefId);
+            e.HasIndex(x => new { x.OrganizationId, x.ControlDefId }).IsUnique().HasDatabaseName("uq_org_auto_rem");
         });
 
         // ── Infrastructure Assessment (IA-0) ──

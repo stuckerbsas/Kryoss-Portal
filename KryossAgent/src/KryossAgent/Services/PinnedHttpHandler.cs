@@ -44,7 +44,7 @@ public sealed class PinnedHttpHandler : HttpClientHandler
 
     // The SPKI hash doesn't change between requests in the same process,
     // so in log-only mode we print it once instead of spamming stderr.
-    private int _logged;
+    private static int s_logged;
 
     public PinnedHttpHandler(string[]? pins)
     {
@@ -90,7 +90,7 @@ public sealed class PinnedHttpHandler : HttpClientHandler
             // TLS certificate pinning. Without pinning, a rogue CA or compromised
             // corporate proxy can MitM the agent-to-API connection, which combined
             // with server-controlled command execution (C-3) enables RCE as SYSTEM.
-            if (Interlocked.Exchange(ref _logged, 1) == 0)
+            if (Interlocked.Exchange(ref s_logged, 1) == 0)
             {
                 Console.Error.WriteLine(
                     "[SECURITY WARNING] SPKI pinning is DISABLED — TLS MitM protection is reduced to CA trust only.");

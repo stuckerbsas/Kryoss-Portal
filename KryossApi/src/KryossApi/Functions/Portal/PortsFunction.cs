@@ -75,14 +75,16 @@ public class PortsFunction
         }
 
         // Upsert: delete old ports for this machine, then insert new ones
-        var existingPorts = await _db.MachinePorts
+        await _db.MachinePorts
             .Where(p => p.MachineId == machine.Id)
-            .ToListAsync();
-        _db.MachinePorts.RemoveRange(existingPorts);
+            .ExecuteDeleteAsync();
 
         var now = DateTime.UtcNow;
+        var seen = new HashSet<(int, string)>();
         foreach (var p in body.Ports)
         {
+            var key = (p.Port, (p.Protocol ?? "TCP").ToUpperInvariant());
+            if (!seen.Add(key)) continue;
             _db.MachinePorts.Add(new MachinePort
             {
                 MachineId = machine.Id,
@@ -91,6 +93,9 @@ public class PortsFunction
                 Status = p.Status ?? "open",
                 Service = p.Service,
                 Risk = p.Risk,
+                Banner = p.Banner,
+                ServiceName = p.ServiceName,
+                ServiceVersion = p.ServiceVersion,
                 ScannedAt = now,
             });
         }
@@ -99,6 +104,93 @@ public class PortsFunction
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { machineId = machine.Id, portsCount = body.Ports.Count });
+        return response;
+    }
+
+    /// <summary>
+    /// POST /v1/ports/bulk — Agent submits port scan results for multiple machines in one call.
+    /// Auth: HMAC (agent route).
+    /// </summary>
+    [Function("Ports_SubmitBulk")]
+    public async Task<HttpResponseData> SubmitBulk(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/ports/bulk")] HttpRequestData req,
+        FunctionContext context)
+    {
+        PortsBulkSubmitRequest? body = null;
+        if (context.Items.TryGetValue("RequestBodyBytes", out var rawObj) && rawObj is byte[] rawBytes && rawBytes.Length > 0)
+        {
+            body = JsonSerializer.Deserialize<PortsBulkSubmitRequest>(rawBytes,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        else
+        {
+            body = await req.ReadFromJsonAsync<PortsBulkSubmitRequest>();
+        }
+
+        if (body?.Machines is null or { Count: 0 })
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Invalid bulk port payload" });
+            return bad;
+        }
+
+        var orgId = _user.OrganizationId;
+        if (orgId is null)
+        {
+            var unauth = req.CreateResponse(HttpStatusCode.Unauthorized);
+            await unauth.WriteAsJsonAsync(new { error = "Organization context required" });
+            return unauth;
+        }
+
+        var hostnames = body.Machines.Select(m => m.MachineHostname).Distinct().ToList();
+        var knownMachines = await _db.Machines
+            .Where(m => m.OrganizationId == orgId.Value && m.IsActive && hostnames.Contains(m.Hostname))
+            .ToDictionaryAsync(m => m.Hostname, StringComparer.OrdinalIgnoreCase);
+
+        int saved = 0;
+        var skipped = new List<string>();
+        var now = DateTime.UtcNow;
+
+        foreach (var entry in body.Machines)
+        {
+            if (!knownMachines.TryGetValue(entry.MachineHostname, out var machine))
+            {
+                skipped.Add(entry.MachineHostname);
+                continue;
+            }
+
+            await _db.MachinePorts
+                .Where(p => p.MachineId == machine.Id)
+                .ExecuteDeleteAsync();
+
+            var seen = new HashSet<(int, string)>();
+            foreach (var p in entry.Ports)
+            {
+                var key = (p.Port, (p.Protocol ?? "TCP").ToUpperInvariant());
+                if (!seen.Add(key)) continue;
+                _db.MachinePorts.Add(new MachinePort
+                {
+                    MachineId = machine.Id,
+                    Port = p.Port,
+                    Protocol = p.Protocol ?? "TCP",
+                    Status = p.Status ?? "open",
+                    Service = p.Service,
+                    Risk = p.Risk,
+                    Banner = p.Banner,
+                    ServiceName = p.ServiceName,
+                    ServiceVersion = p.ServiceVersion,
+                    ScannedAt = now,
+                });
+            }
+
+            saved++;
+        }
+
+        if (saved > 0)
+            await _db.SaveChangesAsync();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { saved, skipped = skipped.Count, skippedHosts = skipped });
         return response;
     }
 
@@ -156,6 +248,9 @@ public class PortsFunction
                 p.Status,
                 p.Service,
                 p.Risk,
+                p.Banner,
+                p.ServiceName,
+                p.ServiceVersion,
                 p.ScannedAt,
             })
             .ToListAsync();
@@ -273,4 +368,12 @@ public class PortItem
     public string? Status { get; set; }
     public string? Service { get; set; }
     public string? Risk { get; set; }
+    public string? Banner { get; set; }
+    public string? ServiceName { get; set; }
+    public string? ServiceVersion { get; set; }
+}
+
+public class PortsBulkSubmitRequest
+{
+    public List<PortsSubmitRequest> Machines { get; set; } = [];
 }

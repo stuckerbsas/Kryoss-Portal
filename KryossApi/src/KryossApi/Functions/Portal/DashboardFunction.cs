@@ -7,10 +7,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KryossApi.Functions.Portal;
 
-/// <summary>
-/// Fleet dashboard endpoints: summary KPIs, score trends, top risks.
-/// Used by the portal dashboard page.
-/// </summary>
 [RequirePermission("assessment:read")]
 public class DashboardFunction
 {
@@ -23,9 +19,6 @@ public class DashboardFunction
         _user = user;
     }
 
-    /// <summary>
-    /// Fleet summary: total machines, avg score, grade distribution, top failing controls.
-    /// </summary>
     [Function("Dashboard_Fleet")]
     public async Task<HttpResponseData> Fleet(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/dashboard/fleet")] HttpRequestData req)
@@ -33,7 +26,6 @@ public class DashboardFunction
         var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
         var orgIdStr = query["organizationId"];
 
-        // Get all machines for this org/franchise
         IQueryable<Data.Entities.Machine> machineQuery = _db.Machines.Where(m => m.IsActive);
         if (Guid.TryParse(orgIdStr, out var orgId))
             machineQuery = machineQuery.Where(m => m.OrganizationId == orgId);
@@ -43,41 +35,64 @@ public class DashboardFunction
         var machineIds = await machineQuery.Select(m => m.Id).ToListAsync();
         var totalMachines = machineIds.Count;
 
-        // Get latest run per machine
+        if (totalMachines == 0)
+        {
+            var empty = req.CreateResponse(HttpStatusCode.OK);
+            await empty.WriteAsJsonAsync(new
+            {
+                totalMachines = 0, assessedMachines = 0, avgScore = 0.0,
+                gradeDistribution = new Dictionary<string, int>(),
+                totalPass = 0, totalWarn = 0, totalFail = 0,
+                topFailingControls = Array.Empty<object>(),
+                frameworkScores = Array.Empty<object>(),
+                agentVersions = Array.Empty<object>()
+            });
+            return empty;
+        }
+
+        // Latest run per machine: get IDs via raw SQL, then load with EF
+        var latestRunIds = await _db.Database
+            .SqlQueryRaw<Guid>(@"
+                SELECT id AS [Value] FROM (
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY started_at DESC) AS rn
+                    FROM assessment_runs
+                ) r WHERE r.rn = 1")
+            .ToListAsync();
+
         var latestRuns = await _db.AssessmentRuns
-            .Where(r => machineIds.Contains(r.MachineId))
-            .GroupBy(r => r.MachineId)
-            .Select(g => g.OrderByDescending(r => r.StartedAt).First())
+            .AsNoTracking()
+            .Where(r => latestRunIds.Contains(r.Id) && machineIds.Contains(r.MachineId))
+            .Select(r => new
+            {
+                r.Id, r.MachineId, r.GlobalScore, r.Grade,
+                r.PassCount, r.WarnCount, r.FailCount
+            })
             .ToListAsync();
 
         var assessedMachines = latestRuns.Count;
         var avgScore = latestRuns.Count > 0
-            ? Math.Round(latestRuns.Average(r => (double)(r.GlobalScore ?? 0)), 1)
-            : 0;
+            ? Math.Round(latestRuns.Average(r => (double)(r.GlobalScore ?? 0)), 1) : 0;
 
         var gradeDistribution = latestRuns
             .GroupBy(r => r.Grade ?? "N/A")
             .ToDictionary(g => g.Key, g => g.Count());
 
-        // Top 10 most-failing controls across fleet
-        var latestRunIds = latestRuns.Select(r => r.Id).ToList();
+        var runIds = latestRuns.Select(r => r.Id).ToList();
+
         var topFailing = await _db.ControlResults
-            .Where(cr => latestRunIds.Contains(cr.RunId) && cr.Status == "fail")
+            .AsNoTracking()
+            .Where(cr => runIds.Contains(cr.RunId) && cr.Status == "fail")
             .GroupBy(cr => cr.ControlDefId)
-            .Select(g => new
-            {
-                controlDefId = g.Key,
-                failCount = g.Count()
-            })
+            .Select(g => new { controlDefId = g.Key, failCount = g.Count() })
             .OrderByDescending(x => x.failCount)
             .Take(10)
             .Join(_db.ControlDefs, x => x.controlDefId, cd => cd.Id,
                 (x, cd) => new { cd.ControlId, cd.Name, cd.Severity, x.failCount })
             .ToListAsync();
 
-        // Aggregate framework scores across latest runs
         var frameworkScores = await _db.RunFrameworkScores
-            .Where(fs => latestRunIds.Contains(fs.RunId))
+            .AsNoTracking()
+            .Where(fs => runIds.Contains(fs.RunId))
             .GroupBy(fs => fs.FrameworkId)
             .Select(g => new
             {
@@ -89,17 +104,15 @@ public class DashboardFunction
                 machineCount = g.Count()
             })
             .Join(_db.Frameworks, x => x.frameworkId, fw => fw.Id,
-                (x, fw) => new
-                {
-                    fw.Code,
-                    fw.Name,
-                    x.avgScore,
-                    x.totalPass,
-                    x.totalWarn,
-                    x.totalFail,
-                    x.machineCount
-                })
+                (x, fw) => new { fw.Code, fw.Name, x.avgScore, x.totalPass, x.totalWarn, x.totalFail, x.machineCount })
             .OrderBy(x => x.Code)
+            .ToListAsync();
+
+        var agentVersions = await machineQuery
+            .Where(m => m.AgentVersion != null)
+            .GroupBy(m => m.AgentVersion!)
+            .Select(g => new { version = g.Key, count = g.Count() })
+            .OrderByDescending(x => x.count)
             .ToListAsync();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -113,14 +126,12 @@ public class DashboardFunction
             totalWarn = latestRuns.Sum(r => r.WarnCount ?? 0),
             totalFail = latestRuns.Sum(r => r.FailCount ?? 0),
             topFailingControls = topFailing,
-            frameworkScores
+            frameworkScores,
+            agentVersions
         });
         return response;
     }
 
-    /// <summary>
-    /// Score trend over time for an org or specific machine.
-    /// </summary>
     [Function("Dashboard_Trend")]
     public async Task<HttpResponseData> Trend(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/dashboard/trend")] HttpRequestData req)
@@ -134,6 +145,7 @@ public class DashboardFunction
         var since = DateTime.UtcNow.AddMonths(-months);
 
         IQueryable<Data.Entities.AssessmentRun> q = _db.AssessmentRuns
+            .AsNoTracking()
             .Where(r => r.StartedAt >= since);
 
         if (Guid.TryParse(machineIdStr, out var machineId))
@@ -147,14 +159,8 @@ public class DashboardFunction
             .OrderBy(r => r.StartedAt)
             .Select(r => new
             {
-                r.Id,
-                r.MachineId,
-                r.GlobalScore,
-                r.Grade,
-                r.PassCount,
-                r.WarnCount,
-                r.FailCount,
-                r.StartedAt
+                r.Id, r.MachineId, r.GlobalScore, r.Grade,
+                r.PassCount, r.WarnCount, r.FailCount, r.StartedAt
             }).ToListAsync();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -162,39 +168,60 @@ public class DashboardFunction
         return response;
     }
 
-    /// <summary>
-    /// Cross-org comparison (franchise-level view).
-    /// Shows each org's avg score, machine count, last assessment date.
-    /// </summary>
     [Function("Dashboard_OrgComparison")]
     [RequirePermission("assessment:read")]
     public async Task<HttpResponseData> OrgComparison(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/dashboard/org-comparison")] HttpRequestData req)
     {
-        // Only useful for franchise owners or admins
+        // Batch: org list + machine counts + latest scores in 3 queries instead of N*3
         var orgs = await _db.Organizations
-            .Select(o => new
-            {
-                o.Id,
-                o.Name,
-                machineCount = _db.Machines.Count(m => m.OrganizationId == o.Id && m.IsActive),
-                latestRuns = _db.AssessmentRuns
-                    .Where(r => r.OrganizationId == o.Id)
-                    .GroupBy(r => r.MachineId)
-                    .Select(g => g.OrderByDescending(r => r.StartedAt).First())
-                    .ToList()
-            }).ToListAsync();
+            .AsNoTracking()
+            .Select(o => new { o.Id, o.Name })
+            .ToListAsync();
 
-        var result = orgs.Select(o => new
+        var orgIds = orgs.Select(o => o.Id).ToList();
+
+        var machineCounts = await _db.Machines
+            .AsNoTracking()
+            .Where(m => orgIds.Contains(m.OrganizationId) && m.IsActive)
+            .GroupBy(m => m.OrganizationId)
+            .Select(g => new { OrgId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.OrgId, x => x.Count);
+
+        // Latest run per machine per org
+        var latestRunIdsForOrgs = await _db.Database
+            .SqlQueryRaw<Guid>(@"
+                SELECT id AS [Value] FROM (
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY started_at DESC) AS rn
+                    FROM assessment_runs
+                ) r WHERE r.rn = 1")
+            .ToListAsync();
+
+        var latestRunsByOrg = await _db.AssessmentRuns
+            .AsNoTracking()
+            .Where(r => latestRunIdsForOrgs.Contains(r.Id) && orgIds.Contains(r.OrganizationId))
+            .GroupBy(r => r.OrganizationId)
+            .Select(g => new
+            {
+                OrgId = g.Key,
+                AssessedCount = g.Count(),
+                AvgScore = Math.Round(g.Average(r => (double)(r.GlobalScore ?? 0)), 1),
+                LastAssessment = g.Max(r => r.StartedAt)
+            })
+            .ToDictionaryAsync(x => x.OrgId);
+
+        var result = orgs.Select(o =>
         {
-            o.Id,
-            o.Name,
-            o.machineCount,
-            assessedMachines = o.latestRuns.Count,
-            avgScore = o.latestRuns.Count > 0
-                ? Math.Round(o.latestRuns.Average(r => (double)(r.GlobalScore ?? 0)), 1) : 0,
-            lastAssessment = o.latestRuns.Count > 0
-                ? o.latestRuns.Max(r => r.StartedAt) : (DateTime?)null
+            machineCounts.TryGetValue(o.Id, out var mc);
+            latestRunsByOrg.TryGetValue(o.Id, out var run);
+            return new
+            {
+                o.Id, o.Name,
+                machineCount = mc,
+                assessedMachines = run?.AssessedCount ?? 0,
+                avgScore = run?.AvgScore ?? 0,
+                lastAssessment = run?.LastAssessment
+            };
         }).OrderBy(o => o.avgScore).ToList();
 
         var response = req.CreateResponse(HttpStatusCode.OK);

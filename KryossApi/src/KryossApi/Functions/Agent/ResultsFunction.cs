@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using KryossApi.Data;
+using KryossApi.Data.Entities;
 using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -24,6 +25,9 @@ public class ResultsFunction
     private readonly ICryptoService _crypto;
     private readonly ICurrentUserService _currentUser;
     private readonly IHwidVerifier _hwid;
+    private readonly IPublicIpTracker _ipTracker;
+    private readonly ISiteClusterService _siteCluster;
+    private readonly ExternalScanService _extScan;
     private readonly ILogger<ResultsFunction> _logger;
 
     public ResultsFunction(
@@ -33,6 +37,9 @@ public class ResultsFunction
         ICryptoService crypto,
         ICurrentUserService currentUser,
         IHwidVerifier hwid,
+        IPublicIpTracker ipTracker,
+        ISiteClusterService siteCluster,
+        ExternalScanService extScan,
         ILogger<ResultsFunction> logger)
     {
         _db = db;
@@ -41,6 +48,9 @@ public class ResultsFunction
         _crypto = crypto;
         _currentUser = currentUser;
         _hwid = hwid;
+        _ipTracker = ipTracker;
+        _siteCluster = siteCluster;
+        _extScan = extScan;
         _logger = logger;
     }
 
@@ -211,8 +221,53 @@ public class ResultsFunction
             return unauth;
         }
 
+        if (machine.IsTrial && machine.TrialExpiresAt.HasValue && machine.TrialExpiresAt < DateTime.UtcNow)
+        {
+            var expired = req.CreateResponse(HttpStatusCode.Unauthorized);
+            await expired.WriteAsJsonAsync(new { error = "Trial expired", trialExpiresAt = machine.TrialExpiresAt });
+            return expired;
+        }
+
         // Evaluate results server-side
         var run = await _evaluation.EvaluateAsync(machine.Id, machine.OrganizationId, payload);
+
+        // Track public IP + auto-rebuild network sites (non-fatal)
+        try
+        {
+            await _ipTracker.TrackAsync(machine.Id, _currentUser.IpAddress);
+            await _siteCluster.RebuildSitesAsync(machine.OrganizationId);
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "IP tracking / site rebuild failed for {MachineId}", machine.Id); }
+
+        // Auto-trigger external scan on detected public IP (24h dedup)
+        try
+        {
+            var publicIp = _currentUser.IpAddress;
+            if (!string.IsNullOrEmpty(publicIp))
+            {
+                var recentScan = await _db.ExternalScans
+                    .AnyAsync(s => s.OrganizationId == machine.OrganizationId
+                                   && s.Target == publicIp
+                                   && s.CreatedAt > DateTime.UtcNow.AddHours(-24));
+                if (!recentScan)
+                {
+                    var extScan = new ExternalScan
+                    {
+                        Id = Guid.NewGuid(),
+                        OrganizationId = machine.OrganizationId,
+                        Target = publicIp,
+                        Status = "pending",
+                        CreatedBy = Guid.Empty,
+                        CreatedAt = DateTime.UtcNow,
+                    };
+                    _db.ExternalScans.Add(extScan);
+                    await _db.SaveChangesAsync();
+                    await _extScan.RunScanAsync(extScan.Id);
+                    _logger.LogInformation("Auto external scan {ScanId} for IP {Ip}", extScan.Id, publicIp);
+                }
+            }
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Auto external scan failed for {MachineId}", machine.Id); }
 
         await _actlog.LogAsync("INFO", "assessment", "assessment.run.completed",
             $"Assessment completed for {machine.Hostname}: {run.Grade} ({run.GlobalScore}%)",
@@ -229,7 +284,9 @@ public class ResultsFunction
             grade = run.Grade,
             passCount = run.PassCount,
             warnCount = run.WarnCount,
-            failCount = run.FailCount
+            failCount = run.FailCount,
+            yourPublicIp = _currentUser.IpAddress,
+            speedtestRequested = false,
         });
         return response;
     }

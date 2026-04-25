@@ -6,12 +6,23 @@ namespace KryossApi.Services.Reports.Blocks;
 public class ServiceCatalogBlock : IReportBlock
 {
     private readonly bool _showPricing;
-    public ServiceCatalogBlock(bool showPricing = true) => _showPricing = showPricing;
+    private readonly bool _tierGrid;
+
+    public ServiceCatalogBlock(bool showPricing = true, bool tierGrid = false)
+    {
+        _showPricing = showPricing;
+        _tierGrid = tierGrid;
+    }
 
     public string Render(ReportData data, ReportOptions options)
     {
         if (data.ServiceCatalog.Count == 0) return "";
 
+        return _tierGrid ? RenderTierGrid(data, options) : RenderTable(data, options);
+    }
+
+    private string RenderTable(ReportData data, ReportOptions options)
+    {
         var sb = new StringBuilder();
         var es = options.IsSpanish;
         var rate = data.Rate?.HourlyRate ?? 150m;
@@ -64,6 +75,95 @@ public class ServiceCatalogBlock : IReportBlock
         return sb.ToString();
     }
 
+    private string RenderTierGrid(ReportData data, ReportOptions options)
+    {
+        var sb = new StringBuilder();
+        var es = options.IsSpanish;
+        var rate = data.Rate?.HourlyRate ?? 150m;
+        var margin = data.Rate?.MarginPct ?? 0m;
+        var currency = data.Rate?.Currency ?? "USD";
+
+        var items = data.ServiceCatalog
+            .Select(svc => new TierItem(svc, CountAffected(svc, data)))
+            .Where(x => x.Affected > 0)
+            .OrderByDescending(x => x.Svc.Severity == "critical" ? 4 : x.Svc.Severity == "high" ? 3 : 2)
+            .ToList();
+
+        if (items.Count == 0) return "";
+
+        var tierCritical = items.Where(x => x.Svc.Severity == "critical").ToList();
+        var tierHigh = items.Where(x => x.Svc.Severity == "high").ToList();
+        var tierOther = items.Where(x => x.Svc.Severity is not "critical" and not "high").ToList();
+
+        sb.AppendLine("<div class='page'>");
+        ReportHelpers.AppendPageHeader(sb, es ? "Paquetes de Remediación" : "Remediation Packages", data.Branding);
+        sb.AppendLine("<div class='pb'>");
+
+        sb.AppendLine("<div class='tier-grid'>");
+
+        RenderTierCard(sb, es,
+            es ? "Urgente" : "Urgent",
+            es ? "Riesgos críticos que requieren acción inmediata" : "Critical risks requiring immediate action",
+            tierCritical, rate, margin, currency, "#991B1B", true);
+
+        RenderTierCard(sb, es,
+            es ? "Prioritario" : "Priority",
+            es ? "Riesgos altos a resolver en 30 días" : "High risks to resolve within 30 days",
+            tierHigh, rate, margin, currency, "#B45309", false);
+
+        RenderTierCard(sb, es,
+            es ? "Mantenimiento" : "Maintenance",
+            es ? "Mejoras de postura a implementar en 90 días" : "Posture improvements to implement within 90 days",
+            tierOther, rate, margin, currency, "#15803D", false);
+
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div></div>");
+
+        return sb.ToString();
+    }
+
+    private record TierItem(ServiceCatalogItem Svc, int Affected);
+
+    private void RenderTierCard(StringBuilder sb, bool es, string tierName, string subtitle,
+        List<TierItem> items, decimal rate, decimal margin, string currency, string accentColor, bool highlight)
+    {
+        var highlightClass = highlight ? " highlight" : "";
+        sb.AppendLine($"<div class='tier-card{highlightClass}' style='border-top:4px solid {accentColor}'>");
+        sb.AppendLine("<div class='tier-header'>");
+        sb.AppendLine($"<div class='tier-name'>{ReportHelpers.HtmlEncode(tierName)}</div>");
+        sb.AppendLine($"<div style='font-size:9pt;color:#64748b'>{ReportHelpers.HtmlEncode(subtitle)}</div>");
+
+        decimal totalCost = 0;
+        var bullets = new List<string>();
+        foreach (var x in items)
+        {
+            var hours = x.Affected * x.Svc.BaseHours;
+            var cost = hours * rate * (1 + margin / 100);
+            totalCost += cost;
+            var name = es ? x.Svc.NameEs : x.Svc.NameEn;
+            bullets.Add($"{name} ({x.Affected})");
+        }
+
+        if (_showPricing && totalCost > 0)
+            sb.AppendLine($"<div class='tier-price'>{currency} {totalCost:N0}</div>");
+
+        sb.AppendLine("</div>");
+
+        if (bullets.Count > 0)
+        {
+            sb.AppendLine("<ul class='tier-bullets'>");
+            foreach (var b in bullets)
+                sb.AppendLine($"<li>{ReportHelpers.HtmlEncode(b)}</li>");
+            sb.AppendLine("</ul>");
+        }
+        else
+        {
+            sb.AppendLine($"<div style='font-size:9pt;color:#94a3b8;padding:8px 0'>{(es ? "Sin hallazgos en esta categoría" : "No findings in this tier")}</div>");
+        }
+
+        sb.AppendLine("</div>");
+    }
+
     internal static int CountAffected(ServiceCatalogItem svc, ReportData data) => svc.CategoryCode switch
     {
         "disk_encryption" => data.Runs.Count(r => r.Machine?.Bitlocker != true),
@@ -78,10 +178,10 @@ public class ServiceCatalogBlock : IReportBlock
             .Where(r => r.Status == "fail" && (r.ControlId.Contains("NTLM") || r.ControlId.Contains("SMB1")))
             .Select(r => r.RunId).Distinct().Count(),
         "password_policy" => (data.Hygiene?.PwdNeverExpire ?? 0) > 0 ? 1 : 0,
-        "privileged_access" => data.Hygiene?.Findings?.Count(f => f.ObjectType == "PrivilegedAccount") ?? 0,
+        "privileged_access" => data.Hygiene?.Findings?.Count(f => f.Status is "PrivilegedAccount" or "LocalAdmin") ?? 0,
         "rdp_hardening" => data.Enrichment.Ports.Count(p => p.Port == 3389 && p.Status == "open"),
         "m365_security" => data.M365Connected && data.M365Findings.Any(f => f.Severity == "high" || f.Severity == "critical") ? 1 : 0,
-        "azure_hardening" => data.CloudFindings?.Any(f => f.Area == "azure" && f.Status == "fail") == true ? 1 : 0,
+        "azure_hardening" => data.CloudFindings?.Any(f => f.Area == "azure" && f.Status is "action_required" or "warning" or "disabled") == true ? 1 : 0,
         "firewall_hardening" => data.ControlResults
             .Where(r => r.Status == "fail" && r.Category.Contains("Firewall", StringComparison.OrdinalIgnoreCase))
             .Select(r => r.RunId).Distinct().Count(),

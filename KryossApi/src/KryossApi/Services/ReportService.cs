@@ -48,7 +48,7 @@ public class ReportService : IReportService
             .ToListAsync();
 
         // Cloud-only report types (m365 = Copilot Readiness) don't require
-        // endpoint assessment runs — their data lives in separate tables.
+        // endpoint assessment runs ï¿½ their data lives in separate tables.
         // All other report types still require completed runs.
         var isCloudOnlyReport = reportType == "m365";
 
@@ -174,7 +174,7 @@ public class ReportService : IReportService
 
         // C-Level dependencies: saved CTAs for the current period + M365 findings.
         // Wrapped in try/catch because migration 028 (executive_ctas) may not
-        // yet be applied in all environments — we degrade gracefully to an
+        // yet be applied in all environments ï¿½ we degrade gracefully to an
         // empty list so the C-Level still generates.
         var savedCtas = new List<ExecutiveCta>();
         var m365Findings = new List<M365Finding>();
@@ -192,7 +192,7 @@ public class ReportService : IReportService
                 }
                 catch
                 {
-                    // executive_ctas table probably missing — migration 028 pending
+                    // executive_ctas table probably missing ï¿½ migration 028 pending
                     savedCtas = new List<ExecutiveCta>();
                 }
             }
@@ -226,8 +226,8 @@ public class ReportService : IReportService
                 throw new InvalidOperationException($"No Copilot Readiness scan found for organization {orgId}. Run an assessment first.");
         }
 
-        // Monthly briefing needs historical trend data — pull the average
-        // global score from runs that completed 30–60 days ago so we can
+        // Monthly briefing needs historical trend data ï¿½ pull the average
+        // global score from runs that completed 30ï¿½60 days ago so we can
         // render this-month vs last-month delta. Only loaded when that
         // report type is requested to keep the other 7 types fast.
         decimal? previousMonthScore = null;
@@ -265,11 +265,11 @@ public class ReportService : IReportService
 
     /// <summary>
     /// Loads the identity shown in the report footer. Falls back gracefully
-    /// when the profile is incomplete: missing fields render as "—".
+    /// when the profile is incomplete: missing fields render as "ï¿½".
     /// </summary>
     private async Task<ReportUserInfo> BuildReportUserInfoAsync(Organization org)
     {
-        // Franchise phone as a secondary source — if the operator has no
+        // Franchise phone as a secondary source ï¿½ if the operator has no
         // personal phone, we at least show the MSP main line (anchored to
         // the franchise / brand already loaded on `org`).
         var franchise = org.Franchise;
@@ -313,7 +313,7 @@ public class ReportService : IReportService
         var es = lang == "es";
         var reportTitle = frameworkName != null
             ? $"{frameworkName} {(es ? "Informe Organizacional" : "Organization Report")}"
-            : (es ? "Informe de Evaluación de Seguridad" : "Security Assessment Report");
+            : (es ? "Informe de Evaluaciï¿½n de Seguridad" : "Security Assessment Report");
         var sb = new StringBuilder();
         var totalMachines = runs.Count;
         // When filtered by framework, recalculate stats from filtered results
@@ -341,7 +341,7 @@ public class ReportService : IReportService
         var threatCount = enrichment.Threats.Count;
 
         ReportHelpers.AppendHtmlHead(sb, $"{reportTitle} - {org.Name}", brand, isOrgReport: true, htmlLang: lang,
-            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} · {org.Name}");
+            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} ï¿½ {org.Name}");
 
         // ---- PAGE 1: COVER ----
         sb.AppendLine("<div class='cover'>");
@@ -349,7 +349,7 @@ public class ReportService : IReportService
         sb.AppendLine("<div class='cover-content'>");
         if (brand.LogoUrl is not null)
             sb.AppendLine($"<img src='{ReportHelpers.HtmlEncode(brand.LogoUrl)}' class='logo' alt='{ReportHelpers.HtmlEncode(brand.CompanyName)}'>");
-        sb.AppendLine($"<p class='eyebrow'>{(frameworkName != null ? ReportHelpers.HtmlEncode(frameworkName.ToUpperInvariant()) : (es ? "EVALUACIÓN DE SEGURIDAD" : "SECURITY ASSESSMENT"))}</p>");
+        sb.AppendLine($"<p class='eyebrow'>{(frameworkName != null ? ReportHelpers.HtmlEncode(frameworkName.ToUpperInvariant()) : (es ? "EVALUACIï¿½N DE SEGURIDAD" : "SECURITY ASSESSMENT"))}</p>");
         sb.AppendLine($"<h1>{ReportHelpers.HtmlEncode(reportTitle)}</h1>");
         sb.AppendLine($"<h2>{ReportHelpers.HtmlEncode(org.Name)}</h2>");
         sb.AppendLine($"<p class='meta'>{(es ? scanDate.ToString("dd 'de' MMMM 'de' yyyy") : scanDate.ToString("MMMM dd, yyyy"))} &mdash; {totalMachines} {(es ? "dispositivos evaluados" : "devices assessed")}</p>");
@@ -364,18 +364,18 @@ public class ReportService : IReportService
 
         // Business-language narrative paragraph
         var riskLevel = es
-            ? (avgScore >= 80 ? "aceptables" : avgScore >= 60 ? "moderados" : avgScore >= 30 ? "preocupantes" : "críticamente bajos")
+            ? (avgScore >= 80 ? "aceptables" : avgScore >= 60 ? "moderados" : avgScore >= 30 ? "preocupantes" : "crï¿½ticamente bajos")
             : (avgScore >= 80 ? "acceptable" : avgScore >= 60 ? "moderate" : avgScore >= 30 ? "concerning" : "critically low");
         sb.AppendLine("<div class='insight-box'>");
         if (es)
         {
-            sb.AppendLine($"<p>Su organización tiene <strong>{totalMachines}</strong> dispositivos bajo gestión. Nuestra evaluación analizó <strong>{totalPass + totalWarn + totalFail}</strong> controles de seguridad en su flota y encontró niveles de cumplimiento <strong>{riskLevel}</strong>. ");
+            sb.AppendLine($"<p>Su organizaciï¿½n tiene <strong>{totalMachines}</strong> dispositivos bajo gestiï¿½n. Nuestra evaluaciï¿½n analizï¿½ <strong>{totalPass + totalWarn + totalFail}</strong> controles de seguridad en su flota y encontrï¿½ niveles de cumplimiento <strong>{riskLevel}</strong>. ");
             if (avgScore < 60)
-                sb.AppendLine("Se requiere remediación significativa para alcanzar una línea base de seguridad aceptable.");
+                sb.AppendLine("Se requiere remediaciï¿½n significativa para alcanzar una lï¿½nea base de seguridad aceptable.");
             else if (avgScore < 80)
-                sb.AppendLine("Varias áreas necesitan endurecimiento para cumplir con las mejores prácticas de la industria.");
+                sb.AppendLine("Varias ï¿½reas necesitan endurecimiento para cumplir con las mejores prï¿½cticas de la industria.");
             else
-                sb.AppendLine("Su postura de seguridad general es sólida, con mejoras puntuales aún disponibles.");
+                sb.AppendLine("Su postura de seguridad general es sï¿½lida, con mejoras puntuales aï¿½n disponibles.");
         }
         else
         {
@@ -428,7 +428,7 @@ public class ReportService : IReportService
 
         if (criticalFailures.Count > 0)
         {
-            sb.AppendLine($"<h3>{(es ? "Hallazgos Críticos Principales" : "Top Critical Findings")}</h3>");
+            sb.AppendLine($"<h3>{(es ? "Hallazgos Crï¿½ticos Principales" : "Top Critical Findings")}</h3>");
             sb.AppendLine("<div class='risk-cards'>");
             var riskNum = 1;
             foreach (var f in criticalFailures)
@@ -446,7 +446,7 @@ public class ReportService : IReportService
 
         // Grade distribution
         var gradeGroups = runs.GroupBy(r => r.Grade ?? "N/A").OrderBy(g => g.Key);
-        sb.AppendLine($"<h3>{(es ? "Distribución de Calificaciones" : "Grade Distribution")}</h3>");
+        sb.AppendLine($"<h3>{(es ? "Distribuciï¿½n de Calificaciones" : "Grade Distribution")}</h3>");
         sb.AppendLine("<div class='grade-dist'>");
         foreach (var g in gradeGroups)
         {
@@ -469,7 +469,8 @@ public class ReportService : IReportService
             ReportHelpers.AppendHygieneSummary(sb, hygiene);
 
             // Derive extended AD stats from findings
-            var privilegedCount = hygiene.Findings.Count(f => f.Status == "Privileged");
+            var privilegedCount = hygiene.Findings.Count(f => f.Status == "PrivilegedAccount");
+            var localAdminCount = hygiene.Findings.Count(f => f.Status == "LocalAdmin");
             var kerberoastable = hygiene.Findings.Count(f => f.Status == "Kerberoastable");
             var unconstrainedDelegation = hygiene.Findings.Count(f => f.Status == "UnconstrainedDelegation");
             var lapsFindings = hygiene.Findings.Where(f => f.Status == "NoLAPS").ToList();
@@ -478,7 +479,7 @@ public class ReportService : IReportService
             // Security highlights table
             sb.AppendLine($"<h3>{(es ? "Puntos Destacados de Seguridad" : "Security Highlights")}</h3>");
             sb.AppendLine("<table class='results-table'>");
-            sb.AppendLine($"<tr><th>{(es ? "Métrica" : "Metric")}</th><th>{(es ? "Valor" : "Value")}</th><th>{(es ? "Estado" : "Status")}</th></tr>");
+            sb.AppendLine($"<tr><th>{(es ? "Mï¿½trica" : "Metric")}</th><th>{(es ? "Valor" : "Value")}</th><th>{(es ? "Estado" : "Status")}</th></tr>");
 
             if (domainLevelFinding != null)
             {
@@ -487,28 +488,31 @@ public class ReportService : IReportService
                 sb.AppendLine($"<td><span class='severity {(lvlClass == "fail" ? "critical" : "low")}'>{(lvlClass == "fail" ? (es ? "Obsoleto" : "Outdated") : "OK")}</span></td></tr>");
             }
 
-            sb.AppendLine($"<tr class='{(privilegedCount > 10 ? "fail" : privilegedCount > 5 ? "warn" : "pass")}'><td>{(es ? "Cuentas Privilegiadas" : "Privileged Accounts")}</td><td>{privilegedCount}</td>");
+            sb.AppendLine($"<tr class='{(privilegedCount > 10 ? "fail" : privilegedCount > 5 ? "warn" : "pass")}'><td>{(es ? "Cuentas Privilegiadas AD" : "AD Privileged Accounts")}</td><td>{privilegedCount}</td>");
             sb.AppendLine($"<td><span class='severity {(privilegedCount > 10 ? "high" : privilegedCount > 5 ? "medium" : "low")}'>{(privilegedCount > 10 ? (es ? "Excesivo" : "Excessive") : privilegedCount > 5 ? (es ? "Revisar" : "Review") : "OK")}</span></td></tr>");
+
+            sb.AppendLine($"<tr class='{(localAdminCount > 20 ? "fail" : localAdminCount > 10 ? "warn" : "pass")}'><td>{(es ? "Administradores Locales" : "Local Administrators")}</td><td>{localAdminCount}</td>");
+            sb.AppendLine($"<td><span class='severity {(localAdminCount > 20 ? "high" : localAdminCount > 10 ? "medium" : "low")}'>{(localAdminCount > 20 ? (es ? "Excesivo" : "Excessive") : localAdminCount > 10 ? (es ? "Revisar" : "Review") : "OK")}</span></td></tr>");
 
             var lapsPercent = hygiene.TotalMachines > 0 ? Math.Round((double)lapsFindings.Count / hygiene.TotalMachines * 100) : 0;
             var lapsCoverage = hygiene.TotalMachines > 0 ? 100 - lapsPercent : 0;
             sb.AppendLine($"<tr class='{(lapsCoverage < 50 ? "fail" : lapsCoverage < 90 ? "warn" : "pass")}'><td>{(es ? "Cobertura LAPS" : "LAPS Coverage")}</td><td>{lapsCoverage:F0}%</td>");
-            sb.AppendLine($"<td><span class='severity {(lapsCoverage < 50 ? "critical" : lapsCoverage < 90 ? "medium" : "low")}'>{(lapsCoverage < 50 ? (es ? "Crítico" : "Critical") : lapsCoverage < 90 ? (es ? "Necesita Mejora" : "Needs Improvement") : "OK")}</span></td></tr>");
+            sb.AppendLine($"<td><span class='severity {(lapsCoverage < 50 ? "critical" : lapsCoverage < 90 ? "medium" : "low")}'>{(lapsCoverage < 50 ? (es ? "Crï¿½tico" : "Critical") : lapsCoverage < 90 ? (es ? "Necesita Mejora" : "Needs Improvement") : "OK")}</span></td></tr>");
 
             sb.AppendLine($"<tr class='{(hygiene.DormantMachines > 20 ? "fail" : hygiene.DormantMachines > 5 ? "warn" : "pass")}'><td>{(es ? "Equipos Inactivos" : "Dormant Machines")}</td><td>{hygiene.DormantMachines}</td>");
             sb.AppendLine($"<td><span class='severity {(hygiene.DormantMachines > 20 ? "high" : hygiene.DormantMachines > 5 ? "medium" : "low")}'>{(hygiene.DormantMachines > 20 ? (es ? "Limpieza Necesaria" : "Cleanup Needed") : hygiene.DormantMachines > 5 ? (es ? "Revisar" : "Review") : "OK")}</span></td></tr>");
 
-            sb.AppendLine($"<tr class='{(hygiene.PwdNeverExpire > 10 ? "fail" : hygiene.PwdNeverExpire > 0 ? "warn" : "pass")}'><td>{(es ? "Contraseña Nunca Expira" : "Password Never Expires")}</td><td>{hygiene.PwdNeverExpire}</td>");
-            sb.AppendLine($"<td><span class='severity {(hygiene.PwdNeverExpire > 10 ? "high" : hygiene.PwdNeverExpire > 0 ? "medium" : "low")}'>{(hygiene.PwdNeverExpire > 10 ? (es ? "Violación de Política" : "Policy Violation") : hygiene.PwdNeverExpire > 0 ? (es ? "Revisar" : "Review") : "OK")}</span></td></tr>");
+            sb.AppendLine($"<tr class='{(hygiene.PwdNeverExpire > 10 ? "fail" : hygiene.PwdNeverExpire > 0 ? "warn" : "pass")}'><td>{(es ? "Contraseï¿½a Nunca Expira" : "Password Never Expires")}</td><td>{hygiene.PwdNeverExpire}</td>");
+            sb.AppendLine($"<td><span class='severity {(hygiene.PwdNeverExpire > 10 ? "high" : hygiene.PwdNeverExpire > 0 ? "medium" : "low")}'>{(hygiene.PwdNeverExpire > 10 ? (es ? "Violaciï¿½n de Polï¿½tica" : "Policy Violation") : hygiene.PwdNeverExpire > 0 ? (es ? "Revisar" : "Review") : "OK")}</span></td></tr>");
 
             if (kerberoastable > 0)
             {
                 sb.AppendLine($"<tr class='fail'><td>{(es ? "Cuentas Kerberoastable" : "Kerberoastable Accounts")}</td><td>{kerberoastable}</td>");
-                sb.AppendLine($"<td><span class='severity critical'>{(es ? "Crítico" : "Critical")}</span></td></tr>");
+                sb.AppendLine($"<td><span class='severity critical'>{(es ? "Crï¿½tico" : "Critical")}</span></td></tr>");
             }
             if (unconstrainedDelegation > 0)
             {
-                sb.AppendLine($"<tr class='fail'><td>{(es ? "Delegación sin Restricción" : "Unconstrained Delegation")}</td><td>{unconstrainedDelegation}</td>");
+                sb.AppendLine($"<tr class='fail'><td>{(es ? "Delegaciï¿½n sin Restricciï¿½n" : "Unconstrained Delegation")}</td><td>{unconstrainedDelegation}</td>");
                 sb.AppendLine($"<td><span class='severity high'>{(es ? "Alto Riesgo" : "High Risk")}</span></td></tr>");
             }
 
@@ -559,11 +563,11 @@ public class ReportService : IReportService
                     .ToList();
 
                 sb.AppendLine(es
-                    ? $"<div class='insight-box fail-box'><p>Se detectaron <strong>{threatCount}</strong> firmas de amenazas en <strong>{threatCats.Count}</strong> categorías en <strong>{enrichment.Threats.Select(t => t.MachineId).Distinct().Count()}</strong> dispositivos.</p></div>"
+                    ? $"<div class='insight-box fail-box'><p>Se detectaron <strong>{threatCount}</strong> firmas de amenazas en <strong>{threatCats.Count}</strong> categorï¿½as en <strong>{enrichment.Threats.Select(t => t.MachineId).Distinct().Count()}</strong> dispositivos.</p></div>"
                     : $"<div class='insight-box fail-box'><p>Detected <strong>{threatCount}</strong> threat signatures across <strong>{threatCats.Count}</strong> categories on <strong>{enrichment.Threats.Select(t => t.MachineId).Distinct().Count()}</strong> devices.</p></div>");
 
                 sb.AppendLine("<table class='results-table'>");
-                sb.AppendLine($"<tr><th>{(es ? "Categoría" : "Category")}</th><th>{(es ? "Firmas" : "Signatures")}</th><th>{(es ? "Equipos Afectados" : "Devices Affected")}</th></tr>");
+                sb.AppendLine($"<tr><th>{(es ? "Categorï¿½a" : "Category")}</th><th>{(es ? "Firmas" : "Signatures")}</th><th>{(es ? "Equipos Afectados" : "Devices Affected")}</th></tr>");
                 foreach (var tc in threatCats)
                 {
                     sb.AppendLine("<tr class='fail'>");
@@ -584,7 +588,7 @@ public class ReportService : IReportService
         sb.AppendLine("<div class='pb'>");
 
         sb.AppendLine("<table class='fleet-table'>");
-        sb.AppendLine($"<tr><th>Hostname</th><th>OS</th><th>{(es ? "Puntaje" : "Score")}</th><th>{(es ? "Calificación" : "Grade")}</th><th>{(es ? "Pasan" : "Pass")}</th><th>{(es ? "Advert." : "Warn")}</th><th>{(es ? "Fallan" : "Fail")}</th></tr>");
+        sb.AppendLine($"<tr><th>Hostname</th><th>OS</th><th>{(es ? "Puntaje" : "Score")}</th><th>{(es ? "Calificaciï¿½n" : "Grade")}</th><th>{(es ? "Pasan" : "Pass")}</th><th>{(es ? "Advert." : "Warn")}</th><th>{(es ? "Fallan" : "Fail")}</th></tr>");
         foreach (var run in runs.OrderBy(r => r.GlobalScore))
         {
             var rowClass = (run.GlobalScore ?? 0) >= 80 ? "pass" : (run.GlobalScore ?? 0) >= 60 ? "warn" : "fail";
@@ -605,10 +609,10 @@ public class ReportService : IReportService
         sb.AppendLine("<div class='pb'>");
 
         sb.AppendLine(es
-            ? $"<div class='insight-box'><p>Basado en nuestra evaluación integral de <strong>{totalMachines}</strong> dispositivos, recomendamos las siguientes acciones de remediación, priorizadas por impacto de riesgo.</p></div>"
+            ? $"<div class='insight-box'><p>Basado en nuestra evaluaciï¿½n integral de <strong>{totalMachines}</strong> dispositivos, recomendamos las siguientes acciones de remediaciï¿½n, priorizadas por impacto de riesgo.</p></div>"
             : $"<div class='insight-box'><p>Based on our comprehensive assessment of <strong>{totalMachines}</strong> devices, we recommend the following remediation actions, prioritized by risk impact.</p></div>");
 
-        ReportHelpers.AppendDataDrivenRecommendations(sb, runs, allResults, hygiene, enrichment, brand);
+        ReportHelpers.AppendDataDrivenRecommendations(sb, runs, allResults, hygiene, enrichment, brand, lang);
 
         sb.AppendLine("</div></div>");
 
@@ -638,11 +642,11 @@ public class ReportService : IReportService
         var sb = new StringBuilder();
         var totalMachines = runs.Count;
         var reportTitle = frameworkName != null
-            ? $"{frameworkName} {(es ? "Evaluación Técnica" : "Technical Assessment")}"
-            : (es ? "Evaluación Técnica" : "Technical Assessment");
+            ? $"{frameworkName} {(es ? "Evaluaciï¿½n Tï¿½cnica" : "Technical Assessment")}"
+            : (es ? "Evaluaciï¿½n Tï¿½cnica" : "Technical Assessment");
 
         ReportHelpers.AppendHtmlHead(sb, $"{reportTitle} - {org.Name}", brand, isOrgReport: true,
-            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} · {org.Name}");
+            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} ï¿½ {org.Name}");
 
         // ---- COVER ----
         sb.AppendLine("<div class='cover'>");
@@ -650,33 +654,33 @@ public class ReportService : IReportService
         sb.AppendLine("<div class='cover-content'>");
         if (brand.LogoUrl is not null)
             sb.AppendLine($"<img src='{ReportHelpers.HtmlEncode(brand.LogoUrl)}' class='logo' alt='{ReportHelpers.HtmlEncode(brand.CompanyName)}'>");
-        sb.AppendLine($"<p class='eyebrow'>{(es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL")}</p>");
+        sb.AppendLine($"<p class='eyebrow'>{(es ? "NIVEL Tï¿½CNICO" : "TECHNICAL LEVEL")}</p>");
         sb.AppendLine($"<h1>{ReportHelpers.HtmlEncode(reportTitle)}</h1>");
         sb.AppendLine($"<h2>{ReportHelpers.HtmlEncode(org.Name)}</h2>");
         var scanDate = runs.Count > 0 ? runs.Max(r => r.CompletedAt ?? r.StartedAt) : DateTime.UtcNow;
-        sb.AppendLine($"<p class='meta'>{(es ? scanDate.ToString("dd 'de' MMMM 'de' yyyy") : scanDate.ToString("MMMM dd, yyyy"))} — {totalMachines} {(es ? "dispositivos" : "devices")}</p>");
+        sb.AppendLine($"<p class='meta'>{(es ? scanDate.ToString("dd 'de' MMMM 'de' yyyy") : scanDate.ToString("MMMM dd, yyyy"))} ï¿½ {totalMachines} {(es ? "dispositivos" : "devices")}</p>");
         sb.AppendLine("</div></div>");
 
         // ---- ASSET MATRIX (paginates internally) ----
         sb.AppendLine("<div class='page'>");
         ReportHelpers.AppendPageHeader(sb, es ? "Matriz de Activos" : "Asset Matrix", brand,
-            es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL");
+            es ? "NIVEL Tï¿½CNICO" : "TECHNICAL LEVEL");
         sb.AppendLine("<div class='pb'>");
         ReportHelpers.AppendAssetMatrix(sb, runs, brand, lang);
         sb.AppendLine("</div></div>");
 
         // ---- TOP 10 CRITICAL FINDINGS ----
         sb.AppendLine("<div class='page'>");
-        ReportHelpers.AppendPageHeader(sb, es ? "Hallazgos Críticos" : "Critical Findings", brand,
-            es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL");
+        ReportHelpers.AppendPageHeader(sb, es ? "Hallazgos Crï¿½ticos" : "Critical Findings", brand,
+            es ? "NIVEL Tï¿½CNICO" : "TECHNICAL LEVEL");
         sb.AppendLine("<div class='pb'>");
         ReportHelpers.AppendTop10CriticalFindings(sb, allResults, lang);
         sb.AppendLine("</div></div>");
 
         // ---- THE 6 IRONS HARDENING AUDIT ----
         sb.AppendLine("<div class='page'>");
-        ReportHelpers.AppendPageHeader(sb, es ? "Auditoría de Hardening" : "Hardening Audit", brand,
-            es ? "NIVEL TÉCNICO" : "TECHNICAL LEVEL");
+        ReportHelpers.AppendPageHeader(sb, es ? "Auditorï¿½a de Hardening" : "Hardening Audit", brand,
+            es ? "NIVEL Tï¿½CNICO" : "TECHNICAL LEVEL");
         sb.AppendLine("<div class='pb'>");
         ReportHelpers.AppendSixIronsHardeningAudit(sb, runs, allResults, hygiene, lang);
         sb.AppendLine("</div></div>");
@@ -696,7 +700,7 @@ public class ReportService : IReportService
         var es = lang == "es";
         var reportTitle = frameworkName != null
             ? $"{frameworkName} {(es ? "Postura de Seguridad" : "Security Posture")}"
-            : (es ? "Evaluación de Postura de Seguridad" : "Security Posture Assessment");
+            : (es ? "Evaluaciï¿½n de Postura de Seguridad" : "Security Posture Assessment");
         var sb = new StringBuilder();
         var totalMachines = runs.Count;
         decimal avgScore;
@@ -722,7 +726,7 @@ public class ReportService : IReportService
         var threatCount = enrichment.Threats.Count;
 
         ReportHelpers.AppendHtmlHead(sb, $"{reportTitle} - {org.Name}", brand, isOrgReport: true, htmlLang: lang,
-            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} · {org.Name}");
+            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} ï¿½ {org.Name}");
 
         // ---- BIG 4 FINANCIAL AUDIT LIGHT MODE (scoped via .pres-light) ----
         // Premium light aesthetic: pure white document, very light cool
@@ -877,7 +881,7 @@ public class ReportService : IReportService
 
         var noLapsCount     = hygiene?.Findings.Count(f => f.Status == "NoLAPS")         ?? 0;
         var kerberoastCount = hygiene?.Findings.Count(f => f.Status == "Kerberoastable") ?? 0;
-        var privilegedCount = hygiene?.Findings.Count(f => f.Status == "Privileged")     ?? 0;
+        var privilegedCount = hygiene?.Findings.Count(f => f.Status is "PrivilegedAccount" or "LocalAdmin") ?? 0;
         var staleMachines   = hygiene?.StaleMachines                                     ?? 0;
         var staleUsers      = hygiene?.StaleUsers                                        ?? 0;
         var dormantUsers    = hygiene?.DormantUsers                                      ?? 0;
@@ -914,28 +918,28 @@ public class ReportService : IReportService
         ReportHelpers.AppendPageHeader(sb, "Executive Summary", brand, "FINANCIAL & RISK ALIGNMENT");
         sb.AppendLine("<div class='pb'>");
 
-        // Compact KPI rail — 4 cards on a single row, thinner than the
+        // Compact KPI rail ï¿½ 4 cards on a single row, thinner than the
         // default .stat size so they never wrap.
         const string presStatStyle  = "min-width:72px;padding:10px 10px;flex:1";
         const string presValueStyle = "font-size:18px;font-weight:800;line-height:1";
         const string presLabelStyle = "font-size:8px;margin-top:4px;line-height:1.15";
         sb.AppendLine("<div class='summary-grid' style='margin-top:8px;margin-bottom:16px;gap:8px;flex-wrap:nowrap'>");
         sb.AppendLine($"<div class='stat fail-stat' style='{presStatStyle}'><span class='stat-value' style='{presValueStyle}'>{totalMachines}</span><span class='stat-label' style='{presLabelStyle}'>{(es ? "Endpoints Escaneados" : "Endpoints Scanned")}</span></div>");
-        sb.AppendLine($"<div class='stat fail-stat' style='{presStatStyle}'><span class='stat-value' style='{presValueStyle}'>{criticalFails}</span><span class='stat-label' style='{presLabelStyle}'>{(es ? "Vulnerabilidades Críticas" : "Critical Vulnerabilities")}</span></div>");
+        sb.AppendLine($"<div class='stat fail-stat' style='{presStatStyle}'><span class='stat-value' style='{presValueStyle}'>{criticalFails}</span><span class='stat-label' style='{presLabelStyle}'>{(es ? "Vulnerabilidades Crï¿½ticas" : "Critical Vulnerabilities")}</span></div>");
         sb.AppendLine($"<div class='stat warn-stat' style='{presStatStyle}'><span class='stat-value' style='{presValueStyle}'>{downtimeEstimate}d</span><span class='stat-label' style='{presLabelStyle}'>{(es ? "Downtime Est. si Hay Brecha" : "Est. Downtime if Breached")}</span></div>");
         sb.AppendLine($"<div class='stat fail-stat' style='{presStatStyle}'><span class='stat-value' style='{presValueStyle}'>{avgScore:F0}/100</span><span class='stat-label' style='{presLabelStyle}'>{(es ? "Puntaje de Madurez" : "Maturity Score")}</span></div>");
         sb.AppendLine("</div>");
 
         sb.AppendLine("<div class='stark-reality'>");
         if (es)
-            sb.AppendLine($"<p>Su red es actualmente <strong>altamente susceptible a ransomware automatizado y movimiento lateral</strong>. En {totalMachines} endpoints identificamos <strong>{criticalFails} vulnerabilidades críticas</strong> y <strong>{highFails} brechas de alta severidad</strong>. Un solo credencial comprometida o clic de phishing le daría a un atacante todo lo necesario para cifrar, exfiltrar y extorsionar &mdash; el tiempo de permanencia antes de detección se mediría en días, no horas.</p>");
+            sb.AppendLine($"<p>Su red es actualmente <strong>altamente susceptible a ransomware automatizado y movimiento lateral</strong>. En {totalMachines} endpoints identificamos <strong>{criticalFails} vulnerabilidades crï¿½ticas</strong> y <strong>{highFails} brechas de alta severidad</strong>. Un solo credencial comprometida o clic de phishing le darï¿½a a un atacante todo lo necesario para cifrar, exfiltrar y extorsionar &mdash; el tiempo de permanencia antes de detecciï¿½n se medirï¿½a en dï¿½as, no horas.</p>");
         else
             sb.AppendLine($"<p>Your network is currently <strong>highly susceptible to automated ransomware and lateral movement</strong>. Across {totalMachines} endpoints we identified <strong>{criticalFails} critical vulnerabilities</strong> and <strong>{highFails} high-severity gaps</strong>. A single compromised credential or phishing click would give an attacker everything they need to encrypt, exfiltrate and extort &mdash; dwell time before detection would be measured in days, not hours.</p>");
         sb.AppendLine("</div>");
 
-        sb.AppendLine($"<h3>{(es ? "Lo Que Previene Esta Inversión" : "What This Investment Prevents")}</h3>");
+        sb.AppendLine($"<h3>{(es ? "Lo Que Previene Esta Inversiï¿½n" : "What This Investment Prevents")}</h3>");
         if (es)
-            sb.AppendLine($"<p style='font-size:12px;line-height:1.65'>Los benchmarks de la industria para organizaciones de este tamaño reportan un costo medio de recuperación por ransomware de <strong style='color:#0F172A'>USD 1.8M</strong> y un downtime operacional promedio de <strong style='color:#0F172A'>22 días</strong> (IBM Cost of a Data Breach, 2024). El plan de hardening descrito a continuación está diseñado para cerrar sistemáticamente estas {criticalFails + highFails} exposiciones críticas y altas antes de que se conviertan en el incidente que defina su año fiscal.</p>");
+            sb.AppendLine($"<p style='font-size:12px;line-height:1.65'>Los benchmarks de la industria para organizaciones de este tamaï¿½o reportan un costo medio de recuperaciï¿½n por ransomware de <strong style='color:#0F172A'>USD 1.8M</strong> y un downtime operacional promedio de <strong style='color:#0F172A'>22 dï¿½as</strong> (IBM Cost of a Data Breach, 2024). El plan de hardening descrito a continuaciï¿½n estï¿½ diseï¿½ado para cerrar sistemï¿½ticamente estas {criticalFails + highFails} exposiciones crï¿½ticas y altas antes de que se conviertan en el incidente que defina su aï¿½o fiscal.</p>");
         else
             sb.AppendLine($"<p style='font-size:12px;line-height:1.65'>Industry benchmarks for organizations of this size report a median ransomware recovery cost of <strong style='color:#0F172A'>USD 1.8M</strong> and an average operational downtime of <strong style='color:#0F172A'>22 days</strong> (IBM Cost of a Data Breach, 2024). The hardening plan outlined below is designed to systematically close these {criticalFails + highFails} critical-and-high exposures before they become the incident that defines your fiscal year.</p>");
 
@@ -953,22 +957,22 @@ public class ReportService : IReportService
         // ======================================================================
         sb.AppendLine("<div class='page pres-light'>");
         ReportHelpers.AppendPageHeader(sb, es ? "Vectores de Amenaza Principales" : "Primary Threat Vectors", brand,
-            es ? "TRADUCCIÓN DE NEGOCIO" : "BUSINESS TRANSLATION");
+            es ? "TRADUCCIï¿½N DE NEGOCIO" : "BUSINESS TRANSLATION");
         sb.AppendLine("<div class='pb'>");
 
         sb.AppendLine(es
-            ? "<p style='font-size:12px;color:#64748B;margin-bottom:16px'>Agrupamos cientos de hallazgos técnicos en los tres patrones de ataque que determinan directamente si un grupo de ransomware puede convertir su red en un titular de extorsión.</p>"
+            ? "<p style='font-size:12px;color:#64748B;margin-bottom:16px'>Agrupamos cientos de hallazgos tï¿½cnicos en los tres patrones de ataque que determinan directamente si un grupo de ransomware puede convertir su red en un titular de extorsiï¿½n.</p>"
             : "<p style='font-size:12px;color:#64748B;margin-bottom:16px'>We group hundreds of technical findings into the three attack patterns that directly determine whether a ransomware crew can turn your network into an extortion headline.</p>");
 
         sb.AppendLine("<div class='threat-card'>");
-        sb.AppendLine($"<div class='threat-sub'>VECTOR 01 &middot; {(es ? "IMPACTO: INTERRUPCIÓN DE NEGOCIO" : "IMPACT: BUSINESS INTERRUPTION")}</div>");
-        sb.AppendLine($"<h4>{(es ? "Propagación de Ransomware" : "Ransomware Propagation")}</h4>");
+        sb.AppendLine($"<div class='threat-sub'>VECTOR 01 &middot; {(es ? "IMPACTO: INTERRUPCIï¿½N DE NEGOCIO" : "IMPACT: BUSINESS INTERRUPTION")}</div>");
+        sb.AppendLine($"<h4>{(es ? "Propagaciï¿½n de Ransomware" : "Ransomware Propagation")}</h4>");
         sb.AppendLine(es
-            ? "<p>Las capas que normalmente detienen la propagación lateral de gusanos de cifrado están ausentes o mal configuradas en una parte significativa de la flota. Un solo adjunto malicioso o payload de cadena de suministro se propagaría por su red con casi cero resistencia.</p>"
+            ? "<p>Las capas que normalmente detienen la propagaciï¿½n lateral de gusanos de cifrado estï¿½n ausentes o mal configuradas en una parte significativa de la flota. Un solo adjunto malicioso o payload de cadena de suministro se propagarï¿½a por su red con casi cero resistencia.</p>"
             : "<p>The layers that normally stop encryption worms from spreading laterally are missing or misconfigured across a significant portion of the fleet. A single malicious attachment or supply-chain payload would propagate across your network with almost no resistance.</p>");
         sb.AppendLine("<div class='threat-evidence'>");
         sb.AppendLine(es
-            ? $"<strong>Evidencia:</strong> BitLocker deshabilitado en <strong>{bitlockerMissing}</strong> equipos &middot; Reglas ASR ausentes en <strong>{asrMachines}</strong> &middot; Políticas AppLocker ausentes en <strong>{appLockerMachines}</strong> &middot; TPM ausente o apagado en <strong>{noTpmCount}</strong>"
+            ? $"<strong>Evidencia:</strong> BitLocker deshabilitado en <strong>{bitlockerMissing}</strong> equipos &middot; Reglas ASR ausentes en <strong>{asrMachines}</strong> &middot; Polï¿½ticas AppLocker ausentes en <strong>{appLockerMachines}</strong> &middot; TPM ausente o apagado en <strong>{noTpmCount}</strong>"
             : $"<strong>Evidence:</strong> BitLocker disabled on <strong>{bitlockerMissing}</strong> devices &middot; ASR rules missing on <strong>{asrMachines}</strong> &middot; AppLocker policies absent on <strong>{appLockerMachines}</strong> &middot; TPM absent or off on <strong>{noTpmCount}</strong>");
         sb.AppendLine("</div></div>");
 
@@ -976,7 +980,7 @@ public class ReportService : IReportService
         sb.AppendLine($"<div class='threat-sub'>VECTOR 02 &middot; {(es ? "IMPACTO: COMPROMISO TOTAL DEL DOMINIO" : "IMPACT: FULL DOMAIN COMPROMISE")}</div>");
         sb.AppendLine($"<h4>{(es ? "Movimiento Lateral y Robo de Credenciales" : "Lateral Movement &amp; Credential Theft")}</h4>");
         sb.AppendLine(es
-            ? "<p>Las condiciones necesarias para que un atacante pivotee desde un solo endpoint hasta el control total de Active Directory están presentes hoy. Las credenciales se almacenan en texto plano, los protocolos de autenticación legacy están activos, y cada estación de trabajo comparte la misma contraseña de administrador local.</p>"
+            ? "<p>Las condiciones necesarias para que un atacante pivotee desde un solo endpoint hasta el control total de Active Directory estï¿½n presentes hoy. Las credenciales se almacenan en texto plano, los protocolos de autenticaciï¿½n legacy estï¿½n activos, y cada estaciï¿½n de trabajo comparte la misma contraseï¿½a de administrador local.</p>"
             : "<p>The conditions required for an attacker to pivot from a single endpoint to full Active Directory control are present today. Credentials are cached in clear text, legacy authentication protocols are still active, and every workstation shares the same local administrator password.</p>");
         sb.AppendLine("<div class='threat-evidence'>");
         sb.AppendLine(es
@@ -985,10 +989,10 @@ public class ReportService : IReportService
         sb.AppendLine("</div></div>");
 
         sb.AppendLine("<div class='threat-card adhygiene'>");
-        sb.AppendLine($"<div class='threat-sub'>VECTOR 03 &middot; {(es ? "IMPACTO: RADIO DE EXPLOSIÓN DE IDENTIDAD" : "IMPACT: IDENTITY BLAST RADIUS")}</div>");
+        sb.AppendLine($"<div class='threat-sub'>VECTOR 03 &middot; {(es ? "IMPACTO: RADIO DE EXPLOSIï¿½N DE IDENTIDAD" : "IMPACT: IDENTITY BLAST RADIUS")}</div>");
         sb.AppendLine($"<h4>{(es ? "Higiene de Active Directory" : "Active Directory Hygiene")}</h4>");
         sb.AppendLine(es
-            ? "<p>Su directorio ha acumulado los subproductos clásicos de años de crecimiento operacional: cuentas de usuario y equipo obsoletas, identidades privilegiadas inactivas, y cuentas de servicio con políticas de contraseña explotables. Cada una de estas es un punto de apoyo gratuito esperando a un atacante.</p>"
+            ? "<p>Su directorio ha acumulado los subproductos clï¿½sicos de aï¿½os de crecimiento operacional: cuentas de usuario y equipo obsoletas, identidades privilegiadas inactivas, y cuentas de servicio con polï¿½ticas de contraseï¿½a explotables. Cada una de estas es un punto de apoyo gratuito esperando a un atacante.</p>"
             : "<p>Your directory has accumulated the classic by-products of years of operational growth: stale user and machine accounts, dormant privileged identities, and service accounts with exploitable password policies. Each of these is a free foothold waiting for an attacker.</p>");
         sb.AppendLine("<div class='threat-evidence'>");
         sb.AppendLine(es
@@ -1002,19 +1006,19 @@ public class ReportService : IReportService
         // PAGE 4: TECHNICAL EVIDENCE - Top 10 Critical Endpoint Failures
         // ======================================================================
         sb.AppendLine("<div class='page pres-light'>");
-        ReportHelpers.AppendPageHeader(sb, es ? "Evidencia Técnica" : "Technical Evidence", brand,
-            es ? "TOP 10 FALLOS CRÍTICOS EN ENDPOINTS" : "TOP 10 CRITICAL ENDPOINT FAILURES");
+        ReportHelpers.AppendPageHeader(sb, es ? "Evidencia Tï¿½cnica" : "Technical Evidence", brand,
+            es ? "TOP 10 FALLOS CRï¿½TICOS EN ENDPOINTS" : "TOP 10 CRITICAL ENDPOINT FAILURES");
         sb.AppendLine("<div class='pb'>");
 
         sb.AppendLine(es
-            ? "<p style='font-size:11px;color:#64748B;margin-bottom:14px'>La tabla a continuación es un extracto directo de los datos de evaluación &mdash; no una plantilla. Cada fila es un endpoint real en su ambiente con una falla de control específica. Su equipo técnico puede validar cada hallazgo contra el host listado y el vector de explotabilidad.</p>"
+            ? "<p style='font-size:11px;color:#64748B;margin-bottom:14px'>La tabla a continuaciï¿½n es un extracto directo de los datos de evaluaciï¿½n &mdash; no una plantilla. Cada fila es un endpoint real en su ambiente con una falla de control especï¿½fica. Su equipo tï¿½cnico puede validar cada hallazgo contra el host listado y el vector de explotabilidad.</p>"
             : "<p style='font-size:11px;color:#64748B;margin-bottom:14px'>The table below is a direct extract from the assessment data &mdash; not a template. Each row is a real endpoint in your environment with a specific control failure. Your technical team can validate each finding against the listed host and exploitability vector.</p>");
 
         sb.AppendLine("<table class='results-table'>");
-        sb.AppendLine($"<tr><th style='width:30%'>Hostname</th><th style='width:18%'>{(es ? "Dirección IP" : "IP Address")}</th><th style='width:34%'>{(es ? "Control Fallido" : "Failed Control")}</th><th style='width:18%'>{(es ? "Explotabilidad" : "Exploitability")}</th></tr>");
+        sb.AppendLine($"<tr><th style='width:30%'>Hostname</th><th style='width:18%'>{(es ? "Direcciï¿½n IP" : "IP Address")}</th><th style='width:34%'>{(es ? "Control Fallido" : "Failed Control")}</th><th style='width:18%'>{(es ? "Explotabilidad" : "Exploitability")}</th></tr>");
         if (topFailures.Count == 0)
         {
-            sb.AppendLine($"<tr><td colspan='4' style='text-align:center;padding:20px;color:#64748B'>{(es ? "No se detectaron fallos de control críticos o de alta severidad en esta evaluación." : "No critical or high-severity control failures detected in this assessment.")}</td></tr>");
+            sb.AppendLine($"<tr><td colspan='4' style='text-align:center;padding:20px;color:#64748B'>{(es ? "No se detectaron fallos de control crï¿½ticos o de alta severidad en esta evaluaciï¿½n." : "No critical or high-severity control failures detected in this assessment.")}</td></tr>");
         }
         else
         {
@@ -1022,7 +1026,7 @@ public class ReportService : IReportService
             {
                 var machine = machineByRunId.TryGetValue(f.RunId, out var m) ? m : null;
                 var hostname = machine?.Hostname ?? "(unknown)";
-                var ip       = machine?.IpAddress ?? "—";
+                var ip       = machine?.IpAddress ?? "ï¿½";
                 var badgeCls = f.Severity == "critical" ? "exploit-badge" : "exploit-badge high";
                 sb.AppendLine("<tr class='fail'>");
                 sb.AppendLine($"<td style='font-family:monospace;font-weight:600;color:#F9FAFB'>{ReportHelpers.HtmlEncode(hostname)}</td>");
@@ -1035,7 +1039,7 @@ public class ReportService : IReportService
         sb.AppendLine("</table>");
 
         sb.AppendLine(es
-            ? $"<p style='margin-top:14px;font-size:10px;color:#64748B;font-style:italic'>Mostrando top {topFailures.Count} de {criticalFails + highFails} fallos críticos/altos totales. El apéndice completo de remediación línea por línea se entrega tras el kickoff del engagement.</p>"
+            ? $"<p style='margin-top:14px;font-size:10px;color:#64748B;font-style:italic'>Mostrando top {topFailures.Count} de {criticalFails + highFails} fallos crï¿½ticos/altos totales. El apï¿½ndice completo de remediaciï¿½n lï¿½nea por lï¿½nea se entrega tras el kickoff del engagement.</p>"
             : $"<p style='margin-top:14px;font-size:10px;color:#64748B;font-style:italic'>Showing top {topFailures.Count} of {criticalFails + highFails} total critical/high failures. The complete line-by-line remediation appendix is provided after engagement kickoff.</p>");
 
         sb.AppendLine("</div></div>");
@@ -1044,13 +1048,13 @@ public class ReportService : IReportService
         // PAGE 5: METHODOLOGY - The 90-Day Safe Deprecation Pitch
         // ======================================================================
         sb.AppendLine("<div class='page pres-light'>");
-        ReportHelpers.AppendPageHeader(sb, es ? "Metodología: Depreciación Segura de 90 Días" : "Methodology: 90-Day Safe Deprecation", brand,
+        ReportHelpers.AppendPageHeader(sb, es ? "Metodologï¿½a: Depreciaciï¿½n Segura de 90 Dï¿½as" : "Methodology: 90-Day Safe Deprecation", brand,
             es ? "EL ENFOQUE TEAMLOGIC" : "THE TEAMLOGIC APPROACH");
         sb.AppendLine("<div class='pb'>");
 
         sb.AppendLine("<div class='methodology-warning'>");
         if (es)
-            sb.AppendLine("<strong>&#9888; El error que vemos cometer a los clientes:</strong> Desactivar abruptamente protocolos legacy (NTLM, SMBv1, WDigest, Kerberos RC4) sin mapear primero las dependencias causa interrupciones catastróficas e inmediatas del negocio. Aplicaciones de línea de negocio, file shares legacy, escáneres, sistemas telefónicos e integraciones dejan de funcionar en el momento en que el protocolo muere &mdash; y la interrupción recae directamente sobre el equipo de TI que apagó el switch.");
+            sb.AppendLine("<strong>&#9888; El error que vemos cometer a los clientes:</strong> Desactivar abruptamente protocolos legacy (NTLM, SMBv1, WDigest, Kerberos RC4) sin mapear primero las dependencias causa interrupciones catastrï¿½ficas e inmediatas del negocio. Aplicaciones de lï¿½nea de negocio, file shares legacy, escï¿½neres, sistemas telefï¿½nicos e integraciones dejan de funcionar en el momento en que el protocolo muere &mdash; y la interrupciï¿½n recae directamente sobre el equipo de TI que apagï¿½ el switch.");
         else
             sb.AppendLine("<strong>&#9888; The mistake we watch clients make:</strong> Abruptly turning off legacy protocols (NTLM, SMBv1, WDigest, Kerberos RC4) without first mapping dependencies causes catastrophic, immediate business outages. Line-of-business applications, legacy file shares, scanners, phone systems and integrations break the moment the protocol dies &mdash; and the outage lands squarely on the IT team that flipped the switch.");
         sb.AppendLine("</div>");
@@ -1058,14 +1062,14 @@ public class ReportService : IReportService
         sb.AppendLine("<div class='methodology-card'>");
         if (es)
         {
-            sb.AppendLine("<h4>Cómo cerramos estos vectores sin dejarte offline</h4>");
-            sb.AppendLine("<p>TeamLogic IT despliega un <strong>motor de telemetría pasiva</strong> a través de tu red durante una <strong>ventana de observación de 90 días</strong>. El motor captura silenciosamente cada llamada de protocolo legacy &mdash; qué hosts las hacen, qué cuentas las inician, qué aplicaciones dependen de ellas y con qué cadencia. Cero huella de instalación en los endpoints críticos, cero reinicios, cero interrupciones para el usuario.</p>");
+            sb.AppendLine("<h4>Cï¿½mo cerramos estos vectores sin dejarte offline</h4>");
+            sb.AppendLine("<p>TeamLogic IT despliega un <strong>motor de telemetrï¿½a pasiva</strong> a travï¿½s de tu red durante una <strong>ventana de observaciï¿½n de 90 dï¿½as</strong>. El motor captura silenciosamente cada llamada de protocolo legacy &mdash; quï¿½ hosts las hacen, quï¿½ cuentas las inician, quï¿½ aplicaciones dependen de ellas y con quï¿½ cadencia. Cero huella de instalaciï¿½n en los endpoints crï¿½ticos, cero reinicios, cero interrupciones para el usuario.</p>");
             sb.AppendLine("<ul>");
-            sb.AppendLine("<li><strong>Día 1-30:</strong> captura baseline de todo el tráfico NTLM / SMBv1 / RC4 / WDigest en la red y en el DC</li>");
-            sb.AppendLine("<li><strong>Día 31-60:</strong> atribución &mdash; cada llamada legacy vinculada a una aplicación, usuario o servicio específico</li>");
-            sb.AppendLine("<li><strong>Día 61-90:</strong> blueprint de depreciación &mdash; el orden exacto, por dependencia, en que cada protocolo legacy puede apagarse sin romper nada</li>");
+            sb.AppendLine("<li><strong>Dï¿½a 1-30:</strong> captura baseline de todo el trï¿½fico NTLM / SMBv1 / RC4 / WDigest en la red y en el DC</li>");
+            sb.AppendLine("<li><strong>Dï¿½a 31-60:</strong> atribuciï¿½n &mdash; cada llamada legacy vinculada a una aplicaciï¿½n, usuario o servicio especï¿½fico</li>");
+            sb.AppendLine("<li><strong>Dï¿½a 61-90:</strong> blueprint de depreciaciï¿½n &mdash; el orden exacto, por dependencia, en que cada protocolo legacy puede apagarse sin romper nada</li>");
             sb.AppendLine("</ul>");
-            sb.AppendLine("<p style='margin-top:10px'>Al final de los 90 días recibes un <strong>plan de depreciación por sistema</strong> con <strong style='color:#0F172A'>cero ambigüedad</strong> y la garantía explícita de que cada eliminación de protocolo se ejecutará con <strong style='color:#0F172A'>cero downtime operacional</strong>.</p>");
+            sb.AppendLine("<p style='margin-top:10px'>Al final de los 90 dï¿½as recibes un <strong>plan de depreciaciï¿½n por sistema</strong> con <strong style='color:#0F172A'>cero ambigï¿½edad</strong> y la garantï¿½a explï¿½cita de que cada eliminaciï¿½n de protocolo se ejecutarï¿½ con <strong style='color:#0F172A'>cero downtime operacional</strong>.</p>");
         }
         else
         {
@@ -1086,7 +1090,7 @@ public class ReportService : IReportService
         // PAGE 6: ROADMAP & NEXT STEPS
         // ======================================================================
         sb.AppendLine("<div class='page pres-light'>");
-        ReportHelpers.AppendPageHeader(sb, es ? "Hoja de Ruta y Próximos Pasos" : "Roadmap & Next Steps", brand,
+        ReportHelpers.AppendPageHeader(sb, es ? "Hoja de Ruta y Prï¿½ximos Pasos" : "Roadmap & Next Steps", brand,
             es ? "TRES FASES HACIA HARDENING COMPLETO" : "THREE PHASES TO FULL HARDENING");
         sb.AppendLine("<div class='pb'>");
 
@@ -1095,31 +1099,31 @@ public class ReportService : IReportService
         if (es)
         {
             sb.AppendLine("<div class='step'><span class='step-num'>1</span><div>");
-            sb.AppendLine("<strong>Fase 1 &middot; Telemetría Pasiva de 90 Días y Auditoría de Identidad</strong>");
+            sb.AppendLine("<strong>Fase 1 &middot; Telemetrï¿½a Pasiva de 90 Dï¿½as y Auditorï¿½a de Identidad</strong>");
             sb.AppendLine("<ul class='phase-list'>");
-            sb.AppendLine("<li>Desplegar el motor de telemetría pasiva en el Día 1 &mdash; cero reinicios, cero downtime</li>");
-            sb.AppendLine("<li>Auditoría continua de identidad AD: cuentas obsoletas, drift de privilegios, objetivos Kerberoastable</li>");
-            sb.AppendLine("<li>Mapeo de dependencias de protocolos legacy (NTLM / SMBv1 / RC4 / WDigest) en checkpoints del Día 30, 60 y 90</li>");
+            sb.AppendLine("<li>Desplegar el motor de telemetrï¿½a pasiva en el Dï¿½a 1 &mdash; cero reinicios, cero downtime</li>");
+            sb.AppendLine("<li>Auditorï¿½a continua de identidad AD: cuentas obsoletas, drift de privilegios, objetivos Kerberoastable</li>");
+            sb.AppendLine("<li>Mapeo de dependencias de protocolos legacy (NTLM / SMBv1 / RC4 / WDigest) en checkpoints del Dï¿½a 30, 60 y 90</li>");
             sb.AppendLine("<li>Reportes semanales de estado a TI + resumen ejecutivo mensual</li>");
             sb.AppendLine("</ul></div></div>");
 
             sb.AppendLine("<div class='step'><span class='step-num'>2</span><div>");
-            sb.AppendLine("<strong>Fase 2 &middot; Hardening Zero-Trust y Depreciación de Protocolos</strong>");
+            sb.AppendLine("<strong>Fase 2 &middot; Hardening Zero-Trust y Depreciaciï¿½n de Protocolos</strong>");
             sb.AppendLine("<ul class='phase-list'>");
-            sb.AppendLine("<li>Ejecutar el blueprint de depreciación del Día 90 &mdash; quirúrgico, por dependencia, reversible</li>");
+            sb.AppendLine("<li>Ejecutar el blueprint de depreciaciï¿½n del Dï¿½a 90 &mdash; quirï¿½rgico, por dependencia, reversible</li>");
             sb.AppendLine("<li>Despliegue de LAPS en el 100% de los endpoints</li>");
             sb.AppendLine("<li>Baseline de BitLocker + TPM en cada equipo que maneje datos corporativos</li>");
-            sb.AppendLine("<li>Reglas ASR + AppLocker / WDAC para contención de ransomware</li>");
-            sb.AppendLine("<li>Credential Guard + LSA Protection para eliminar ataques tipo mimikatz de raíz</li>");
+            sb.AppendLine("<li>Reglas ASR + AppLocker / WDAC para contenciï¿½n de ransomware</li>");
+            sb.AppendLine("<li>Credential Guard + LSA Protection para eliminar ataques tipo mimikatz de raï¿½z</li>");
             sb.AppendLine("</ul></div></div>");
 
             sb.AppendLine("<div class='step'><span class='step-num'>3</span><div>");
             sb.AppendLine("<strong>Fase 3 &middot; Monitoreo Continuo de Cumplimiento (MRR)</strong>");
             sb.AppendLine("<ul class='phase-list'>");
-            sb.AppendLine("<li>Re-evaluación mensual &mdash; tendencia del puntaje de madurez, deltas por framework, nuevo drift</li>");
-            sb.AppendLine("<li>Monitoreo continuo de higiene AD con remediación auto-ticketeada</li>");
-            sb.AppendLine("<li>Revisión ejecutiva trimestral con el CISO / COO</li>");
-            sb.AppendLine("<li>SLA de remediación on-call para cualquier hallazgo crítico</li>");
+            sb.AppendLine("<li>Re-evaluaciï¿½n mensual &mdash; tendencia del puntaje de madurez, deltas por framework, nuevo drift</li>");
+            sb.AppendLine("<li>Monitoreo continuo de higiene AD con remediaciï¿½n auto-ticketeada</li>");
+            sb.AppendLine("<li>Revisiï¿½n ejecutiva trimestral con el CISO / COO</li>");
+            sb.AppendLine("<li>SLA de remediaciï¿½n on-call para cualquier hallazgo crï¿½tico</li>");
             sb.AppendLine("</ul></div></div>");
         }
         else
@@ -1157,7 +1161,7 @@ public class ReportService : IReportService
 
         sb.AppendLine("<div class='cta-box' style='margin-top:20px'>");
         if (es)
-            sb.AppendLine($"<p style='font-size:13px;margin:0'><strong>Próximo paso:</strong> un kickoff de 45 minutos con {ReportHelpers.HtmlEncode(brand.CompanyName)} para desplegar el motor de telemetría pasiva e iniciar tu mapa de dependencias de 90 días. El reloj sobre la exposición actual corre ya sea que el engagement comience esta semana o el próximo trimestre.</p>");
+            sb.AppendLine($"<p style='font-size:13px;margin:0'><strong>Prï¿½ximo paso:</strong> un kickoff de 45 minutos con {ReportHelpers.HtmlEncode(brand.CompanyName)} para desplegar el motor de telemetrï¿½a pasiva e iniciar tu mapa de dependencias de 90 dï¿½as. El reloj sobre la exposiciï¿½n actual corre ya sea que el engagement comience esta semana o el prï¿½ximo trimestre.</p>");
         else
             sb.AppendLine($"<p style='font-size:13px;margin:0'><strong>Next step:</strong> a 45-minute kickoff with {ReportHelpers.HtmlEncode(brand.CompanyName)} to deploy the passive telemetry engine and start your 90-day dependency map. The clock on the current exposure runs whether the engagement starts this week or next quarter.</p>");
         sb.AppendLine("</div>");
@@ -1245,7 +1249,7 @@ public class ReportService : IReportService
             .Take(3)
             .ToList();
 
-        // Estimated remediation hours — heuristic designed for MSPs that
+        // Estimated remediation hours ï¿½ heuristic designed for MSPs that
         // remediate fleet-wide via GPO / Intune / RMM policies bundled by
         // CATEGORY. A single GPO ("Edge Hardening", "Audit Policy", etc.)
         // usually fixes many related controls at once, so the effort is
@@ -1256,9 +1260,9 @@ public class ReportService : IReportService
         //
         //   base_effort  = severity_hours[max_severity_in_category]
         //                  (one GPO's worth of authoring + testing)
-        //   settings_oh  = (unique_failing_controls_in_cat - 1) × 0.1h
+        //   settings_oh  = (unique_failing_controls_in_cat - 1) ï¿½ 0.1h
         //                  (6 min extra per additional setting in the same GPO)
-        //   validation   = (distinct_affected_machines_in_cat - 1) × 0.25h
+        //   validation   = (distinct_affected_machines_in_cat - 1) ï¿½ 0.25h
         //                  (15 min per endpoint to verify the GPO landed)
         //
         //   severity_hours: critical=4, high=2, medium=1, low=0.5
@@ -1305,7 +1309,7 @@ public class ReportService : IReportService
         var estHours = (int)Math.Round(estHoursDouble);
 
         // The "critical failures" KPI still counts unique failing CONTROLS
-        // with critical severity, not categories — the C-level reader
+        // with critical severity, not categories ï¿½ the C-level reader
         // wants to know how many distinct high-impact gaps exist.
         var criticalFailCount = allResults
             .Where(r => r.Status == "fail" && r.Severity == "critical")
@@ -1313,11 +1317,11 @@ public class ReportService : IReportService
             .Distinct()
             .Count();
         var reportTitle = frameworkName != null
-            ? $"{frameworkName} — {ReportHelpers.T("op.title", lang)}"
+            ? $"{frameworkName} ï¿½ {ReportHelpers.T("op.title", lang)}"
             : ReportHelpers.T("op.title", lang);
 
         ReportHelpers.AppendHtmlHead(sb, $"{reportTitle} - {org.Name}", brand, isOrgReport: true, htmlLang: lang,
-            user: userInfo, detail: $"{totalMachines} devices · {org.Name}");
+            user: userInfo, detail: $"{totalMachines} devices ï¿½ {org.Name}");
 
         // ---- PAGE 1: COVER ----
         sb.AppendLine("<div class='cover'>");
@@ -1334,7 +1338,7 @@ public class ReportService : IReportService
         sb.AppendLine("</div></div>");
 
         // ---- PAGE 2: ONE-PAGER ----
-        // Uses the SAME unified header as every other report — eyebrow is
+        // Uses the SAME unified header as every other report ï¿½ eyebrow is
         // the language-specific "Executive Brief" label so the one-pager
         // still carries its distinct context tag.
         sb.AppendLine("<div class='page onepager'>");
@@ -1393,7 +1397,7 @@ public class ReportService : IReportService
                 sb.AppendLine($"<div class='op-num'>{n++}</div>");
                 sb.AppendLine("<div>");
                 sb.AppendLine($"<strong>{ReportHelpers.HtmlEncode(r.Name)}</strong>");
-                sb.AppendLine($"<div class='op-meta'>{ReportHelpers.HtmlEncode(r.Category)} · {ReportHelpers.HtmlEncode(ReportHelpers.T("op.risk.affects", lang))} {r.MachineCount} {ReportHelpers.HtmlEncode(mLabel)}</div>");
+                sb.AppendLine($"<div class='op-meta'>{ReportHelpers.HtmlEncode(r.Category)} ï¿½ {ReportHelpers.HtmlEncode(ReportHelpers.T("op.risk.affects", lang))} {r.MachineCount} {ReportHelpers.HtmlEncode(mLabel)}</div>");
                 sb.AppendLine("</div>");
                 sb.AppendLine("</div>");
             }
@@ -1417,7 +1421,7 @@ public class ReportService : IReportService
                 sb.AppendLine($"<div class='op-num'>{n++}</div>");
                 sb.AppendLine("<div>");
                 sb.AppendLine($"<strong>{ReportHelpers.HtmlEncode(w.Name)}</strong>");
-                sb.AppendLine($"<div class='op-meta'>{ReportHelpers.HtmlEncode(w.Category)} · {ReportHelpers.HtmlEncode(ReportHelpers.T("op.risk.affects", lang))} {w.MachineCount} {ReportHelpers.HtmlEncode(mLabel)}</div>");
+                sb.AppendLine($"<div class='op-meta'>{ReportHelpers.HtmlEncode(w.Category)} ï¿½ {ReportHelpers.HtmlEncode(ReportHelpers.T("op.risk.affects", lang))} {w.MachineCount} {ReportHelpers.HtmlEncode(mLabel)}</div>");
                 sb.AppendLine("</div>");
                 sb.AppendLine("</div>");
             }
@@ -1450,12 +1454,12 @@ public class ReportService : IReportService
     }
 
     // ======================================================================
-    // ORG: C-LEVEL REPORT — Executive risk snapshot (2 pages)
+    // ORG: C-LEVEL REPORT ï¿½ Executive risk snapshot (2 pages)
     //
     // Purpose: ad-hoc snapshot for CEO/COO/CFO. 2-minute read. Current state
-    // only — no historical trend (that belongs to Monthly Progress).
+    // only ï¿½ no historical trend (that belongs to Monthly Progress).
     // Structure: Cover + 1 content page with 3 blocks:
-    //   1. Risk Posture semáforo (with capital sin collapse logic)
+    //   1. Risk Posture semï¿½foro (with capital sin collapse logic)
     //   2. 3 Business KPIs (exposure benchmark, coverage, evolution)
     //   3. Max 2 Executive CTAs (hybrid auto-detect + operator-editable)
     // ======================================================================
@@ -1510,7 +1514,7 @@ public class ReportService : IReportService
             brand, es ? "RESUMEN DE RIESGO" : "RISK SUMMARY");
         sb.AppendLine("<div class='pb'>");
 
-        // ===== Block 1: Risk Posture semáforo =====
+        // ===== Block 1: Risk Posture semï¿½foro =====
         string postureColor, postureBg, postureLabel, postureNarrative;
         if (capitalSin != null)
         {
@@ -1550,7 +1554,7 @@ public class ReportService : IReportService
         sb.AppendLine("</div>");
 
         // ===== Block 2: 3 Business KPIs =====
-        // KPI 2 data: asset coverage (the "4 Fantásticos", Defender inferred from control_results)
+        // KPI 2 data: asset coverage (the "4 Fantï¿½sticos", Defender inferred from control_results)
         var bitlockerOk = runs.Count(r => r.Machine.Bitlocker == true);
         var tpmOk       = runs.Count(r => r.Machine.TpmPresent == true);
         var defenderOk  = runs.Count(r =>
@@ -1588,7 +1592,7 @@ public class ReportService : IReportService
         sb.AppendLine("<div style='background:#F8F9FA;border:1px solid #E2E8F0;border-top:3px solid #991B1B;border-radius:6px;padding:14px 16px;box-shadow:0 1px 2px 0 rgba(15,23,42,0.04)'>");
         sb.AppendLine($"<div style='font-size:7pt;font-weight:800;color:#991B1B;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px'>{ReportHelpers.HtmlEncode(es ? "COSTO DE EXPOSICI\u00D3N" : "COST OF EXPOSURE")}</div>");
         sb.AppendLine($"<div style='font-size:22pt;font-weight:900;color:#991B1B;line-height:1'>USD 1.2M</div>");
-        sb.AppendLine($"<div style='font-size:7pt;color:#64748B;margin-top:4px;font-style:italic'>{ReportHelpers.HtmlEncode(es ? "IBM Cost of a Data Breach 2024 — segmento PyME" : "IBM Cost of a Data Breach 2024 — SMB segment")}</div>");
+        sb.AppendLine($"<div style='font-size:7pt;color:#64748B;margin-top:4px;font-style:italic'>{ReportHelpers.HtmlEncode(es ? "IBM Cost of a Data Breach 2024 ï¿½ segmento PyME" : "IBM Cost of a Data Breach 2024 ï¿½ SMB segment")}</div>");
         sb.AppendLine($"<div style='font-size:8pt;color:#334155;margin-top:6px;line-height:1.4;border-top:1px solid #E2E8F0;padding-top:6px'>{ReportHelpers.HtmlEncode(es ? $"Su infraestructura actual presenta {criticalVectorCount} vectores cr\u00EDticos que coinciden con los casos de estudio de este benchmark." : $"Your infrastructure currently exhibits {criticalVectorCount} critical vectors matching this benchmark's case studies.")}</div>");
         sb.AppendLine("</div>");
 
@@ -1694,7 +1698,7 @@ public class ReportService : IReportService
     }
 
     // ======================================================================
-    // ORG: PRESALES OPENER REPORT — "El Abrepuertas"
+    // ORG: PRESALES OPENER REPORT ï¿½ "El Abrepuertas"
     // Spec: 2-3 pages, visually aggressive. Goal = generate urgency,
     // quantified fear, and get a second meeting. Audience: first contact,
     // non-technical operations manager.
@@ -1714,7 +1718,7 @@ public class ReportService : IReportService
         var totalMachines = runs.Count;
         var avgScore = runs.Count > 0 ? Math.Round(runs.Average(r => r.GlobalScore ?? 0), 0) : 0;
 
-        // Real average scan duration from the fleet — honesty > marketing.
+        // Real average scan duration from the fleet ï¿½ honesty > marketing.
         var avgDurationSec = runs.Count > 0 && runs.Any(r => r.DurationMs > 0)
             ? Math.Max(1, (int)Math.Round(runs.Where(r => r.DurationMs > 0).Average(r => (r.DurationMs ?? 0) / 1000.0)))
             : 0;
@@ -1722,16 +1726,16 @@ public class ReportService : IReportService
 
         // Risk verdict: the lower the score the redder
         string verdict, verdictColor;
-        if (avgScore < 50)       { verdict = lang == "es" ? "CRÍTICO" : "CRITICAL"; verdictColor = "#C0392B"; }
+        if (avgScore < 50)       { verdict = lang == "es" ? "CRï¿½TICO" : "CRITICAL"; verdictColor = "#C0392B"; }
         else if (avgScore < 70)  { verdict = lang == "es" ? "ALTO"    : "HIGH";     verdictColor = "#D97706"; }
         else if (avgScore < 85)  { verdict = lang == "es" ? "MEDIO"   : "MEDIUM";   verdictColor = "#2563EB"; }
         else                     { verdict = lang == "es" ? "BAJO"    : "LOW";      verdictColor = "#006536"; }
 
         var vectors = DetectCompromiseVectors(allResults, hygiene, enrichment, runs, lang);
 
-        var reportTitle = lang == "es" ? "Informe de Exposición al Riesgo" : "Risk Exposure Report";
+        var reportTitle = lang == "es" ? "Informe de Exposiciï¿½n al Riesgo" : "Risk Exposure Report";
         ReportHelpers.AppendHtmlHead(sb, $"{reportTitle} - {org.Name}", brand, isOrgReport: true, htmlLang: lang,
-            user: userInfo, detail: $"{totalMachines} devices · {org.Name}");
+            user: userInfo, detail: $"{totalMachines} devices ï¿½ {org.Name}");
 
         // ---- PAGE 1: COVER ----
         sb.AppendLine("<div class='cover'>");
@@ -1739,7 +1743,7 @@ public class ReportService : IReportService
         sb.AppendLine("<div class='cover-content'>");
         if (brand.LogoUrl is not null)
             sb.AppendLine($"<img src='{ReportHelpers.HtmlEncode(brand.LogoUrl)}' class='logo' alt='{ReportHelpers.HtmlEncode(brand.CompanyName)}'>");
-        sb.AppendLine($"<p class='eyebrow'>{ReportHelpers.HtmlEncode(lang == "es" ? "EXPOSICIÓN AL RIESGO" : "RISK EXPOSURE BRIEF")}</p>");
+        sb.AppendLine($"<p class='eyebrow'>{ReportHelpers.HtmlEncode(lang == "es" ? "EXPOSICIï¿½N AL RIESGO" : "RISK EXPOSURE BRIEF")}</p>");
         sb.AppendLine($"<h1>{ReportHelpers.HtmlEncode(reportTitle)}</h1>");
         sb.AppendLine($"<h2>{ReportHelpers.HtmlEncode(org.Name)}</h2>");
         sb.AppendLine($"<p class='meta'>{scanDate:MMMM dd, yyyy} &mdash; {totalMachines} {ReportHelpers.HtmlEncode(lang == "es" ? "equipos auditados" : "machines audited")}</p>");
@@ -1749,11 +1753,11 @@ public class ReportService : IReportService
 
         // ---- PAGE 2: RISK SCORE + VECTORS + FRICTIONLESS + CTA ----
         sb.AppendLine("<div class='page'>");
-        ReportHelpers.AppendPageHeader(sb, lang == "es" ? "Vectores de Compromiso Crítico" : "Critical Compromise Vectors",
-            brand, lang == "es" ? "ANÁLISIS DE EXPOSICIÓN" : "EXPOSURE ANALYSIS");
+        ReportHelpers.AppendPageHeader(sb, lang == "es" ? "Vectores de Compromiso Crï¿½tico" : "Critical Compromise Vectors",
+            brand, lang == "es" ? "ANï¿½LISIS DE EXPOSICIï¿½N" : "EXPOSURE ANALYSIS");
         sb.AppendLine("<div class='pb'>");
 
-        // Big risk score block — reuses the existing .big-number-box with
+        // Big risk score block ï¿½ reuses the existing .big-number-box with
         // an inline override so the colour matches the severity verdict.
         sb.AppendLine($"<div class='big-number-box' style='border-color:{verdictColor};background:#fef2f2'>");
         sb.AppendLine($"<div style='font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#666;margin-bottom:8px'>{ReportHelpers.HtmlEncode(lang == "es" ? "NIVEL DE MADUREZ EN CIBERSEGURIDAD" : "CYBERSECURITY MATURITY LEVEL")}</div>");
@@ -1779,7 +1783,7 @@ public class ReportService : IReportService
             sb.AppendLine("<div class='headline-item' style='background:#f0fdf4;border-color:#006536'>");
             sb.AppendLine("<div class='headline-icon' style='background:#006536'>&#10003;</div>");
             sb.AppendLine("<div class='headline-text'>");
-            sb.AppendLine($"<strong>{ReportHelpers.HtmlEncode(lang == "es" ? "Sin vectores críticos detectados" : "No critical compromise vectors detected")}</strong><br>");
+            sb.AppendLine($"<strong>{ReportHelpers.HtmlEncode(lang == "es" ? "Sin vectores crï¿½ticos detectados" : "No critical compromise vectors detected")}</strong><br>");
             sb.AppendLine(ReportHelpers.HtmlEncode(lang == "es"
                 ? "La postura general es saludable. Igual vale la pena revisar los hallazgos medios y bajos para mantener la madurez en el tiempo."
                 : "The overall posture is healthy. Still worth reviewing the medium and low severity findings to sustain maturity over time."));
@@ -1787,21 +1791,21 @@ public class ReportService : IReportService
         }
         sb.AppendLine("</div>");
 
-        // Frictionless audit banner — reuses .insight-box in green
+        // Frictionless audit banner ï¿½ reuses .insight-box in green
         sb.AppendLine("<div class='insight-box' style='background:#f0fdf4;border-color:#006536'>");
-        sb.AppendLine($"<p><strong style='color:#006536;font-size:14px'>&#9201; {ReportHelpers.HtmlEncode(lang == "es" ? "Auditoría Sin Fricción" : "Frictionless Audit")}</strong></p>");
+        sb.AppendLine($"<p><strong style='color:#006536;font-size:14px'>&#9201; {ReportHelpers.HtmlEncode(lang == "es" ? "Auditorï¿½a Sin Fricciï¿½n" : "Frictionless Audit")}</strong></p>");
         var durationClause = avgDurationSec > 0
             ? (lang == "es"
-                ? $"Esta auditoría se realizó en un promedio de <strong>{avgDurationSec} segundos por equipo</strong>, "
+                ? $"Esta auditorï¿½a se realizï¿½ en un promedio de <strong>{avgDurationSec} segundos por equipo</strong>, "
                 : $"This audit ran in an average of <strong>{avgDurationSec} seconds per machine</strong>, ")
             : (lang == "es"
-                ? "Esta auditoría se realizó "
+                ? "Esta auditorï¿½a se realizï¿½ "
                 : "This audit ran ");
         sb.AppendLine(lang == "es"
-            ? $"<p style='margin-top:8px'>{durationClause}de forma <strong>pasiva</strong>, sin impacto en su operación actual: <strong>cero reinicios</strong>, <strong>cero instalación persistente</strong>, <strong>cero fricción para sus usuarios</strong>. El hallazgo de estos vectores críticos no requirió pausar absolutamente nada.</p>"
+            ? $"<p style='margin-top:8px'>{durationClause}de forma <strong>pasiva</strong>, sin impacto en su operaciï¿½n actual: <strong>cero reinicios</strong>, <strong>cero instalaciï¿½n persistente</strong>, <strong>cero fricciï¿½n para sus usuarios</strong>. El hallazgo de estos vectores crï¿½ticos no requiriï¿½ pausar absolutamente nada.</p>"
             : $"<p style='margin-top:8px'>{durationClause}in a fully <strong>passive</strong> manner, with no impact on your current operations: <strong>zero reboots</strong>, <strong>zero persistent install</strong>, <strong>zero user friction</strong>. Surfacing these critical vectors did not require pausing anything.</p>");
 
-        // Compact stat rail for the frictionless section — overrides the
+        // Compact stat rail for the frictionless section ï¿½ overrides the
         // default `.stat` / `.stat-value` sizes inline so 4 cards fit on
         // a single row within the narrower .insight-box content area.
         const string statStyle   = "min-width:78px;padding:10px 12px;flex:1";
@@ -1816,22 +1820,22 @@ public class ReportService : IReportService
         sb.AppendLine("</div>");
         sb.AppendLine("</div>");
 
-        // CTA — "90-Day Safe Deprecation Audit" positioning. Pivots from
+        // CTA ï¿½ "90-Day Safe Deprecation Audit" positioning. Pivots from
         // "fix it now" (operationally scary) to "let us map the legacy
         // dependencies first, then deprecate with zero downtime". The
         // unique value proposition is the passive telemetry engine, not
         // the remediation itself.
         sb.AppendLine("<div class='cta-box'>");
-        sb.AppendLine($"<p style='font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:{brand.AccentColor};margin-bottom:4px'>{ReportHelpers.HtmlEncode(lang == "es" ? "LOS PRÓXIMOS 90 DÍAS" : "THE NEXT 90 DAYS")}</p>");
+        sb.AppendLine($"<p style='font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:{brand.AccentColor};margin-bottom:4px'>{ReportHelpers.HtmlEncode(lang == "es" ? "LOS PRï¿½XIMOS 90 Dï¿½AS" : "THE NEXT 90 DAYS")}</p>");
         sb.AppendLine($"<p style='font-size:17px;font-weight:700;margin-bottom:10px'>{ReportHelpers.HtmlEncode(lang == "es" ? "Antes de romper nada." : "Before you disable anything.")}</p>");
         if (lang == "es")
         {
-            sb.AppendLine($"<p style='font-size:12px;line-height:1.65;margin-bottom:12px;color:#d4d4d4;text-align:left'>Apagar SMBv1, NTLM o cualquier protocolo legacy sin entender quién depende de ellos rompe aplicaciones críticas — y esa caída es suya. Nuestra respuesta es la <strong style='color:{brand.AccentColor}'>Auditoría de Deprecación Segura de 90 Días</strong>: desplegamos un motor de telemetría pasiva que mapea, sin interrumpir a nadie, exactamente qué sistemas, usuarios y procesos dependen de cada protocolo legacy que hoy lo expone. Al día 90 usted recibe el plan de deprecación con <strong style='color:#fff'>cero ambigüedad</strong> y <strong style='color:#fff'>cero downtime operacional</strong>.</p>");
-            sb.AppendLine($"<p style='font-size:13px;margin:0;padding-top:10px;border-top:1px solid #666'>Reserve 30 minutos con <strong>{ReportHelpers.HtmlEncode(brand.CompanyName)}</strong> para iniciar la telemetría.</p>");
+            sb.AppendLine($"<p style='font-size:12px;line-height:1.65;margin-bottom:12px;color:#d4d4d4;text-align:left'>Apagar SMBv1, NTLM o cualquier protocolo legacy sin entender quiï¿½n depende de ellos rompe aplicaciones crï¿½ticas ï¿½ y esa caï¿½da es suya. Nuestra respuesta es la <strong style='color:{brand.AccentColor}'>Auditorï¿½a de Deprecaciï¿½n Segura de 90 Dï¿½as</strong>: desplegamos un motor de telemetrï¿½a pasiva que mapea, sin interrumpir a nadie, exactamente quï¿½ sistemas, usuarios y procesos dependen de cada protocolo legacy que hoy lo expone. Al dï¿½a 90 usted recibe el plan de deprecaciï¿½n con <strong style='color:#fff'>cero ambigï¿½edad</strong> y <strong style='color:#fff'>cero downtime operacional</strong>.</p>");
+            sb.AppendLine($"<p style='font-size:13px;margin:0;padding-top:10px;border-top:1px solid #666'>Reserve 30 minutos con <strong>{ReportHelpers.HtmlEncode(brand.CompanyName)}</strong> para iniciar la telemetrï¿½a.</p>");
         }
         else
         {
-            sb.AppendLine($"<p style='font-size:12px;line-height:1.65;margin-bottom:12px;color:#d4d4d4;text-align:left'>Turning off SMBv1, NTLM or any legacy protocol without knowing who depends on them breaks critical applications — and that outage is yours to own. Our answer is the <strong style='color:{brand.AccentColor}'>90-Day Safe Deprecation Audit</strong>: we deploy a passive telemetry engine that maps, without interrupting anyone, exactly which systems, users and processes rely on each legacy protocol exposing you today. On day 90 you receive a deprecation plan with <strong style='color:#fff'>zero ambiguity</strong> and <strong style='color:#fff'>zero operational downtime</strong>.</p>");
+            sb.AppendLine($"<p style='font-size:12px;line-height:1.65;margin-bottom:12px;color:#d4d4d4;text-align:left'>Turning off SMBv1, NTLM or any legacy protocol without knowing who depends on them breaks critical applications ï¿½ and that outage is yours to own. Our answer is the <strong style='color:{brand.AccentColor}'>90-Day Safe Deprecation Audit</strong>: we deploy a passive telemetry engine that maps, without interrupting anyone, exactly which systems, users and processes rely on each legacy protocol exposing you today. On day 90 you receive a deprecation plan with <strong style='color:#fff'>zero ambiguity</strong> and <strong style='color:#fff'>zero operational downtime</strong>.</p>");
             sb.AppendLine($"<p style='font-size:13px;margin:0;padding-top:10px;border-top:1px solid #666'>Book 30 minutes with <strong>{ReportHelpers.HtmlEncode(brand.CompanyName)}</strong> to start the telemetry.</p>");
         }
         sb.AppendLine("</div>");
@@ -1839,14 +1843,14 @@ public class ReportService : IReportService
         sb.AppendLine("</div></div>");
         sb.AppendLine("</body></html>");
 
-        _ = frameworkScores; _ = frameworkName; // intentionally unused — this report is non-framework
+        _ = frameworkScores; _ = frameworkName; // intentionally unused ï¿½ this report is non-framework
         return sb.ToString();
     }
 
     /// <summary>
     /// Priority-based detection of the top 4 critical compromise vectors
     /// from the assessment data. Output is in business language, not
-    /// technical jargon — the audience is the operations manager, not the
+    /// technical jargon ï¿½ the audience is the operations manager, not the
     /// security engineer. Each detector checks a specific class of finding
     /// (credential theft, legacy protocols, exposed attack surface, missing
     /// detection / logging, etc.) and returns a short card describing the
@@ -1863,14 +1867,14 @@ public class ReportService : IReportService
             .Where(r => r.Status == "fail" && predicate(r))
             .Select(r => r.RunId).Distinct().Count();
 
-        // 1. Active threats — highest urgency.
+        // 1. Active threats ï¿½ highest urgency.
         if (enrichment.Threats.Count > 0)
         {
             var machines = enrichment.Threats.Select(t => t.MachineId).Distinct().Count();
             found.Add((
                 es ? "Amenazas activas detectadas en la red"
                    : "Active threats detected on the network",
-                es ? $"Nuestro escaneo detectó {enrichment.Threats.Count} firmas de amenazas distribuidas en {machines} equipos. Esto indica sistemas potencialmente comprometidos que requieren análisis forense inmediato."
+                es ? $"Nuestro escaneo detectï¿½ {enrichment.Threats.Count} firmas de amenazas distribuidas en {machines} equipos. Esto indica sistemas potencialmente comprometidos que requieren anï¿½lisis forense inmediato."
                    : $"Our scan detected {enrichment.Threats.Count} threat signatures spread across {machines} machines. This indicates potentially compromised systems requiring immediate forensic analysis.",
                 100));
         }
@@ -1885,9 +1889,9 @@ public class ReportService : IReportService
         if (credMachines > 0)
         {
             found.Add((
-                es ? "Contraseñas expuestas en memoria"
+                es ? "Contraseï¿½as expuestas en memoria"
                    : "Credentials exposed in memory",
-                es ? $"En {credMachines} equipos se detectaron configuraciones que dejan contraseñas cacheadas en texto claro en la memoria del sistema. Un atacante con privilegios locales puede extraerlas en segundos con herramientas como mimikatz, y luego moverse lateralmente usando esas credenciales robadas."
+                es ? $"En {credMachines} equipos se detectaron configuraciones que dejan contraseï¿½as cacheadas en texto claro en la memoria del sistema. Un atacante con privilegios locales puede extraerlas en segundos con herramientas como mimikatz, y luego moverse lateralmente usando esas credenciales robadas."
                    : $"On {credMachines} machines we found settings that cache passwords in clear text in system memory. An attacker with local privileges can extract them in seconds with tools like mimikatz, then move laterally using those stolen credentials.",
                 95));
         }
@@ -1901,12 +1905,12 @@ public class ReportService : IReportService
             found.Add((
                 es ? "Puertas RDP abiertas directamente a internet"
                    : "RDP doors open directly to the Internet",
-                es ? $"{rdpMachines} equipos tienen Escritorio Remoto (RDP) expuesto. RDP es el vector de entrada de ransomware #1 en los últimos 3 años. Un atacante probablemente ya está intentando contraseñas contra estos puertos en este momento."
+                es ? $"{rdpMachines} equipos tienen Escritorio Remoto (RDP) expuesto. RDP es el vector de entrada de ransomware #1 en los ï¿½ltimos 3 aï¿½os. Un atacante probablemente ya estï¿½ intentando contraseï¿½as contra estos puertos en este momento."
                    : $"{rdpMachines} machines have Remote Desktop (RDP) exposed. RDP is the #1 ransomware entry vector of the past 3 years. An attacker is likely brute-forcing these ports right now.",
                 90));
         }
 
-        // 4. SMBv1 — NotPetya / WannaCry legacy
+        // 4. SMBv1 ï¿½ NotPetya / WannaCry legacy
         var smbMachines = FailCount(r =>
             r.Name.Contains("SMBv1", StringComparison.OrdinalIgnoreCase) ||
             r.Name.Contains("SMB1",  StringComparison.OrdinalIgnoreCase) ||
@@ -1916,7 +1920,7 @@ public class ReportService : IReportService
             found.Add((
                 es ? "Protocolo SMBv1 habilitado"
                    : "SMBv1 protocol enabled",
-                es ? $"El protocolo legacy SMBv1 está activo en {smbMachines} equipos. Es el mismo vector de explotación que permitió a NotPetya y WannaCry destruir miles de redes corporativas en 2017. Sigue siendo explotable hoy."
+                es ? $"El protocolo legacy SMBv1 estï¿½ activo en {smbMachines} equipos. Es el mismo vector de explotaciï¿½n que permitiï¿½ a NotPetya y WannaCry destruir miles de redes corporativas en 2017. Sigue siendo explotable hoy."
                    : $"The legacy SMBv1 protocol is active on {smbMachines} machines. This is the same exploit vector that allowed NotPetya and WannaCry to destroy thousands of corporate networks in 2017. It is still exploitable today.",
                 85));
         }
@@ -1930,19 +1934,19 @@ public class ReportService : IReportService
                 found.Add((
                     es ? "Cuentas de servicio vulnerables a Kerberoast"
                        : "Service accounts vulnerable to Kerberoast",
-                    es ? $"{kerberoast} cuentas de servicio en Active Directory son vulnerables a Kerberoast. Sus contraseñas pueden ser crackeadas offline sin generar una sola alerta, y muchas tienen privilegios elevados en la red."
+                    es ? $"{kerberoast} cuentas de servicio en Active Directory son vulnerables a Kerberoast. Sus contraseï¿½as pueden ser crackeadas offline sin generar una sola alerta, y muchas tienen privilegios elevados en la red."
                        : $"{kerberoast} service accounts in Active Directory are vulnerable to Kerberoast. Their passwords can be cracked offline without generating a single alert, and many have elevated privileges across the network.",
                     80));
             }
 
-            // 6. LAPS missing — shared local admin password
+            // 6. LAPS missing ï¿½ shared local admin password
             var lapsMissing = hygiene.Findings.Count(f => f.Status == "NoLAPS");
             if (lapsMissing > 10)
             {
                 found.Add((
-                    es ? "Sin LAPS — contraseña de administrador local compartida"
-                       : "No LAPS — shared local admin password",
-                    es ? $"{lapsMissing} equipos no tienen LAPS (Local Administrator Password Solution) desplegado. Probablemente usan la misma contraseña de administrador local en toda la flota, convirtiendo un solo equipo comprometido en acceso total a todos."
+                    es ? "Sin LAPS ï¿½ contraseï¿½a de administrador local compartida"
+                       : "No LAPS ï¿½ shared local admin password",
+                    es ? $"{lapsMissing} equipos no tienen LAPS (Local Administrator Password Solution) desplegado. Probablemente usan la misma contraseï¿½a de administrador local en toda la flota, convirtiendo un solo equipo comprometido en acceso total a todos."
                        : $"{lapsMissing} machines don't have LAPS (Local Administrator Password Solution) deployed. They probably share the same local admin password fleet-wide, turning a single compromised machine into full access to every other one.",
                     75));
             }
@@ -1954,13 +1958,13 @@ public class ReportService : IReportService
                 found.Add((
                     es ? "Dominio Active Directory en nivel funcional obsoleto"
                        : "Active Directory domain at legacy functional level",
-                    es ? $"El dominio está operando en nivel funcional {domainLevel.Detail}, bloqueando el uso de features de seguridad modernas como Protected Users, Authentication Policy Silos y Credential Guard. Heredaron todas las vulnerabilidades de una década atrás."
+                    es ? $"El dominio estï¿½ operando en nivel funcional {domainLevel.Detail}, bloqueando el uso de features de seguridad modernas como Protected Users, Authentication Policy Silos y Credential Guard. Heredaron todas las vulnerabilidades de una dï¿½cada atrï¿½s."
                        : $"The domain is running at functional level {domainLevel.Detail}, blocking modern security features like Protected Users, Authentication Policy Silos and Credential Guard. It inherits every vulnerability from a decade ago.",
                     70));
             }
         }
 
-        // 8. No audit logging — attackers would leave no trace
+        // 8. No audit logging ï¿½ attackers would leave no trace
         var auditMachines = FailCount(r =>
             r.Category.Contains("Audit", StringComparison.OrdinalIgnoreCase));
         if (auditMachines > 0 && allResults.Count(r => r.Category.Contains("Audit", StringComparison.OrdinalIgnoreCase) && r.Status == "fail") > 20)
@@ -1968,7 +1972,7 @@ public class ReportService : IReportService
             found.Add((
                 es ? "Sin registro de eventos de seguridad"
                    : "Security event logging disabled",
-                es ? $"En {auditMachines} equipos el registro de eventos críticos está deshabilitado o incompleto. Un atacante que entre a estos sistemas no dejaría un solo rastro para análisis forense. Literalmente no sabrías que pasó."
+                es ? $"En {auditMachines} equipos el registro de eventos crï¿½ticos estï¿½ deshabilitado o incompleto. Un atacante que entre a estos sistemas no dejarï¿½a un solo rastro para anï¿½lisis forense. Literalmente no sabrï¿½as que pasï¿½."
                    : $"On {auditMachines} machines the logging of critical events is disabled or incomplete. An attacker breaching these systems would leave no forensic trail whatsoever. You would literally not know what happened.",
                 65));
         }
@@ -1980,7 +1984,7 @@ public class ReportService : IReportService
             found.Add((
                 es ? "Discos sin cifrar"
                    : "Unencrypted drives",
-                es ? $"{noBitlocker} equipos tienen los discos sin cifrar. El robo o pérdida de un solo dispositivo expone toda la información almacenada: correos, archivos, credenciales guardadas, claves de API."
+                es ? $"{noBitlocker} equipos tienen los discos sin cifrar. El robo o pï¿½rdida de un solo dispositivo expone toda la informaciï¿½n almacenada: correos, archivos, credenciales guardadas, claves de API."
                    : $"{noBitlocker} machines have unencrypted drives. The theft or loss of a single device exposes every piece of data stored on it: emails, files, saved credentials, API keys.",
                 60));
         }
@@ -1999,7 +2003,7 @@ public class ReportService : IReportService
     // Structure:
     //   Page 1: Cover (reused pattern, dark)
     //   Page 2: Trend & ROI + Compliance rings + Milestones + Action Required
-    //           (single dense content page — CEO read-time under 3 minutes)
+    //           (single dense content page ï¿½ CEO read-time under 3 minutes)
     // ======================================================================
     private static string BuildOrgMonthlyBriefingReport(Organization org, List<AssessmentRun> runs,
         List<OrgControlResult> allResults, ReportBranding brand,
@@ -2019,7 +2023,7 @@ public class ReportService : IReportService
             ? Math.Round((avgScore - previousMonthScore.Value) / previousMonthScore.Value * 100, 1)
             : null;
         var trendColor = !delta.HasValue ? "#64748B" : delta.Value >= 0 ? "#15803D" : "#991B1B";
-        var trendArrow = !delta.HasValue ? "—" : delta.Value >= 0 ? "?" : "?";
+        var trendArrow = !delta.HasValue ? "ï¿½" : delta.Value >= 0 ? "?" : "?";
         var trendSign  = !delta.HasValue ? "" : delta.Value >= 0 ? "+" : "";
 
         // Legacy OS detection for the Action Required section
@@ -2062,7 +2066,7 @@ public class ReportService : IReportService
 
         var mbTitle = es ? "Resumen Ejecutivo Mensual" : "Monthly Executive Briefing";
         ReportHelpers.AppendHtmlHead(sb, $"{mbTitle} - {org.Name}", brand, isOrgReport: true, htmlLang: lang,
-            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} · {org.Name} · {scanDate:MMM yyyy}");
+            user: userInfo, detail: $"{totalMachines} {(es ? "dispositivos" : "devices")} ï¿½ {org.Name} ï¿½ {scanDate:MMM yyyy}");
 
         // ---- BIG 4 FINANCIAL AUDIT LIGHT MODE (scoped via .page-mb) ----
         // Premium corporate palette for the monthly C-Level briefing:
@@ -2170,9 +2174,9 @@ public class ReportService : IReportService
         if (brand.LogoUrl is not null)
             sb.AppendLine($"<img src='{ReportHelpers.HtmlEncode(brand.LogoUrl)}' class='logo' alt='{ReportHelpers.HtmlEncode(brand.CompanyName)}'>");
         sb.AppendLine($"<p class='eyebrow'>{(es ? "RESUMEN EJECUTIVO MENSUAL" : "MONTHLY EXECUTIVE BRIEFING")}</p>");
-        sb.AppendLine($"<h1>{(es ? "Revisión Mensual de Postura de Seguridad" : "Security Posture Monthly Review")}</h1>");
+        sb.AppendLine($"<h1>{(es ? "Revisiï¿½n Mensual de Postura de Seguridad" : "Security Posture Monthly Review")}</h1>");
         sb.AppendLine($"<h2>{ReportHelpers.HtmlEncode(org.Name)}</h2>");
-        sb.AppendLine($"<p class='meta'>{(es ? scanDate.ToString("MMMM yyyy") : scanDate.ToString("MMMM yyyy"))} &mdash; {totalMachines} {(es ? "dispositivos bajo gestión" : "devices under management")}</p>");
+        sb.AppendLine($"<p class='meta'>{(es ? scanDate.ToString("MMMM yyyy") : scanDate.ToString("MMMM yyyy"))} &mdash; {totalMachines} {(es ? "dispositivos bajo gestiï¿½n" : "devices under management")}</p>");
         sb.AppendLine($"<div class='grade-badge grade-{orgGrade.Replace("+", "plus")}'>{ReportHelpers.HtmlEncode(orgGrade)}</div>");
         sb.AppendLine($"<p class='score'>{avgScore}%</p>");
         sb.AppendLine("</div></div>");
@@ -2180,7 +2184,7 @@ public class ReportService : IReportService
         // ---- PAGE 2: EXECUTIVE BRIEFING ----
         sb.AppendLine("<div class='page page-mb'>");
         ReportHelpers.AppendPageHeader(sb, es ? "Resumen Ejecutivo" : "Executive Briefing", brand,
-            es ? "REVISIÓN MENSUAL C-LEVEL" : "C-LEVEL MONTHLY REVIEW");
+            es ? "REVISIï¿½N MENSUAL C-LEVEL" : "C-LEVEL MONTHLY REVIEW");
         sb.AppendLine("<div class='pb'>");
 
         // 1. Trend block
@@ -2197,19 +2201,19 @@ public class ReportService : IReportService
             sb.AppendLine($"<div class='mb-delta-label'>{(es ? $"vs mes anterior ({previousMonthScore!.Value:0.#})" : $"vs last month ({previousMonthScore!.Value:0.#})")}</div>");
             sb.AppendLine("</div>");
             var narrative = delta.Value >= 0
-                ? (es ? $"La exposición general al riesgo se redujo un {Math.Abs(deltaPct!.Value):0.#}% en los últimos 30 días. Su programa de hardening gestionado está entregando mejoras medibles en la postura — el ambiente es demostrablemente menos susceptible a los patrones de ataque que monitoreamos."
-                     : $"Overall risk exposure reduced by {Math.Abs(deltaPct!.Value):0.#}% over the past 30 days. Your managed hardening program is delivering measurable posture improvement — the environment is demonstrably less susceptible to the attack patterns we monitor.")
-                : (es ? $"La exposición al riesgo aumentó un {Math.Abs(deltaPct!.Value):0.#}% este período. Detectamos nuevo drift en el ambiente (probablemente nuevos endpoints agregados sin la baseline aplicada, o una política revertida). Ya está en nuestra cola de remediación — el próximo mes mostrará la recuperación."
-                     : $"Risk exposure increased by {Math.Abs(deltaPct!.Value):0.#}% this period. We flagged new drift in the environment (likely new endpoints added without the baseline applied, or a policy that was rolled back). Already on our remediation queue — next month will show the rebound.");
+                ? (es ? $"La exposiciï¿½n general al riesgo se redujo un {Math.Abs(deltaPct!.Value):0.#}% en los ï¿½ltimos 30 dï¿½as. Su programa de hardening gestionado estï¿½ entregando mejoras medibles en la postura ï¿½ el ambiente es demostrablemente menos susceptible a los patrones de ataque que monitoreamos."
+                     : $"Overall risk exposure reduced by {Math.Abs(deltaPct!.Value):0.#}% over the past 30 days. Your managed hardening program is delivering measurable posture improvement ï¿½ the environment is demonstrably less susceptible to the attack patterns we monitor.")
+                : (es ? $"La exposiciï¿½n al riesgo aumentï¿½ un {Math.Abs(deltaPct!.Value):0.#}% este perï¿½odo. Detectamos nuevo drift en el ambiente (probablemente nuevos endpoints agregados sin la baseline aplicada, o una polï¿½tica revertida). Ya estï¿½ en nuestra cola de remediaciï¿½n ï¿½ el prï¿½ximo mes mostrarï¿½ la recuperaciï¿½n."
+                     : $"Risk exposure increased by {Math.Abs(deltaPct!.Value):0.#}% this period. We flagged new drift in the environment (likely new endpoints added without the baseline applied, or a policy that was rolled back). Already on our remediation queue ï¿½ next month will show the rebound.");
             sb.AppendLine($"<div class='mb-trend-narr'>{ReportHelpers.HtmlEncode(narrative)}</div>");
         }
         else
         {
             sb.AppendLine("<div class='mb-delta-row'>");
-            sb.AppendLine($"<div class='mb-delta-num' style='color:#64748B'>— BASELINE</div>");
-            sb.AppendLine($"<div class='mb-delta-label'>{(es ? "primer período de reporte" : "first reporting period")}</div>");
+            sb.AppendLine($"<div class='mb-delta-num' style='color:#64748B'>ï¿½ BASELINE</div>");
+            sb.AppendLine($"<div class='mb-delta-label'>{(es ? "primer perï¿½odo de reporte" : "first reporting period")}</div>");
             sb.AppendLine("</div>");
-            sb.AppendLine($"<div class='mb-trend-narr'>{(es ? "Primera revisión mensual para esta organización. Este reporte establece la línea base — el resumen del próximo mes mostrará la tendencia medible de postura." : "First monthly review for this organization. This report establishes the baseline — next month's briefing will show measurable posture trend.")}</div>");
+            sb.AppendLine($"<div class='mb-trend-narr'>{(es ? "Primera revisiï¿½n mensual para esta organizaciï¿½n. Este reporte establece la lï¿½nea base ï¿½ el resumen del prï¿½ximo mes mostrarï¿½ la tendencia medible de postura." : "First monthly review for this organization. This report establishes the baseline ï¿½ next month's briefing will show measurable posture trend.")}</div>");
         }
         sb.AppendLine("</div>");
         sb.AppendLine("</div>");
@@ -2237,20 +2241,20 @@ public class ReportService : IReportService
         }
         else
         {
-            sb.AppendLine($"<p style='font-size:11px;color:#6B7280'>{(es ? "No hay datos de scoring por framework disponibles para este período." : "No framework scoring data available for this period.")}</p>");
+            sb.AppendLine($"<p style='font-size:11px;color:#6B7280'>{(es ? "No hay datos de scoring por framework disponibles para este perï¿½odo." : "No framework scoring data available for this period.")}</p>");
         }
 
         // 3. Remediation milestones ("Zero-Downtime Hardening")
         sb.AppendLine($"<h3>{(es ? "Hardening Sin Downtime" : "Zero-Downtime Hardening")}</h3>");
         sb.AppendLine("<div class='mb-milestone'>");
-        sb.AppendLine($"<div class='mb-milestone-tag'>{(es ? "HITO · ESTE PERÍODO" : "MILESTONE &middot; THIS PERIOD")}</div>");
+        sb.AppendLine($"<div class='mb-milestone-tag'>{(es ? "HITO ï¿½ ESTE PERï¿½ODO" : "MILESTONE &middot; THIS PERIOD")}</div>");
         if (legacyHardenedTotal > 0)
         {
             sb.AppendLine($"<p>Successfully concluded our 90-day passive telemetry cycle on legacy protocols. We permanently disabled <strong>NTLM</strong> and <strong>SMBv1</strong> across <strong>{legacyHardenedTotal} endpoints</strong> this month, resulting in <strong>zero operational disruptions</strong>. Every dependency was mapped and migrated before the protocol was turned off.</p>");
         }
         else
         {
-            sb.AppendLine($"<p>Completed this period's managed hardening cycle across <strong>{totalMachines} endpoints</strong> with <strong>zero operational disruptions</strong>. All policy changes were rolled out under the 90-day passive telemetry framework that maps legacy dependencies before touching the protocol itself — no user-visible downtime, no emergency tickets, no rollbacks.</p>");
+            sb.AppendLine($"<p>Completed this period's managed hardening cycle across <strong>{totalMachines} endpoints</strong> with <strong>zero operational disruptions</strong>. All policy changes were rolled out under the 90-day passive telemetry framework that maps legacy dependencies before touching the protocol itself ï¿½ no user-visible downtime, no emergency tickets, no rollbacks.</p>");
         }
         sb.AppendLine("</div>");
 
@@ -2266,7 +2270,7 @@ public class ReportService : IReportService
             sb.AppendLine("<div class='mb-action'>");
             sb.AppendLine("<div class='mb-action-tag'>ACTION REQUIRED &middot; BUDGET</div>");
             sb.AppendLine("<h4>End-of-Life Infrastructure Migration</h4>");
-            sb.AppendLine($"<p><strong>Pending budget approval</strong> for the planned Azure migration of <strong>{legacyOsMachines.Count} legacy {ReportHelpers.HtmlEncode(osLabel)}</strong> on-premise workload{(legacyOsMachines.Count == 1 ? "" : "s")} ({ReportHelpers.HtmlEncode(names)}{(legacyOsMachines.Count > 3 ? ", …" : "")}). These systems cannot receive modern security patches or baseline hardening — they represent our <strong>highest residual risk vector</strong> and are excluded from the month-over-month posture trend above.</p>");
+            sb.AppendLine($"<p><strong>Pending budget approval</strong> for the planned Azure migration of <strong>{legacyOsMachines.Count} legacy {ReportHelpers.HtmlEncode(osLabel)}</strong> on-premise workload{(legacyOsMachines.Count == 1 ? "" : "s")} ({ReportHelpers.HtmlEncode(names)}{(legacyOsMachines.Count > 3 ? ", ï¿½" : "")}). These systems cannot receive modern security patches or baseline hardening ï¿½ they represent our <strong>highest residual risk vector</strong> and are excluded from the month-over-month posture trend above.</p>");
             sb.AppendLine("<p style='margin-top:6px;font-size:10px;color:#64748B'>Recommended outcome: lift-and-shift to Azure with modern OS within the next 60 days, or formal risk acceptance signed by the executive team.</p>");
             sb.AppendLine("</div>");
         }
@@ -2275,7 +2279,7 @@ public class ReportService : IReportService
             sb.AppendLine("<div class='mb-action'>");
             sb.AppendLine("<div class='mb-action-tag'>ACTION REQUIRED &middot; POLICY</div>");
             sb.AppendLine("<h4>Non-Expiring Service Account Passwords</h4>");
-            sb.AppendLine($"<p><strong>{hygiene.PwdNeverExpire}</strong> accounts currently have passwords configured to never expire. Rotating these requires coordination with the application owners — we need an <strong>executive sponsor</strong> to unblock the coordination meetings. Without rotation these credentials remain the highest residual risk vector in the identity plane.</p>");
+            sb.AppendLine($"<p><strong>{hygiene.PwdNeverExpire}</strong> accounts currently have passwords configured to never expire. Rotating these requires coordination with the application owners ï¿½ we need an <strong>executive sponsor</strong> to unblock the coordination meetings. Without rotation these credentials remain the highest residual risk vector in the identity plane.</p>");
             sb.AppendLine("</div>");
         }
         else

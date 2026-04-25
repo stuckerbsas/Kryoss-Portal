@@ -31,6 +31,10 @@ public class AssessmentPayload
 
     [JsonPropertyName("results")]
     public List<CheckResult> Results { get; set; } = [];
+
+    [JsonPropertyName("networkDiag")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public NetworkDiagResult? NetworkDiag { get; set; }
 }
 
 public class PlatformInfo
@@ -100,6 +104,10 @@ public class HardwareInfo
 
     [JsonPropertyName("domainName")]
     public string? DomainName { get; set; }
+
+    // OS role: 1=Workstation, 2=DomainController, 3=Server
+    [JsonPropertyName("productType")]
+    public int? ProductType { get; set; }
 
     // Lifecycle
     [JsonPropertyName("systemAgeDays")]
@@ -180,6 +188,93 @@ public class ThreatFinding
 }
 
 /// <summary>
+/// POST /v1/hygiene payload
+/// </summary>
+public class HygienePayload
+{
+    [JsonPropertyName("scannedBy")]
+    public string ScannedBy { get; set; } = null!;
+
+    [JsonPropertyName("totalMachines")]
+    public int TotalMachines { get; set; }
+
+    [JsonPropertyName("totalUsers")]
+    public int TotalUsers { get; set; }
+
+    [JsonPropertyName("findings")]
+    public List<HygieneFinding> Findings { get; set; } = [];
+}
+
+public class HygieneFinding
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = null!;
+
+    [JsonPropertyName("objectType")]
+    public string ObjectType { get; set; } = null!;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = null!;
+
+    [JsonPropertyName("daysInactive")]
+    public int DaysInactive { get; set; }
+
+    [JsonPropertyName("detail")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Detail { get; set; }
+}
+
+/// <summary>
+/// POST /v1/ports payload
+/// </summary>
+public class PortPayload
+{
+    [JsonPropertyName("machineHostname")]
+    public string MachineHostname { get; set; } = null!;
+
+    [JsonPropertyName("ports")]
+    public List<PortEntry> Ports { get; set; } = [];
+}
+
+public class PortEntry
+{
+    [JsonPropertyName("port")]
+    public int Port { get; set; }
+
+    [JsonPropertyName("protocol")]
+    public string Protocol { get; set; } = null!;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = null!;
+
+    [JsonPropertyName("service")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Service { get; set; }
+
+    [JsonPropertyName("risk")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Risk { get; set; }
+
+    [JsonPropertyName("banner")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Banner { get; set; }
+
+    [JsonPropertyName("serviceName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ServiceName { get; set; }
+
+    [JsonPropertyName("serviceVersion")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ServiceVersion { get; set; }
+}
+
+public class PortBulkPayload
+{
+    [JsonPropertyName("machines")]
+    public List<PortPayload> Machines { get; set; } = [];
+}
+
+/// <summary>
 /// Request body for POST /v1/enroll
 /// </summary>
 public class EnrollRequest
@@ -201,6 +296,10 @@ public class EnrollRequest
     [JsonPropertyName("osBuild")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? OsBuild { get; set; }
+
+    [JsonPropertyName("productType")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ProductType { get; set; }
 }
 
 /// <summary>
@@ -226,10 +325,32 @@ public class EnrollmentResponse
     [JsonPropertyName("assessmentName")]
     public string? AssessmentName { get; set; }
 
-    // v1.5.1: When true, agent calls ProtocolAuditService.Configure() post-enroll
-    // to enable NTLM+SMB1 audit and resize event logs for 90-day retention.
     [JsonPropertyName("protocolAuditEnabled")]
     public bool ProtocolAuditEnabled { get; set; }
+
+    [JsonPropertyName("isTrial")]
+    public bool IsTrial { get; set; }
+
+    [JsonPropertyName("trialExpiresAt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? TrialExpiresAt { get; set; }
+
+    [JsonPropertyName("organizationId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public Guid OrganizationId { get; set; }
+
+    // Per-machine auth credentials (v2.2+)
+    [JsonPropertyName("machineSecret")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MachineSecret { get; set; }
+
+    [JsonPropertyName("sessionKey")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SessionKey { get; set; }
+
+    [JsonPropertyName("sessionKeyExpiresAt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? SessionKeyExpiresAt { get; set; }
 }
 
 /// <summary>
@@ -254,4 +375,10 @@ public class ResultsResponse
 
     [JsonPropertyName("failCount")]
     public int FailCount { get; set; }
+
+    [JsonPropertyName("yourPublicIp")]
+    public string? YourPublicIp { get; set; }
+
+    [JsonPropertyName("speedtestRequested")]
+    public bool SpeedtestRequested { get; set; }
 }

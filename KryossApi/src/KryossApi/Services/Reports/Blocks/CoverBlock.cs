@@ -27,7 +27,7 @@ public class CoverBlock : IReportBlock
         sb.AppendLine($"<p class='eyebrow'>{eyebrow}</p>");
         sb.AppendLine($"<h1>{ReportHelpers.HtmlEncode(reportTitle)}</h1>");
         sb.AppendLine($"<h2>{ReportHelpers.HtmlEncode(data.Org.Name)}</h2>");
-        var dateStr = es ? data.ScanDate.ToString("dd 'de' MMMM 'de' yyyy") : data.ScanDate.ToString("MMMM dd, yyyy");
+        var dateStr = ReportTranslations.FormatDate(data.ScanDate, options.Lang);
         var devicesLabel = es ? "dispositivos evaluados" : "devices assessed";
         sb.AppendLine($"<p class='meta'>{dateStr} &mdash; {data.TotalMachines} {devicesLabel}</p>");
         sb.AppendLine($"<div class='grade-badge grade-{data.OrgGrade.Replace("+", "plus")}'>{ReportHelpers.HtmlEncode(data.OrgGrade)}</div>");
@@ -48,6 +48,13 @@ public class CoverBlock : IReportBlock
         "monthly" => es ? "Informe de Progreso Mensual" : "Monthly Progress Report",
         "framework" => $"{options.FrameworkName} {(es ? "Informe de Cumplimiento" : "Compliance Report")}",
         "proposal" => es ? "Propuesta Comercial de Remediación" : "Remediation Business Proposal",
+        "cloud-executive" => es ? "Informe Ejecutivo Cloud" : "Cloud Executive Report",
+        "exec-onepager" => es ? "Resumen Ejecutivo" : "Executive One-Pager",
+        "m365" => es ? "Seguridad Microsoft 365" : "M365 Security & Copilot Readiness",
+        "compliance" => es ? "Scorecard de Cumplimiento" : "Compliance Scorecard",
+        "hygiene" => es ? "Auditoría Active Directory" : "Active Directory Audit",
+        "risk-assessment" => es ? "Evaluación de Riesgos" : "Risk & Threat Assessment",
+        "inventory" => es ? "Inventario de Activos" : "Asset Inventory Report",
         _ => es ? "Informe de Seguridad" : "Security Report"
     };
 
@@ -59,6 +66,13 @@ public class CoverBlock : IReportBlock
         "monthly" => es ? "PROGRESO MENSUAL" : "MONTHLY PROGRESS",
         "framework" => es ? "CUMPLIMIENTO" : "COMPLIANCE",
         "proposal" => es ? "PROPUESTA COMERCIAL" : "BUSINESS PROPOSAL",
+        "cloud-executive" => es ? "INFORME EJECUTIVO CLOUD" : "CLOUD EXECUTIVE REPORT",
+        "exec-onepager" => es ? "RESUMEN EJECUTIVO" : "EXECUTIVE ONE-PAGER",
+        "m365" => "MICROSOFT 365",
+        "compliance" => es ? "CUMPLIMIENTO" : "COMPLIANCE",
+        "hygiene" => "ACTIVE DIRECTORY",
+        "risk-assessment" => es ? "EVALUACIÓN DE RIESGOS" : "RISK ASSESSMENT",
+        "inventory" => es ? "INVENTARIO" : "INVENTORY",
         _ => es ? "EVALUACIÓN DE SEGURIDAD" : "SECURITY ASSESSMENT"
     };
 }

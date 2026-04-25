@@ -36,6 +36,7 @@ public static class EndpointPipeline
     public static async Task<PipelineResult> RunAsync(
         GraphServiceClient graph,
         HttpClient? defenderHttp,
+        HttpClient? graphBetaHttp,
         ILogger log,
         CancellationToken ct)
     {
@@ -56,7 +57,13 @@ public static class EndpointPipeline
                 CollectAppProtectionAndroid(graph, ins, err, log, ct),
                 CollectManagedApps(graph, ins, err, log, ct),
                 CollectEnrollmentAndAutopilot(graph, ins, err, log, ct),
+                CollectConfigProfileAssignmentStatus(graph, ins, err, log, ct),
             };
+
+            if (graphBetaHttp is not null)
+            {
+                tasks.Add(CollectAutopilotProfiles(graphBetaHttp, ins, err, log, ct));
+            }
 
             // --- Defender for Endpoint (only when HTTP client is configured) ---
             if (defenderHttp is not null)
@@ -97,6 +104,11 @@ public static class EndpointPipeline
             m["managed_apps"] = ins.ManagedAppCount.ToString(inv);
             m["enrollment_restrictions"] = ins.EnrollmentRestrictionCount.ToString(inv);
             m["autopilot_profiles"] = ins.AutopilotProfileCount.ToString(inv);
+            m["config_profiles_assigned"] = ins.ConfigProfilesAssigned.ToString(inv);
+            m["config_profiles_succeeded"] = ins.ConfigProfilesSucceeded.ToString(inv);
+            m["config_profiles_failed"] = ins.ConfigProfilesFailed.ToString(inv);
+            m["config_profiles_pending"] = ins.ConfigProfilesPending.ToString(inv);
+            m["config_profiles_conflict"] = ins.ConfigProfilesConflict.ToString(inv);
 
             // Defender for Endpoint
             m["machines_total"] = ins.MachinesTotal.ToString(inv);
@@ -178,10 +190,9 @@ public static class EndpointPipeline
             ins.IntuneAvailable = true;
             ins.DeviceCompliancePolicyCount = resp.Value.Count;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Endpoint compliance policies: 403 - insufficient permissions");
+            log.LogWarning("Endpoint compliance policies: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -202,10 +213,9 @@ public static class EndpointPipeline
             ins.IntuneAvailable = true;
             ins.DeviceConfigProfileCount = resp.Value.Count;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Endpoint config profiles: 403 - insufficient permissions");
+            log.LogWarning("Endpoint config profiles: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -256,10 +266,9 @@ public static class EndpointPipeline
                 if (d.IsEncrypted == true) ins.DevicesEncrypted++;
             }
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Endpoint managed devices: 403 - insufficient permissions");
+            log.LogWarning("Endpoint managed devices: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -303,10 +312,9 @@ public static class EndpointPipeline
             ins.IntuneAvailable = true;
             ins.AppProtectionPoliciesIOS = resp.Value.Count;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Endpoint iOS app protection: 403 - insufficient permissions");
+            log.LogWarning("Endpoint iOS app protection: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -327,10 +335,9 @@ public static class EndpointPipeline
             ins.IntuneAvailable = true;
             ins.AppProtectionPoliciesAndroid = resp.Value.Count;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Endpoint Android app protection: 403 - insufficient permissions");
+            log.LogWarning("Endpoint Android app protection: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -354,10 +361,9 @@ public static class EndpointPipeline
             ins.IntuneAvailable = true;
             ins.ManagedAppCount = resp.Value.Count;
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Endpoint managed apps: 403 - insufficient permissions");
+            log.LogWarning("Endpoint managed apps: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
@@ -380,23 +386,93 @@ public static class EndpointPipeline
                 ins.EnrollmentRestrictionCount = enrollResp.Value.Count;
             }
 
-            // TODO CA-2: WindowsAutopilotDeploymentProfiles lives under the Graph
-            // beta endpoint only; the v1 SDK (Microsoft.Graph 5.x) doesn't expose
-            // DeviceManagement.WindowsAutopilotDeploymentProfiles directly. Switch
-            // to the beta HTTP client (same pattern as IdentityPipeline.CollectGsa)
-            // or upgrade SDK to pick this up. Leaving AutopilotProfileCount at 0.
-            log.LogInformation(
-                "Endpoint Autopilot profile count skipped: requires Graph beta endpoint");
+            // Autopilot now collected via beta HTTP client in CollectAutopilotProfiles
         }
-        catch (ODataError ex) when (ex.ResponseStatusCode == 403)
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
-            err.MarkError();
-            log.LogWarning("Endpoint enrollment/Autopilot: 403 - insufficient permissions");
+            log.LogWarning("Endpoint enrollment/Autopilot: skipped — Intune license required (HTTP {Code})", ex.ResponseStatusCode);
         }
         catch (Exception ex)
         {
             err.MarkError();
             log.LogWarning(ex, "Endpoint enrollment/Autopilot collection failed");
+        }
+    }
+
+    // ================================================================
+    // Intune — Autopilot via Graph beta
+    // ================================================================
+
+    private static async Task CollectAutopilotProfiles(
+        HttpClient http, EndpointInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await http.GetAsync(
+                "/beta/deviceManagement/windowsAutopilotDeploymentProfiles", ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                log.LogWarning("Autopilot profiles: {Code} — Intune license or permission gap",
+                    (int)resp.StatusCode);
+                return;
+            }
+
+            resp.EnsureSuccessStatusCode();
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+
+            if (doc.RootElement.TryGetProperty("value", out var items))
+            {
+                ins.IntuneAvailable = true;
+                ins.AutopilotProfileCount = items.GetArrayLength();
+            }
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "Autopilot profile collection failed");
+        }
+    }
+
+    // ================================================================
+    // Intune — Config profile assignment status (drift detection)
+    // ================================================================
+
+    private static async Task CollectConfigProfileAssignmentStatus(
+        GraphServiceClient graph, EndpointInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            var resp = await graph.DeviceManagement.DeviceConfigurationDeviceStateSummaries
+                .GetAsync(cancellationToken: ct);
+
+            if (resp is null) return;
+            ins.IntuneAvailable = true;
+
+            ins.ConfigProfilesAssigned = resp.CompliantDeviceCount.GetValueOrDefault()
+                + resp.NonCompliantDeviceCount.GetValueOrDefault()
+                + resp.ErrorDeviceCount.GetValueOrDefault()
+                + resp.ConflictDeviceCount.GetValueOrDefault()
+                + resp.NotApplicableDeviceCount.GetValueOrDefault();
+            ins.ConfigProfilesSucceeded = resp.CompliantDeviceCount.GetValueOrDefault();
+            ins.ConfigProfilesFailed = resp.NonCompliantDeviceCount.GetValueOrDefault()
+                + resp.ErrorDeviceCount.GetValueOrDefault();
+            ins.ConfigProfilesPending = resp.NotApplicableDeviceCount.GetValueOrDefault();
+            ins.ConfigProfilesConflict = resp.ConflictDeviceCount.GetValueOrDefault();
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
+        {
+            log.LogWarning("Config profile status: skipped — Intune license required (HTTP {Code})",
+                ex.ResponseStatusCode);
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "Config profile assignment status collection failed");
         }
     }
 

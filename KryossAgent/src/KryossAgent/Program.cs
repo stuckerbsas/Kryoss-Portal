@@ -3,9 +3,10 @@ using KryossAgent.Config;
 using KryossAgent.Engines;
 using KryossAgent.Models;
 using KryossAgent.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
-// ── Kryoss Security Agent ──
-// v1.3.0
+// ── Kryoss Security Agent v2.0.0 ──
 
 // Global exception handler — NEVER let the agent die silently
 AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -27,13 +28,38 @@ if (args.Any(a => a is "/?" or "-?" or "--help" or "-h" or "/h"))
     return;
 }
 
+// ── Service management ──
+if (args.Contains("--install", StringComparer.OrdinalIgnoreCase))
+{
+    ServiceInstaller.Install();
+    Environment.Exit(0);
+    return;
+}
+if (args.Contains("--uninstall", StringComparer.OrdinalIgnoreCase))
+{
+    ServiceInstaller.Uninstall();
+    Environment.Exit(0);
+    return;
+}
+if (args.Contains("--service", StringComparer.OrdinalIgnoreCase))
+{
+    var builder = Host.CreateApplicationBuilder();
+    builder.Services.AddHostedService<ServiceWorker>();
+    builder.Services.AddWindowsService(o => o.ServiceName = "KryossAgent");
+    var host = builder.Build();
+    await host.RunAsync();
+    return;
+}
+
 // ── Validate arguments ──
 var knownFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
-    "--silent", "--verbose", "--scan", "--reenroll",
+    "--silent", "--verbose", "--alone", "--scan", "--reenroll",
+    "--no-network", "--no-ports", "--no-ad", "--no-threats", "--no-snmp",
     "--code", "--api-url", "--threads", "--targets", "--targets-file",
     "--discover-ad", "--discover-arp", "--discover-subnet",
     "--offline", "--share", "--collect",
+    "--install", "--uninstall", "--service", "--trial",
 };
 foreach (var arg in args)
 {
@@ -57,7 +83,14 @@ var sw = Stopwatch.StartNew();
 var silent = args.Contains("--silent", StringComparer.OrdinalIgnoreCase);
 var verbose = args.Contains("--verbose", StringComparer.OrdinalIgnoreCase);
 if (verbose) Environment.SetEnvironmentVariable("KRYOSS_VERBOSE", "1");
+var aloneMode = args.Contains("--alone", StringComparer.OrdinalIgnoreCase);
 var scanMode = args.Contains("--scan", StringComparer.OrdinalIgnoreCase);
+var noNetwork = aloneMode || args.Contains("--no-network", StringComparer.OrdinalIgnoreCase);
+var noPorts = args.Contains("--no-ports", StringComparer.OrdinalIgnoreCase);
+var noAd = args.Contains("--no-ad", StringComparer.OrdinalIgnoreCase);
+var noThreats = args.Contains("--no-threats", StringComparer.OrdinalIgnoreCase);
+var trialMode = args.Contains("--trial", StringComparer.OrdinalIgnoreCase);
+if (trialMode) aloneMode = true; // trial = local scan only, no network
 
 // ── Banner (always show first, even in --scan mode) ──
 if (!silent)
@@ -77,7 +110,7 @@ if (!silent)
     else
     {
         Console.WriteLine("╔══════════════════════════════════════════╗");
-        Console.WriteLine("║       Kryoss Security Agent v1.3.0      ║");
+        Console.WriteLine("║       Kryoss Security Agent v2.0.0      ║");
         Console.WriteLine("║         TeamLogic IT Assessment          ║");
         Console.WriteLine("╚══════════════════════════════════════════╝");
     }
@@ -244,6 +277,10 @@ if (!config.IsEnrolled)
         config.PublicKeyPem = enrollment.PublicKey;
         config.AssessmentId = enrollment.AssessmentId;
         config.AssessmentName = enrollment.AssessmentName;
+        // Save per-machine auth credentials (v2.2+)
+        config.MachineSecret = enrollment.MachineSecret;
+        config.SessionKey = enrollment.SessionKey;
+        config.SessionKeyExpiresAt = enrollment.SessionKeyExpiresAt;
         config.Save();
 
         if (silent)
@@ -343,17 +380,24 @@ catch (Exception ex)
 if (!silent) Console.WriteLine(" done");
 
 // ── Threat detection ──
-if (!silent) Console.Write("    Scanning for threats...");
 List<ThreatFinding> threats;
-try
-{
-    threats = ThreatDetector.ScanAll();
-}
-catch
+if (noThreats)
 {
     threats = [];
 }
-if (!silent) Console.WriteLine($" {threats.Count} found");
+else
+{
+    if (!silent) Console.Write("    Scanning for threats...");
+    try
+    {
+        threats = ThreatDetector.ScanAll();
+    }
+    catch
+    {
+        threats = [];
+    }
+    if (!silent) Console.WriteLine($" {threats.Count} found");
+}
 
 if (!silent) Console.Write("    Running security checks...");
 
@@ -474,34 +518,253 @@ catch (Exception ex)
 }
 
 // ── SNMP infrastructure scan ──
-try
+var noSnmp = args.Contains("--no-snmp", StringComparer.OrdinalIgnoreCase);
+if (!noSnmp)
 {
-    var snmpCreds = await apiClient.GetSnmpCredentialsAsync();
-    if (snmpCreds != null)
+    try
     {
-        if (!silent) Console.Write("    Running SNMP infrastructure scan...");
-        var snmpTargets = snmpCreds.Targets ?? new List<string>();
-        // Auto-discover from ARP/route if no explicit targets
-        if (snmpTargets.Count == 0 && networkDiag?.InternalLatency != null)
-            snmpTargets = networkDiag.InternalLatency
-                .Where(p => p.Reachable)
-                .Select(p => p.Host)
-                .ToList();
-
-        if (snmpTargets.Count > 0)
+        var snmpCreds = await apiClient.GetSnmpCredentialsAsync();
+        if (snmpCreds != null)
         {
-            var snmpResult = await SnmpScanner.ScanAsync(snmpCreds, snmpTargets, verbose);
-            if (!silent) Console.WriteLine($" done ({snmpResult.Devices.Count} devices, {snmpResult.Unreachable.Count} unreachable)");
-            if (snmpResult.Devices.Count > 0)
-                await apiClient.SubmitSnmpResultsAsync(snmpResult);
+            if (!silent) Console.Write("    Running SNMP infrastructure scan...");
+            var snmpTargets = snmpCreds.Targets ?? new List<string>();
+
+            if (snmpTargets.Count == 0)
+            {
+                var discovered = new HashSet<string>();
+                // Gateways
+                if (networkDiag?.GatewayIp != null)
+                    discovered.Add(networkDiag.GatewayIp);
+                if (networkDiag?.RouteTable != null)
+                    foreach (var r in networkDiag.RouteTable)
+                        if (!string.IsNullOrEmpty(r.NextHop) && r.NextHop != "0.0.0.0"
+                            && System.Net.IPAddress.TryParse(r.NextHop, out _))
+                            discovered.Add(r.NextHop);
+                // Latency sweep peers
+                if (networkDiag?.InternalLatency != null)
+                    foreach (var p in networkDiag.InternalLatency.Where(p => p.Reachable))
+                        discovered.Add(p.Host);
+
+                // Full subnet SNMP sweep — catches switches, APs, printers not in ARP/AD
+                var subnetIps = await SnmpScanner.DiscoverSubnetAsync(snmpCreds, verbose);
+                foreach (var ip in subnetIps) discovered.Add(ip);
+
+                snmpTargets = discovered.ToList();
+            }
+
+            if (snmpTargets.Count > 0)
+            {
+                var snmpResult = await SnmpScanner.ScanAsync(snmpCreds, snmpTargets, verbose);
+
+                // Enrich SNMP devices with MAC from first non-empty interface + OUI lookup
+                foreach (var dev in snmpResult.Devices)
+                {
+                    if (dev.MacAddress == null)
+                    {
+                        var ifMac = dev.Interfaces.FirstOrDefault(i => !string.IsNullOrEmpty(i.MacAddress))?.MacAddress;
+                        if (ifMac != null) dev.MacAddress = ifMac;
+                    }
+                    if (dev.MacAddress != null)
+                    {
+                        var oui = OuiLookup.Lookup(dev.MacAddress);
+                        if (oui != null)
+                        {
+                            dev.Vendor = oui.Value.Vendor;
+                            if (dev.DeviceType == "unknown")
+                                dev.DeviceType = oui.Value.Category;
+                        }
+                    }
+                }
+
+                // Merge ARP-only devices (seen on network but no SNMP response)
+                var seenIps = new HashSet<string>(snmpResult.Devices.Select(d => d.Ip));
+                var arpEntries = TargetDiscovery.ReadNativeArpTable();
+                var arpDevices = new List<SnmpDeviceResult>();
+                foreach (var (ip, mac) in arpEntries)
+                {
+                    if (!seenIps.Add(ip)) continue;
+                    if (mac is "ff-ff-ff-ff-ff-ff" or "00-00-00-00-00-00") continue;
+                    var normalMac = mac.Replace('-', ':').ToUpperInvariant();
+                    var oui = OuiLookup.Lookup(normalMac);
+                    arpDevices.Add(new SnmpDeviceResult
+                    {
+                        Ip = ip,
+                        MacAddress = normalMac,
+                        Vendor = oui?.Vendor,
+                        DeviceType = oui?.Category ?? "unknown",
+                    });
+                }
+
+                // Reverse DNS for all discovered devices
+                snmpResult.Devices.AddRange(arpDevices);
+                var allDevices = snmpResult.Devices;
+                {
+                    var dnsSem = new SemaphoreSlim(20);
+                    await Task.WhenAll(allDevices.Select(async dev =>
+                    {
+                        await dnsSem.WaitAsync();
+                        try
+                        {
+                            using var cts = new CancellationTokenSource(2000);
+                            var entry = await System.Net.Dns.GetHostEntryAsync(dev.Ip, cts.Token);
+                            if (!string.IsNullOrEmpty(entry.HostName) && entry.HostName != dev.Ip)
+                            {
+                                dev.ReverseDns = entry.HostName;
+                                if (dev.SysName == null) dev.SysName = entry.HostName;
+                            }
+                        }
+                        catch { }
+                        finally { dnsSem.Release(); }
+                    }));
+                    var resolved = allDevices.Count(d => d.ReverseDns != null);
+                    if (resolved > 0 && verbose)
+                        Console.WriteLine($"  [SNMP] Reverse DNS resolved {resolved}/{allDevices.Count} hostnames");
+                }
+
+                // Large-packet ping: latency + jitter + packet loss
+                {
+                    var pingSem = new SemaphoreSlim(20);
+                    await Task.WhenAll(allDevices.Select(async dev =>
+                    {
+                        await pingSem.WaitAsync();
+                        try
+                        {
+                            using var ping = new System.Net.NetworkInformation.Ping();
+                            var buf = new byte[1472]; // MTU test
+                            var rtts = new List<long>();
+                            int sent = 5, received = 0;
+                            for (int i = 0; i < sent; i++)
+                            {
+                                try
+                                {
+                                    var reply = await ping.SendPingAsync(dev.Ip, 2000, buf);
+                                    if (reply.Status == System.Net.NetworkInformation.IPStatus.Success)
+                                    {
+                                        rtts.Add(reply.RoundtripTime);
+                                        received++;
+                                    }
+                                }
+                                catch { }
+                            }
+                            if (received > 0)
+                            {
+                                dev.PingLatencyMs = rtts.Average();
+                                dev.PingLossPct = Math.Round((1.0 - (double)received / sent) * 100, 1);
+                                if (rtts.Count >= 2)
+                                {
+                                    var diffs = new List<double>();
+                                    for (int i = 1; i < rtts.Count; i++)
+                                        diffs.Add(Math.Abs(rtts[i] - rtts[i - 1]));
+                                    dev.PingJitterMs = Math.Round(diffs.Average(), 2);
+                                }
+                            }
+                        }
+                        catch { }
+                        finally { pingSem.Release(); }
+                    }));
+                    var pinged = allDevices.Count(d => d.PingLatencyMs != null);
+                    if (pinged > 0 && verbose)
+                        Console.WriteLine($"  [SNMP] Ping: {pinged}/{allDevices.Count} reachable");
+                }
+
+                Console.WriteLine(
+                    $"  [SNMP] {snmpResult.Devices.Count} devices found ({arpEntries.Count} ARP), {snmpResult.Unreachable.Count} unreachable");
+
+                // Pass 2: vendor-specific OIDs for devices with sysObjectId
+                var devicesWithSysOid = snmpResult.Devices
+                    .Where(d => !string.IsNullOrEmpty(d.SysObjectId))
+                    .ToList();
+                if (devicesWithSysOid.Count > 0)
+                {
+                    try
+                    {
+                        var sysOids = devicesWithSysOid.Select(d => d.SysObjectId!).Distinct().ToList();
+                        var profiles = await apiClient.GetSnmpProfilesAsync(sysOids);
+                        if (profiles?.Profiles.Count > 0)
+                        {
+                            if (!silent) Console.WriteLine($"  [SNMP] Pass 2: {profiles.Profiles.Count} vendor profile(s) matched");
+                            foreach (var dev in devicesWithSysOid)
+                            {
+                                var profile = profiles.Profiles.FirstOrDefault(
+                                    p => dev.SysObjectId!.StartsWith(p.OidPrefix));
+                                if (profile == null) continue;
+                                var vendorData = await SnmpScanner.ScanVendorOidsAsync(
+                                    dev.Ip, profile.Oids, snmpCreds, verbose);
+                                if (vendorData.Count > 0)
+                                {
+                                    dev.VendorData = vendorData;
+                                    if (dev.Vendor == null) dev.Vendor = profile.Vendor;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (verbose) Console.Error.WriteLine($"  [WARN] SNMP pass 2 failed: {ex.Message}");
+                    }
+                }
+
+                // WMI probe: unenrolled Windows machines (no SNMP data or sysDescr contains "Windows")
+                var wmiCandidates = snmpResult.Devices
+                    .Where(d => d.SysDescr == null || d.SysDescr.Contains("Windows", StringComparison.OrdinalIgnoreCase))
+                    .Where(d => d.SysObjectId == null) // no SNMP = ARP-only or Windows
+                    .Select(d => d.Ip)
+                    .ToList();
+
+                if (wmiCandidates.Count > 0)
+                {
+                    try
+                    {
+                        if (!silent) Console.Write($"  [WMI] Probing {wmiCandidates.Count} potential Windows hosts...");
+                        var wmiDevices = await WmiProbe.ProbeAsync(wmiCandidates, verbose);
+                        if (wmiDevices.Count > 0)
+                        {
+                            // Merge WMI data into existing device entries
+                            var devByIp = snmpResult.Devices.ToDictionary(d => d.Ip);
+                            foreach (var wmi in wmiDevices)
+                            {
+                                if (devByIp.TryGetValue(wmi.Ip, out var existing))
+                                {
+                                    existing.SysName = wmi.SysName ?? existing.SysName;
+                                    existing.SysDescr = wmi.SysDescr ?? existing.SysDescr;
+                                    existing.MacAddress = wmi.MacAddress ?? existing.MacAddress;
+                                    existing.DeviceType = "computer";
+                                    existing.HostResources = wmi.HostResources;
+                                    if (wmi.VendorData != null)
+                                    {
+                                        existing.VendorData ??= new Dictionary<string, string>();
+                                        foreach (var kv in wmi.VendorData)
+                                            existing.VendorData[kv.Key] = kv.Value;
+                                    }
+                                }
+                            }
+                            if (!silent) Console.WriteLine($" {wmiDevices.Count} enriched");
+                        }
+                        else if (!silent) Console.WriteLine(" none reachable");
+                    }
+                    catch (Exception ex)
+                    {
+                        if (verbose) Console.Error.WriteLine($"  [WARN] WMI probe failed: {ex.Message}");
+                        if (!silent) Console.WriteLine(" skipped");
+                    }
+                }
+
+                if (snmpResult.Devices.Count > 0)
+                {
+                    await apiClient.SubmitSnmpResultsAsync(snmpResult);
+                    Console.WriteLine($"  [SNMP] Uploaded {snmpResult.Devices.Count} device(s)");
+                }
+            }
+            else
+            {
+                if (!silent) Console.WriteLine(" skipped (no targets)");
+            }
         }
-        else if (!silent) Console.WriteLine(" skipped (no targets)");
     }
-}
-catch (Exception ex)
-{
-    if (verbose) Console.Error.WriteLine($"  [WARN] SNMP scan failed: {ex.Message}");
-    if (!silent) Console.WriteLine(" skipped");
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"  [WARN] SNMP scan failed: {ex.Message}");
+    }
 }
 
 // ── Build payload ──
@@ -563,6 +826,38 @@ try
         }
     }
 
+    // ── Trial mode: download report, open in browser, clean up ──
+    if (trialMode && response is not null)
+    {
+        if (!silent) Console.Write("  Generating trial report...");
+        var html = await apiClient.DownloadReportAsync("preventas", "detailed");
+        if (html is not null)
+        {
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            var reportPath = Path.Combine(desktop, $"Kryoss-Trial-Report-{DateTime.Now:yyyyMMdd}.html");
+            File.WriteAllText(reportPath, html);
+            if (!silent) Console.WriteLine($" saved to {reportPath}");
+
+            try { Process.Start(new ProcessStartInfo(reportPath) { UseShellExecute = true }); }
+            catch { }
+
+            AgentConfig.Wipe();
+            if (!silent)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("  Trial complete — report opened in browser. No data retained.");
+                Console.ResetColor();
+            }
+            Console.WriteLine($"RESULT: TRIAL | {Environment.MachineName} | {response.Score}% {response.Grade} | Report saved");
+            Environment.Exit(0);
+            return;
+        }
+        else
+        {
+            if (!silent) Console.WriteLine(" failed (report unavailable)");
+        }
+    }
+
     // ── Auto AD hygiene for Domain Controllers ──
     if (hardwareInfo.ProductType == 2)
     {
@@ -573,33 +868,14 @@ try
             var report = TargetDiscovery.LastHygieneReport;
             if (report is not null)
             {
-                var allFindings = new List<object>();
-                foreach (var m in report.StaleMachines) allFindings.Add(new { m.Name, objectType = "Computer", status = "Stale", m.DaysInactive, m.Detail });
-                foreach (var m in report.DormantMachines) allFindings.Add(new { m.Name, objectType = "Computer", status = "Dormant", m.DaysInactive, m.Detail });
-                foreach (var u in report.StaleUsers) allFindings.Add(new { u.Name, objectType = "User", status = "Stale", u.DaysInactive, u.Detail });
-                foreach (var u in report.DormantUsers) allFindings.Add(new { u.Name, objectType = "User", status = "Dormant", u.DaysInactive, u.Detail });
-                foreach (var u in report.DisabledUsers) allFindings.Add(new { u.Name, objectType = "User", status = "Disabled", u.DaysInactive, u.Detail });
-                foreach (var u in report.NeverExpirePasswords) allFindings.Add(new { u.Name, objectType = "User", status = "PwdNeverExpires", u.DaysInactive, u.Detail });
-                foreach (var s in report.PrivilegedAccounts) allFindings.Add(new { s.Name, objectType = "Security", status = "PrivilegedAccount", s.DaysInactive, s.Detail });
-                foreach (var s in report.KerberoastableAccounts) allFindings.Add(new { s.Name, objectType = "Security", status = "Kerberoastable", s.DaysInactive, s.Detail });
-                foreach (var s in report.UnconstrainedDelegation) allFindings.Add(new { s.Name, objectType = "Security", status = "UnconstrainedDelegation", s.DaysInactive, s.Detail });
-                foreach (var s in report.AdminCountResidual) allFindings.Add(new { s.Name, objectType = "Security", status = "AdminCountResidue", s.DaysInactive, s.Detail });
-                foreach (var s in report.NoLaps) allFindings.Add(new { s.Name, objectType = "Security", status = "NoLAPS", s.DaysInactive, s.Detail });
-                foreach (var s in report.DomainInfo) allFindings.Add(new { s.Name, objectType = "Config", status = s.Status, s.DaysInactive, s.Detail });
-
-                var totalMachines = TargetDiscovery.LastDiscoveredActiveCount;
-                var totalUsers = TargetDiscovery.LastDiscoveredActiveUserCount;
-
-                await apiClient.SubmitHygieneAsync(new
+                var hygienePayload = BuildHygienePayload(report);
+                if (hygienePayload.Findings.Count > 0)
                 {
-                    scannedBy = Environment.MachineName,
-                    totalMachines,
-                    totalUsers,
-                    findings = allFindings
-                });
-
-                if (!silent) Console.WriteLine($" done ({allFindings.Count} findings)");
-                else Console.WriteLine($"RESULT: HYGIENE | {Environment.MachineName} | {allFindings.Count} findings");
+                    await apiClient.SubmitHygieneAsync(hygienePayload);
+                    if (!silent) Console.WriteLine($" done ({hygienePayload.Findings.Count} findings)");
+                    else Console.WriteLine($"RESULT: HYGIENE | {Environment.MachineName} | {hygienePayload.Findings.Count} findings");
+                }
+                else if (!silent) Console.WriteLine(" no findings");
             }
             else if (!silent) Console.WriteLine(" no findings");
         }
@@ -620,6 +896,36 @@ try
     }
     catch { }
 
+    // ── Network scan: runs by default, skip with --no-network, --alone, or --silent ──
+    if (!noNetwork && !scanMode && !silent)
+    {
+        if (!silent)
+        {
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("  ═══════════════════════════════════════");
+            Console.WriteLine("  Starting network scan...");
+            Console.WriteLine("  ═══════════════════════════════════════");
+            Console.ResetColor();
+            Console.WriteLine();
+        }
+
+        try
+        {
+            var scanArgs = new List<string> { "--scan" };
+            if (enrollCode is not null) { scanArgs.Add("--code"); scanArgs.Add(enrollCode); }
+            if (forceReenroll) scanArgs.Add("--reenroll");
+            if (noPorts) scanArgs.Add("--no-ports");
+            if (noAd) scanArgs.Add("--no-ad");
+            if (silent) scanArgs.Add("--silent");
+            await NetworkScanner.RunAsync(scanArgs.ToArray(), silent);
+        }
+        catch (Exception scanEx)
+        {
+            if (!silent) Console.Error.WriteLine($"[WARN] Network scan failed: {scanEx.Message}");
+        }
+    }
+
     var pendingCount = OfflineStore.LoadPending().Count;
     if (pendingCount == 0)
     {
@@ -629,6 +935,21 @@ try
     else if (verbose)
     {
         Console.WriteLine($"  [state] Registry kept ({pendingCount} offline payloads pending)");
+    }
+
+    // Auto-install as service if not already installed (continuous monitoring)
+    if (!scanMode && !ServiceInstaller.IsInstalled())
+    {
+        try
+        {
+            if (!silent) Console.WriteLine("\n  Installing Kryoss Agent as Windows Service...");
+            ServiceInstaller.Install();
+            if (!silent) Console.WriteLine("  Agent will now run continuously with heartbeat every 15 min.");
+        }
+        catch (Exception svcEx)
+        {
+            if (verbose) Console.Error.WriteLine($"  [WARN] Auto-install service failed: {svcEx.Message}");
+        }
     }
 
     Environment.Exit(0);
@@ -744,6 +1065,10 @@ static async Task RunCollectMode(string collectPath, string[] args, bool silent,
         config.ApiSecret = enrollment.ApiSecret;
         config.PublicKeyPem = enrollment.PublicKey;
         config.AssessmentId = enrollment.AssessmentId;
+        // Save per-machine auth credentials (v2.2+)
+        config.MachineSecret = enrollment.MachineSecret;
+        config.SessionKey = enrollment.SessionKey;
+        config.SessionKeyExpiresAt = enrollment.SessionKeyExpiresAt;
         config.Save();
         if (!silent) Console.WriteLine($"  Collector enrolled.");
     }
@@ -800,7 +1125,7 @@ static async Task RunCollectMode(string collectPath, string[] args, bool silent,
 static void PrintHelp()
 {
     Console.WriteLine(@"
-Kryoss Security Agent v1.3.0
+Kryoss Security Agent v2.0.0
 TeamLogic IT — Security Assessment Tool
 
 USAGE:
@@ -816,8 +1141,22 @@ OPTIONS:
     --api-url URL        API endpoint (default: https://func-kryoss.azurewebsites.net)
     --reenroll           Clear existing enrollment and re-enroll
 
-  Scan mode:
-    --scan               Network discovery + port scan + AD hygiene (no remote deployment)
+  Service:
+    --install            Install as Windows Service (auto-start)
+    --uninstall          Stop and remove Windows Service
+    --service            Run as Windows Service (used by SCM)
+
+  Modes:
+    --alone              Scan only this machine (skip network scan entirely)
+    --scan               Network discovery + port scan + AD hygiene only (no local assessment)
+    --trial              Trial mode: scan, generate report to Desktop, open in browser, wipe
+
+  Disable specific collectors:
+    --no-network         Skip network scan phase (same as --alone)
+    --no-ports           Skip port scanning
+    --no-ad              Skip AD hygiene audit
+    --no-threats         Skip threat detection
+    --no-snmp            Skip SNMP device discovery
 
   Offline collection:
     --offline            Save results to shared folder (skip upload)
@@ -840,11 +1179,14 @@ OPTIONS:
     --help, -?, /?       Show this help message
 
 EXAMPLES:
-  KryossAgent.exe                              Scan this machine (default)
+  KryossAgent.exe --install                    Install as Windows Service
+  KryossAgent.exe --uninstall                  Remove Windows Service
+  KryossAgent.exe                              Scan this machine (default, one-shot)
   KryossAgent.exe --offline --share \\server\kryoss  Scan + save to share
   KryossAgent.exe --collect \\server\kryoss    Upload all pending from share
   KryossAgent.exe --scan --threads 20          Network discovery + port scan
   KryossAgent.exe --reenroll --code XXXX       Re-enroll and scan
+  KryossAgent.exe --trial --code XXXX           Trial: scan + report + clean up
   KryossAgent.exe --verbose                    Full detail output
 
 EXIT CODES:
@@ -853,4 +1195,44 @@ EXIT CODES:
   2   Partial (upload deferred, some targets unreachable)
   99  Unhandled exception
 ");
+}
+
+static HygienePayload BuildHygienePayload(TargetDiscovery.AdHygieneReport report)
+{
+    var findings = new List<HygieneFinding>();
+    void Add(IEnumerable<TargetDiscovery.AdHygieneItem> items, string objType, string? statusOverride = null)
+    {
+        foreach (var i in items)
+            findings.Add(new HygieneFinding
+            {
+                Name = i.Name, ObjectType = objType,
+                Status = statusOverride ?? i.Status,
+                DaysInactive = i.DaysInactive,
+                Detail = i.Detail
+            });
+    }
+
+    Add(report.StaleMachines, "Computer", "Stale");
+    Add(report.DormantMachines, "Computer", "Dormant");
+    Add(report.StaleUsers, "User");
+    Add(report.DormantUsers, "User", "Dormant");
+    Add(report.DisabledUsers, "User", "Disabled");
+    Add(report.NeverExpirePasswords, "User", "PwdNeverExpires");
+    Add(report.PrivilegedAccounts, "Security", "PrivilegedAccount");
+    Add(report.KerberoastableAccounts, "Security", "Kerberoastable");
+    Add(report.UnconstrainedDelegation, "Security", "UnconstrainedDelegation");
+    Add(report.AdminCountResidual, "Security", "AdminCountResidue");
+    Add(report.NoLaps, "Security", "NoLAPS");
+    Add(report.DomainInfo, "Config");
+
+    return new HygienePayload
+    {
+        ScannedBy = Environment.MachineName,
+        TotalMachines = report.StaleMachines.Count + report.DormantMachines.Count
+            + TargetDiscovery.LastDiscoveredActiveCount,
+        TotalUsers = report.StaleUsers.Count + report.DormantUsers.Count
+            + report.DisabledUsers.Count + report.NeverExpirePasswords.Count
+            + TargetDiscovery.LastDiscoveredActiveUserCount,
+        Findings = findings
+    };
 }
