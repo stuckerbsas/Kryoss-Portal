@@ -6,8 +6,10 @@ import { SnmpTab } from './SnmpTab';
 import { ExternalScanTab } from './ExternalScanTab';
 import { NetworkSitesTab } from './NetworkSitesTab';
 import { ProtocolUsageTab } from './ProtocolUsageTab';
+import { TopologyTab } from './TopologyTab';
 
 const sections = [
+  { value: 'topology', label: 'Topology' },
   { value: 'diagnostics', label: 'Diagnostics' },
   { value: 'ports', label: 'Ports' },
   { value: 'sites', label: 'Sites' },
@@ -18,7 +20,7 @@ const sections = [
 
 export function NetworkTab() {
   const [params, setParams] = useSearchParams();
-  const active = params.get('section') ?? 'diagnostics';
+  const active = params.get('section') ?? 'topology';
 
   return (
     <Tabs
@@ -33,6 +35,9 @@ export function NetworkTab() {
         ))}
       </TabsList>
 
+      <TabsContent value="topology">
+        <TopologyTab />
+      </TabsContent>
       <TabsContent value="diagnostics">
         <NetworkDiagnosticsTab />
       </TabsContent>
