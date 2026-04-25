@@ -33,6 +33,11 @@ function formatRelativeTime(dateStr: string | null): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
+function isOnline(lastHeartbeat: string | null): boolean {
+  if (!lastHeartbeat) return false;
+  return Date.now() - new Date(lastHeartbeat).getTime() < 30 * 60000;
+}
+
 const PAGE_SIZE = 25;
 
 export function FleetTab() {
@@ -100,7 +105,15 @@ export function FleetTab() {
                     navigate(`/organizations/${orgSlug}/machines/${m.hostname}`)
                   }
                 >
-                  <TableCell className="font-medium">{m.hostname}</TableCell>
+                  <TableCell className="font-medium flex items-center gap-2">
+                    <span
+                      className={`inline-block size-2.5 rounded-full ${
+                        isOnline(m.lastHeartbeatAt) ? 'bg-green-500' : 'bg-gray-300'
+                      }`}
+                      title={isOnline(m.lastHeartbeatAt) ? 'Online' : 'Offline'}
+                    />
+                    {m.hostname}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {m.osName ?? 'Unknown'}
                   </TableCell>
