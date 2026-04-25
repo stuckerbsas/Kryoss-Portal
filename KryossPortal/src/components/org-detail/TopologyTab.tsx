@@ -32,6 +32,43 @@ const DEVICE_ICONS: Record<string, typeof Network> = {
   unknown: HelpCircle,
 };
 
+// SVG paths from lucide icons (viewBox 0 0 24 24) for D3 inline rendering
+const DEVICE_SVG_PATHS: Record<string, string[]> = {
+  switch: [
+    'M9 2v6', 'M15 2v6', 'M12 16v6',
+    'M4 8h16a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z',
+  ],
+  router: [
+    'M12 2L2 7l10 5 10-5-10-5z', 'M2 17l10 5 10-5', 'M2 12l10 5 10-5',
+  ],
+  access_point: [
+    'M12 20h.01', 'M2 8.82a15 15 0 0 1 20 0', 'M5 12.86a9 9 0 0 1 14 0', 'M8.5 16.43a5 5 0 0 1 7 0',
+  ],
+  server: [
+    'M2 5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5z',
+    'M2 15a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4z',
+    'M6 7h.01', 'M6 17h.01',
+  ],
+  printer: [
+    'M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2',
+    'M6 9V3h12v6', 'M6 18h12v4H6v-4z',
+  ],
+  firewall: [
+    'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+  ],
+  phone: [
+    'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z',
+  ],
+  workstation: [
+    'M20 3H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z',
+    'M8 21h8', 'M12 15v6',
+  ],
+  unknown: [
+    'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z',
+    'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3', 'M12 17h.01',
+  ],
+};
+
 interface SimNode extends d3.SimulationNodeDatum {
   id: number | string;
   label: string;
@@ -175,21 +212,17 @@ export function TopologyTab() {
         return parts.join(' ↔ ');
       });
 
-    // Nodes
-    const nodeRadius = (d: SimNode) => d.phantom ? 10 : Math.max(14, Math.min(22, 14 + (d.neighborCount ?? 0)));
+    // Nodes — icon groups
+    const nodeSize = (d: SimNode) => d.phantom ? 28 : Math.max(32, Math.min(44, 32 + (d.neighborCount ?? 0) * 2));
 
     const node = g.append('g')
-      .selectAll<SVGCircleElement, SimNode>('circle')
+      .selectAll<SVGGElement, SimNode>('g.node')
       .data(simNodes)
-      .join('circle')
-      .attr('r', nodeRadius)
-      .attr('fill', d => DEVICE_COLORS[d.type] ?? DEVICE_COLORS.unknown)
-      .attr('stroke', d => d.isAgent ? '#008852' : d.phantom ? '#F59E0B' : '#fff')
-      .attr('stroke-width', d => d.isAgent ? 3 : d.phantom ? 2 : 1.5)
-      .attr('stroke-dasharray', d => d.phantom ? '4,2' : 'none')
+      .join('g')
+      .attr('class', 'node')
       .attr('cursor', 'pointer')
       .on('click', (_event, d) => setSelectedNode(d))
-      .call(d3.drag<SVGCircleElement, SimNode>()
+      .call(d3.drag<SVGGElement, SimNode>()
         .on('start', (event, d) => {
           if (!event.active) simulationRef.current?.alphaTarget(0.3).restart();
           d.fx = d.x;
@@ -205,16 +238,50 @@ export function TopologyTab() {
           d.fy = null;
         }));
 
+    // Background rounded rect
+    node.append('rect')
+      .attr('width', d => nodeSize(d))
+      .attr('height', d => nodeSize(d))
+      .attr('x', d => -nodeSize(d) / 2)
+      .attr('y', d => -nodeSize(d) / 2)
+      .attr('rx', 6)
+      .attr('fill', d => {
+        const c = DEVICE_COLORS[d.type] ?? DEVICE_COLORS.unknown;
+        return c + '20';
+      })
+      .attr('stroke', d => d.isAgent ? '#008852' : d.phantom ? '#F59E0B' : (DEVICE_COLORS[d.type] ?? DEVICE_COLORS.unknown))
+      .attr('stroke-width', d => d.isAgent ? 2.5 : d.phantom ? 2 : 1.5)
+      .attr('stroke-dasharray', d => d.phantom ? '4,2' : 'none');
+
+    // Icon paths
+    node.each(function(d) {
+      const paths = DEVICE_SVG_PATHS[d.type] ?? DEVICE_SVG_PATHS.unknown;
+      const s = nodeSize(d);
+      const iconScale = (s * 0.5) / 24;
+      const color = DEVICE_COLORS[d.type] ?? DEVICE_COLORS.unknown;
+      const iconG = d3.select(this).append('g')
+        .attr('transform', `translate(${-s * 0.25}, ${-s * 0.25}) scale(${iconScale})`);
+      paths.forEach(p => {
+        iconG.append('path')
+          .attr('d', p)
+          .attr('fill', 'none')
+          .attr('stroke', color)
+          .attr('stroke-width', 2)
+          .attr('stroke-linecap', 'round')
+          .attr('stroke-linejoin', 'round');
+      });
+    });
+
     // Node labels
     const nodeLabel = g.append('g')
       .selectAll('text')
       .data(simNodes)
       .join('text')
-      .attr('font-size', 11)
+      .attr('font-size', 10)
       .attr('font-weight', d => d.phantom ? 'normal' : '500')
       .attr('fill', '#374151')
       .attr('text-anchor', 'middle')
-      .attr('dy', d => nodeRadius(d) + 14)
+      .attr('dy', d => nodeSize(d) / 2 + 14)
       .text(d => d.label.length > 20 ? d.label.slice(0, 18) + '…' : d.label);
 
     // Simulation
@@ -222,7 +289,7 @@ export function TopologyTab() {
       .force('link', d3.forceLink<SimNode, SimLink>(simLinks).id(d => d.id).distance(120))
       .force('charge', d3.forceManyBody().strength(-300))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(d => nodeRadius(d as SimNode) + 20))
+      .force('collision', d3.forceCollide().radius(d => nodeSize(d as SimNode) / 2 + 15))
       .on('tick', () => {
         link
           .attr('x1', d => (d.source as SimNode).x!)
@@ -233,8 +300,7 @@ export function TopologyTab() {
           .attr('x', d => ((d.source as SimNode).x! + (d.target as SimNode).x!) / 2)
           .attr('y', d => ((d.source as SimNode).y! + (d.target as SimNode).y!) / 2 - 6);
         node
-          .attr('cx', d => d.x!)
-          .attr('cy', d => d.y!);
+          .attr('transform', d => `translate(${d.x!},${d.y!})`);
         nodeLabel
           .attr('x', d => d.x!)
           .attr('y', d => d.y!);
@@ -300,10 +366,16 @@ export function TopologyTab() {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 text-xs text-gray-500 px-1">
-        <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-blue-300" /> LLDP link</div>
-        <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-yellow-300" /> CDP link</div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full border-2 border-[#008852]" /> Kryoss Agent</div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full border-2 border-dashed border-amber-500" /> Phantom (not scanned)</div>
+        {Object.entries(DEVICE_ICONS).map(([type, Icon]) => (
+          <div key={type} className="flex items-center gap-1">
+            <Icon size={14} style={{ color: DEVICE_COLORS[type] ?? '#9CA3AF' }} />
+            <span className="capitalize">{type.replace('_', ' ')}</span>
+          </div>
+        ))}
+        <div className="flex items-center gap-1"><div className="w-4 h-0.5 bg-blue-300" /> LLDP</div>
+        <div className="flex items-center gap-1"><div className="w-4 h-0.5 bg-yellow-300" /> CDP</div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded border-2 border-[#008852]" /> Agent</div>
+        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded border-2 border-dashed border-amber-500" /> Phantom</div>
       </div>
 
       {/* Graph */}
