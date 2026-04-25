@@ -49,6 +49,8 @@ export interface Machine {
   isActive: boolean;
   lastSeenAt: string | null;
   firstSeenAt: string;
+  lastHeartbeatAt: string | null;
+  agentMode: string | null;
   latestScore: {
     globalScore: number | null;
     grade: string | null;
