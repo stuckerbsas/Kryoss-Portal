@@ -27,6 +27,8 @@ export interface TopologyEdge {
   protocol: string;
   sourcePort: string | null;
   targetPort: string | null;
+  trafficInBps: number | null;
+  trafficOutBps: number | null;
 }
 
 export interface TopologyResponse {

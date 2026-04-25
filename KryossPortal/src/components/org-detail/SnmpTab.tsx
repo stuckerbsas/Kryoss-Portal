@@ -11,6 +11,13 @@ import {
   Network,
   Cable,
   ArrowRight,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  AlertTriangle,
+  Monitor,
+  Printer,
+  Shield,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -40,10 +47,42 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+const DEVICE_TYPE_CONFIG: Record<string, { color: string; label: string }> = {
+  switch: { color: 'bg-blue-100 text-blue-700', label: 'Switch' },
+  router: { color: 'bg-green-100 text-green-700', label: 'Router' },
+  access_point: { color: 'bg-purple-100 text-purple-700', label: 'AP' },
+  server: { color: 'bg-amber-100 text-amber-700', label: 'Server' },
+  printer: { color: 'bg-pink-100 text-pink-700', label: 'Printer' },
+  firewall: { color: 'bg-red-100 text-red-700', label: 'Firewall' },
+  workstation: { color: 'bg-indigo-100 text-indigo-700', label: 'Workstation' },
+  unknown: { color: 'bg-gray-100 text-gray-500', label: 'Unknown' },
+};
+
+function deviceTypeBadge(type: string | null) {
+  const cfg = DEVICE_TYPE_CONFIG[type ?? 'unknown'] ?? DEVICE_TYPE_CONFIG.unknown;
+  return <Badge variant="secondary" className={cfg.color}>{cfg.label}</Badge>;
+}
+
 function ifStatusBadge(status: number | null) {
   if (status === 1) return <Badge variant="secondary" className="bg-green-100 text-green-800">Up</Badge>;
   if (status === 2) return <Badge variant="secondary" className="bg-red-100 text-red-800">Down</Badge>;
   return <Badge variant="secondary" className="bg-gray-100 text-gray-500">Unknown</Badge>;
+}
+
+function UsageBar({ used, total, unit, warn = 80, crit = 90 }: { used: number; total: number; unit: string; warn?: number; crit?: number }) {
+  const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+  const color = pct >= crit ? 'bg-red-500' : pct >= warn ? 'bg-amber-500' : 'bg-green-500';
+  return (
+    <div className="space-y-0.5">
+      <div className="flex justify-between text-[10px] text-muted-foreground">
+        <span>{pct}%</span>
+        <span>{used}/{total} {unit}</span>
+      </div>
+      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+    </div>
+  );
 }
 
 function NeighborTable({ lldp, cdp }: { lldp: LldpNeighbor[] | null; cdp: CdpNeighbor[] | null }) {
@@ -111,44 +150,114 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
   return (
     <>
       <TableRow
-        className="cursor-pointer hover:bg-muted/50"
+        className={`cursor-pointer hover:bg-muted/50 ${device.isStale ? 'opacity-50' : ''}`}
         onClick={() => setExpanded(!expanded)}
       >
         <TableCell>
           <div className="flex items-center gap-2">
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <span className="font-mono">{device.ipAddress}</span>
+            <span className="font-mono text-xs">{device.ipAddress}</span>
+            {device.isStale && <AlertTriangle className="h-3 w-3 text-amber-500" />}
+            {device.machineId && <Monitor className="h-3 w-3 text-green-600" title="Kryoss Agent" />}
           </div>
         </TableCell>
-        <TableCell className="font-medium">{device.sysName ?? '—'}</TableCell>
-        <TableCell className="text-sm max-w-xs truncate">{device.sysDescr ?? '—'}</TableCell>
+        <TableCell className="font-medium text-sm">{device.sysName ?? '—'}</TableCell>
+        <TableCell>{deviceTypeBadge(device.deviceType)}</TableCell>
+        <TableCell className="text-xs text-muted-foreground">{device.vendor ?? '—'}</TableCell>
         <TableCell>
-          {device.entityMfg && device.entityModel
-            ? `${device.entityMfg} ${device.entityModel}`
-            : device.entityModel ?? '—'}
+          {device.cpuLoadPct != null ? (
+            <div className="w-16">
+              <UsageBar used={device.cpuLoadPct} total={100} unit="%" />
+            </div>
+          ) : '—'}
         </TableCell>
-        <TableCell className="font-mono text-xs">{device.entityFirmware ?? '—'}</TableCell>
-        <TableCell className="text-center">{device.interfaceCount}</TableCell>
+        <TableCell>
+          {device.memoryTotalMb != null && device.memoryUsedMb != null ? (
+            <div className="w-20">
+              <UsageBar used={Math.round(device.memoryUsedMb / 1024)} total={Math.round(device.memoryTotalMb / 1024)} unit="GB" />
+            </div>
+          ) : '—'}
+        </TableCell>
+        <TableCell>
+          {device.diskTotalGb != null && device.diskUsedGb != null ? (
+            <div className="w-20">
+              <UsageBar used={device.diskUsedGb} total={device.diskTotalGb} unit="GB" />
+            </div>
+          ) : '—'}
+        </TableCell>
+        <TableCell className="text-center text-xs">{device.interfaceCount}</TableCell>
         <TableCell className="text-center">
           {neighborCount > 0 ? (
-            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-              {neighborCount}
-            </Badge>
+            <Badge variant="secondary" className="bg-blue-100 text-blue-700">{neighborCount}</Badge>
           ) : '—'}
         </TableCell>
         <TableCell>
           {device.uptimeDays != null ? (
-            <span className="font-mono tabular-nums">{Math.floor(device.uptimeDays)}d</span>
+            <span className="font-mono text-xs tabular-nums">{Math.floor(device.uptimeDays)}d</span>
           ) : '—'}
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground">
-          {new Date(device.scannedAt).toLocaleString()}
         </TableCell>
       </TableRow>
 
       {expanded && (
         <TableRow>
-          <TableCell colSpan={9} className="bg-muted/30 p-4">
+          <TableCell colSpan={10} className="bg-muted/30 p-4">
+            {/* Device detail grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
+              {device.entityModel && <div><span className="text-muted-foreground">Model:</span> {device.entityMfg ? `${device.entityMfg} ${device.entityModel}` : device.entityModel}</div>}
+              {device.entitySerial && <div><span className="text-muted-foreground">Serial:</span> {device.entitySerial}</div>}
+              {device.entityFirmware && <div><span className="text-muted-foreground">Firmware:</span> {device.entityFirmware}</div>}
+              {device.sysLocation && <div><span className="text-muted-foreground">Location:</span> {device.sysLocation}</div>}
+              {device.macAddress && <div><span className="text-muted-foreground">MAC:</span> <span className="font-mono">{device.macAddress}</span></div>}
+              {device.processCount != null && <div><span className="text-muted-foreground">Processes:</span> {device.processCount}</div>}
+              {device.pageCount != null && <div><span className="text-muted-foreground">Page Count:</span> {device.pageCount.toLocaleString()}</div>}
+              {device.scanSource && <div><span className="text-muted-foreground">Scanned by:</span> {device.scanSource}</div>}
+              {device.firstSeenAt && <div><span className="text-muted-foreground">First seen:</span> {new Date(device.firstSeenAt).toLocaleDateString()}</div>}
+              <div><span className="text-muted-foreground">Last scan:</span> {new Date(device.scannedAt).toLocaleString()}</div>
+            </div>
+
+            {/* Printer supplies */}
+            {device.supplies?.length > 0 && (
+              <div className="mb-4">
+                <h5 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <Printer className="h-4 w-4 text-pink-500" />
+                  Supplies ({device.supplies.length})
+                </h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {device.supplies.map((s, i) => (
+                    <div key={i} className="border rounded p-2 text-xs">
+                      <div className="font-medium truncate">{s.description}</div>
+                      {s.levelPercent != null && (
+                        <div className="mt-1">
+                          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.max(0, Math.min(100, s.levelPercent))}%`,
+                                backgroundColor: s.color ?? (s.levelPercent < 10 ? '#EF4444' : s.levelPercent < 25 ? '#F59E0B' : '#22C55E'),
+                              }}
+                            />
+                          </div>
+                          <span className="text-muted-foreground">{s.levelPercent}%</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Vendor data */}
+            {device.vendorData && Object.keys(device.vendorData).length > 0 && (
+              <div className="mb-4">
+                <h5 className="text-sm font-semibold mb-2">Vendor-Specific Data</h5>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                  {Object.entries(device.vendorData).map(([k, v]) => (
+                    <div key={k}><span className="text-muted-foreground">{k}:</span> {v}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Interfaces */}
             {device.interfaces.length > 0 && (
               <>
@@ -175,7 +284,7 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
                           <TableCell className="text-xs">{iface.name ?? '—'}</TableCell>
                           <TableCell className="text-xs max-w-xs truncate">{iface.description ?? '—'}</TableCell>
                           <TableCell className="font-mono text-xs">
-                            {iface.speedMbps != null ? `${iface.speedMbps} Mbps` : '—'}
+                            {iface.speedMbps != null ? (iface.speedMbps >= 1000 ? `${iface.speedMbps / 1000} Gbps` : `${iface.speedMbps} Mbps`) : '—'}
                           </TableCell>
                           <TableCell className="font-mono text-xs">{iface.macAddress ?? '—'}</TableCell>
                           <TableCell>{ifStatusBadge(iface.adminStatus)}</TableCell>
@@ -263,22 +372,10 @@ function SnmpConfigCard({ orgId }: { orgId: string }) {
         {!editing ? (
           config?.configured ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Status</span>
-                <p>{config.enabled ? 'Enabled' : 'Disabled'}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Version</span>
-                <p>SNMPv{config.version}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Auth</span>
-                <p>{config.version === 3 ? (config.username ?? '—') : (config.community ? 'Community set' : '—')}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Targets</span>
-                <p>{config.targets?.length ?? 0} configured</p>
-              </div>
+              <div><span className="text-muted-foreground">Status</span><p>{config.enabled ? 'Enabled' : 'Disabled'}</p></div>
+              <div><span className="text-muted-foreground">Version</span><p>SNMPv{config.version}</p></div>
+              <div><span className="text-muted-foreground">Auth</span><p>{config.version === 3 ? (config.username ?? '—') : (config.community ? 'Community set' : '—')}</p></div>
+              <div><span className="text-muted-foreground">Targets</span><p>{config.targets?.length ?? 0} configured</p></div>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -290,77 +387,30 @@ function SnmpConfigCard({ orgId }: { orgId: string }) {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <Label>Enabled</Label>
-                <Switch
-                  checked={form.enabled}
-                  onCheckedChange={(v: boolean) => setForm({ ...form, enabled: v })}
-                />
+                <Switch checked={form.enabled} onCheckedChange={(v: boolean) => setForm({ ...form, enabled: v })} />
               </div>
               <div>
                 <Label>Version</Label>
-                <select
-                  className="ml-2 border rounded px-2 py-1 text-sm"
-                  value={form.version}
-                  onChange={(e) => setForm({ ...form, version: Number(e.target.value) })}
-                >
+                <select className="ml-2 border rounded px-2 py-1 text-sm" value={form.version} onChange={(e) => setForm({ ...form, version: Number(e.target.value) })}>
                   <option value={2}>v2c</option>
                   <option value={3}>v3</option>
                 </select>
               </div>
             </div>
             {form.version === 2 ? (
-              <div>
-                <Label>Community String</Label>
-                <Input
-                  type="password"
-                  placeholder="public"
-                  value={(form.community as string) ?? ''}
-                  onChange={(e) => setForm({ ...form, community: e.target.value })}
-                />
-              </div>
+              <div><Label>Community String</Label><Input type="password" placeholder="public" value={(form.community as string) ?? ''} onChange={(e) => setForm({ ...form, community: e.target.value })} /></div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Username</Label>
-                  <Input value={form.username ?? ''} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-                </div>
-                <div>
-                  <Label>Auth Protocol</Label>
-                  <Input placeholder="SHA" value={form.authProtocol ?? ''} onChange={(e) => setForm({ ...form, authProtocol: e.target.value })} />
-                </div>
-                <div>
-                  <Label>Auth Password</Label>
-                  <Input type="password" onChange={(e) => setForm({ ...form, authPassword: e.target.value } as any)} />
-                </div>
-                <div>
-                  <Label>Priv Protocol</Label>
-                  <Input placeholder="AES" value={form.privProtocol ?? ''} onChange={(e) => setForm({ ...form, privProtocol: e.target.value })} />
-                </div>
-                <div>
-                  <Label>Priv Password</Label>
-                  <Input type="password" onChange={(e) => setForm({ ...form, privPassword: e.target.value } as any)} />
-                </div>
+                <div><Label>Username</Label><Input value={form.username ?? ''} onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
+                <div><Label>Auth Protocol</Label><Input placeholder="SHA" value={form.authProtocol ?? ''} onChange={(e) => setForm({ ...form, authProtocol: e.target.value })} /></div>
+                <div><Label>Auth Password</Label><Input type="password" onChange={(e) => setForm({ ...form, authPassword: e.target.value } as any)} /></div>
+                <div><Label>Priv Protocol</Label><Input placeholder="AES" value={form.privProtocol ?? ''} onChange={(e) => setForm({ ...form, privProtocol: e.target.value })} /></div>
+                <div><Label>Priv Password</Label><Input type="password" onChange={(e) => setForm({ ...form, privPassword: e.target.value } as any)} /></div>
               </div>
             )}
-            <div>
-              <Label>Targets (comma-separated IPs or CIDRs)</Label>
-              <Input
-                placeholder="10.0.0.1, 192.168.1.0/24"
-                value={form.targets?.join(', ') ?? ''}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    targets: e.target.value
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
-            </div>
+            <div><Label>Targets (comma-separated IPs or CIDRs)</Label><Input placeholder="10.0.0.1, 192.168.1.0/24" value={form.targets?.join(', ') ?? ''} onChange={(e) => setForm({ ...form, targets: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} /></div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleSave} disabled={save.isPending}>
-                {save.isPending ? 'Saving...' : 'Save'}
-              </Button>
+              <Button size="sm" onClick={handleSave} disabled={save.isPending}>{save.isPending ? 'Saving...' : 'Save'}</Button>
               <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
             </div>
           </div>
@@ -374,16 +424,22 @@ export function SnmpTab() {
   const { orgId } = useOrgParam();
   const { data: devices, isLoading } = useSnmpDevices(orgId);
 
-  const totalNeighbors = devices?.reduce(
-    (s, d) => s + (d.lldpNeighborCount ?? 0) + (d.cdpNeighborCount ?? 0), 0
-  ) ?? 0;
+  const active = devices?.filter(d => !d.isStale) ?? [];
+  const stale = devices?.filter(d => d.isStale) ?? [];
+  const totalNeighbors = devices?.reduce((s, d) => s + (d.lldpNeighborCount ?? 0) + (d.cdpNeighborCount ?? 0), 0) ?? 0;
+  const withCpu = active.filter(d => d.cpuLoadPct != null);
+  const avgCpu = withCpu.length > 0 ? Math.round(withCpu.reduce((s, d) => s + d.cpuLoadPct!, 0) / withCpu.length) : null;
+  const withMem = active.filter(d => d.memoryTotalMb != null && d.memoryUsedMb != null);
+  const avgMem = withMem.length > 0 ? Math.round(withMem.reduce((s, d) => s + (d.memoryUsedMb! / d.memoryTotalMb!) * 100, 0) / withMem.length) : null;
+  const typeCounts: Record<string, number> = {};
+  active.forEach(d => { typeCounts[d.deviceType ?? 'unknown'] = (typeCounts[d.deviceType ?? 'unknown'] ?? 0) + 1; });
 
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold">SNMP Network Devices</h3>
         <p className="text-sm text-muted-foreground">
-          Switches, routers, firewalls, and access points discovered via SNMP. Port mapping via LLDP/CDP.
+          Switches, routers, firewalls, printers, and servers discovered via SNMP. Port mapping via LLDP/CDP.
         </p>
       </div>
 
@@ -400,64 +456,53 @@ export function SnmpTab() {
       ) : (
         <>
           {/* KPI cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Devices</CardTitle>
-                <Server className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Devices</CardTitle><Server className="h-4 w-4 text-muted-foreground" /></CardHeader>
+              <CardContent><p className="text-2xl font-bold">{active.length}</p>{stale.length > 0 && <p className="text-xs text-amber-500">{stale.length} stale</p>}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Interfaces</CardTitle><Wifi className="h-4 w-4 text-muted-foreground" /></CardHeader>
+              <CardContent><p className="text-2xl font-bold">{active.reduce((s, d) => s + d.interfaceCount, 0)}</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Neighbors</CardTitle><Network className="h-4 w-4 text-blue-500" /></CardHeader>
+              <CardContent><p className="text-2xl font-bold">{totalNeighbors || '—'}</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Avg CPU</CardTitle><Cpu className="h-4 w-4 text-muted-foreground" /></CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">{devices.length}</p>
+                {avgCpu != null ? (
+                  <p className={`text-2xl font-bold ${avgCpu > 80 ? 'text-red-500' : avgCpu > 60 ? 'text-amber-500' : ''}`}>{avgCpu}%</p>
+                ) : <p className="text-2xl font-bold text-muted-foreground">—</p>}
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Interfaces</CardTitle>
-                <Wifi className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Avg Memory</CardTitle><MemoryStick className="h-4 w-4 text-muted-foreground" /></CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">
-                  {devices.reduce((s, d) => s + d.interfaceCount, 0)}
-                </p>
+                {avgMem != null ? (
+                  <p className={`text-2xl font-bold ${avgMem > 85 ? 'text-red-500' : avgMem > 70 ? 'text-amber-500' : ''}`}>{avgMem}%</p>
+                ) : <p className="text-2xl font-bold text-muted-foreground">—</p>}
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Port Mappings</CardTitle>
-                <Network className="h-4 w-4 text-blue-500" />
-              </CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Avg Uptime</CardTitle><Clock className="h-4 w-4 text-muted-foreground" /></CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">{totalNeighbors || '—'}</p>
-                <p className="text-xs text-muted-foreground">LLDP + CDP</p>
+                <p className="text-2xl font-bold">{(() => { const w = active.filter(d => d.uptimeDays != null); return w.length ? `${Math.floor(w.reduce((s, d) => s + d.uptimeDays!, 0) / w.length)}d` : '—'; })()}</p>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Avg Uptime</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">
-                  {(() => {
-                    const withUptime = devices.filter((d) => d.uptimeDays != null);
-                    if (withUptime.length === 0) return '—';
-                    const avg = withUptime.reduce((s, d) => s + d.uptimeDays!, 0) / withUptime.length;
-                    return `${Math.floor(avg)}d`;
-                  })()}
-                </p>
-              </CardContent>
+              <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Locations</CardTitle><MapPin className="h-4 w-4 text-muted-foreground" /></CardHeader>
+              <CardContent><p className="text-2xl font-bold">{new Set(active.map(d => d.sysLocation).filter(Boolean)).size || '—'}</p></CardContent>
             </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Locations</CardTitle>
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">
-                  {new Set(devices.map((d) => d.sysLocation).filter(Boolean)).size || '—'}
-                </p>
-              </CardContent>
-            </Card>
+          </div>
+
+          {/* Type breakdown */}
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).map(([type, count]) => {
+              const cfg = DEVICE_TYPE_CONFIG[type] ?? DEVICE_TYPE_CONFIG.unknown;
+              return <Badge key={type} variant="secondary" className={cfg.color}>{cfg.label}: {count}</Badge>;
+            })}
           </div>
 
           {/* Device table */}
@@ -475,19 +520,19 @@ export function SnmpTab() {
                     <TableRow>
                       <TableHead>IP Address</TableHead>
                       <TableHead>Name</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Model</TableHead>
-                      <TableHead>Firmware</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>CPU</TableHead>
+                      <TableHead>Memory</TableHead>
+                      <TableHead>Disk</TableHead>
                       <TableHead className="text-center">IFs</TableHead>
                       <TableHead className="text-center">Neighbors</TableHead>
                       <TableHead>Uptime</TableHead>
-                      <TableHead>Last Scan</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {devices.map((d) => (
-                      <DeviceRow key={d.id} device={d} />
-                    ))}
+                    {active.map((d) => <DeviceRow key={d.id} device={d} />)}
+                    {stale.map((d) => <DeviceRow key={d.id} device={d} />)}
                   </TableBody>
                 </Table>
               </div>

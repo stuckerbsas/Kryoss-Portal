@@ -52,6 +52,15 @@ interface SimLink extends d3.SimulationLinkDatum<SimNode> {
   protocol: string;
   sourcePort: string | null;
   targetPort: string | null;
+  trafficInBps: number | null;
+  trafficOutBps: number | null;
+}
+
+function formatBps(bps: number): string {
+  if (bps >= 1_000_000_000) return `${(bps / 1_000_000_000).toFixed(1)} Gbps`;
+  if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`;
+  if (bps >= 1_000) return `${(bps / 1_000).toFixed(0)} Kbps`;
+  return `${bps} bps`;
 }
 
 function DeviceDetail({ node, onClose }: { node: SimNode; onClose: () => void }) {
@@ -120,6 +129,8 @@ export function TopologyTab() {
         protocol: e.protocol,
         sourcePort: e.sourcePort,
         targetPort: e.targetPort,
+        trafficInBps: e.trafficInBps,
+        trafficOutBps: e.trafficOutBps,
       }));
 
     const g = svg.append('g');
@@ -130,16 +141,24 @@ export function TopologyTab() {
       .on('zoom', (event) => g.attr('transform', event.transform));
     svg.call(zoom);
 
-    // Links
+    // Links — width based on traffic
+    const linkWidth = (d: SimLink) => {
+      const total = (d.trafficInBps ?? 0) + (d.trafficOutBps ?? 0);
+      if (total === 0) return 2;
+      if (total > 1_000_000_000) return 8;
+      if (total > 100_000_000) return 6;
+      if (total > 10_000_000) return 4;
+      return 3;
+    };
     const link = g.append('g')
       .selectAll('line')
       .data(simLinks)
       .join('line')
       .attr('stroke', d => d.protocol === 'lldp' ? '#93C5FD' : '#FCD34D')
-      .attr('stroke-width', 2)
+      .attr('stroke-width', linkWidth)
       .attr('stroke-opacity', 0.6);
 
-    // Link labels
+    // Link labels — show traffic rate if available, else port names
     const linkLabel = g.append('g')
       .selectAll('text')
       .data(simLinks)
@@ -148,6 +167,8 @@ export function TopologyTab() {
       .attr('fill', '#9CA3AF')
       .attr('text-anchor', 'middle')
       .text(d => {
+        const total = (d.trafficInBps ?? 0) + (d.trafficOutBps ?? 0);
+        if (total > 0) return `↑${formatBps(d.trafficOutBps ?? 0)} ↓${formatBps(d.trafficInBps ?? 0)}`;
         const parts: string[] = [];
         if (d.sourcePort) parts.push(d.sourcePort);
         if (d.targetPort) parts.push(d.targetPort);

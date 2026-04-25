@@ -56,13 +56,25 @@ export interface CdpNeighbor {
   remotePlatform: string | null;
 }
 
+export interface SnmpDeviceSupply {
+  description: string;
+  supplyType: string;
+  color: string | null;
+  levelPercent: number | null;
+  maxCapacity: number | null;
+  currentLevel: number | null;
+}
+
 export interface SnmpDevice {
   id: string;
   ipAddress: string;
+  macAddress: string | null;
+  vendor: string | null;
   sysName: string | null;
   sysDescr: string | null;
   uptimeDays: number | null;
   sysLocation: string | null;
+  deviceType: string | null;
   entityModel: string | null;
   entitySerial: string | null;
   entityMfg: string | null;
@@ -70,10 +82,24 @@ export interface SnmpDevice {
   interfaceCount: number;
   lldpNeighborCount: number;
   cdpNeighborCount: number;
+  pageCount: number | null;
+  cpuLoadPct: number | null;
+  memoryTotalMb: number | null;
+  memoryUsedMb: number | null;
+  diskTotalGb: number | null;
+  diskUsedGb: number | null;
+  processCount: number | null;
+  firstSeenAt: string | null;
+  isStale: boolean;
+  machineId: string | null;
+  scanSource: string | null;
+  secondaryIps: string | null;
   scannedAt: string;
   interfaces: SnmpDeviceInterface[];
+  supplies: SnmpDeviceSupply[];
   lldpNeighbors: LldpNeighbor[] | null;
   cdpNeighbors: CdpNeighbor[] | null;
+  vendorData: Record<string, string> | null;
 }
 
 export function useSnmpConfig(organizationId: string | undefined) {
