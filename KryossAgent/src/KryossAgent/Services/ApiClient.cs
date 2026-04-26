@@ -482,7 +482,9 @@ public class ApiClient : IDisposable
         // Hardware fingerprint — see field comment at the top of the class.
         request.Headers.Add("X-Hwid", _hwid);
 
-        var signingKey = _config.SessionKey ?? _config.MachineSecret ?? _config.ApiSecret;
+        var sessionExpired = _config.SessionKeyExpiresAt.HasValue && _config.SessionKeyExpiresAt.Value < DateTime.UtcNow;
+        var signingKey = (_config.SessionKey is not null && !sessionExpired ? _config.SessionKey : null)
+            ?? _config.MachineSecret ?? _config.ApiSecret;
         if (!string.IsNullOrEmpty(signingKey))
         {
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
@@ -506,7 +508,7 @@ public class ApiClient : IDisposable
             {
                 Console.Error.WriteLine($"  [HMAC] ts={timestamp} method={method.Method.ToUpperInvariant()} path={path}");
                 Console.Error.WriteLine($"  [HMAC] agentId={agentId} bodyLen={body?.Length ?? 0} bodyHash={bodyHash[..16]}...");
-                Console.Error.WriteLine($"  [HMAC] keyLen={signingKey.Length} keySource={(_config.SessionKey is not null ? "session" : _config.MachineSecret is not null ? "machine" : "org")} apiKeyPrefix={_config.ApiKey[..Math.Min(8, _config.ApiKey.Length)]}...");
+                Console.Error.WriteLine($"  [HMAC] keyLen={signingKey.Length} keySource={(_config.SessionKey is not null && !sessionExpired ? "session" : _config.MachineSecret is not null ? "machine" : "org")}");
                 Console.Error.WriteLine($"  [HMAC] localUtc={DateTimeOffset.UtcNow:O}");
             }
 
