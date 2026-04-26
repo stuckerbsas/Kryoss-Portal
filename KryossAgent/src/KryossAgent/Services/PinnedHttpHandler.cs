@@ -39,24 +39,38 @@ namespace KryossAgent.Services;
 /// </summary>
 public sealed class PinnedHttpHandler : HttpClientHandler
 {
+    // Compiled-in SPKI pins for func-kryoss.azurewebsites.net.
+    // To update: run agent with KRYOSS_VERBOSE=1 in log-only mode,
+    // capture the observed pin, replace/add here.
+    private static readonly string[] BuiltInPins =
+    {
+        // Azure App Service wildcard cert (*.azurewebsites.net) — rotate when cert key rolls
+        // Run: openssl s_client -connect func-kryoss.azurewebsites.net:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | openssl enc -base64
+        // Populate before first production deploy with pinning enforced.
+    };
+
     private readonly HashSet<string>? _pins;
     private readonly bool _logOnly;
 
-    // The SPKI hash doesn't change between requests in the same process,
-    // so in log-only mode we print it once instead of spamming stderr.
     private static int s_logged;
 
     public PinnedHttpHandler(string[]? pins)
     {
-        if (pins is null || pins.Length == 0)
+        var effectivePins = pins is not null && pins.Length > 0
+            ? pins
+            : BuiltInPins.Length > 0 ? BuiltInPins : null;
+
+        var explicitLogOnly = Environment.GetEnvironmentVariable("KRYOSS_SPKI_LOGONLY") == "1";
+
+        if (effectivePins is null || explicitLogOnly)
         {
             _logOnly = true;
-            _pins = null;
+            _pins = effectivePins is not null ? new HashSet<string>(effectivePins, StringComparer.Ordinal) : null;
         }
         else
         {
             _logOnly = false;
-            _pins = new HashSet<string>(pins, StringComparer.Ordinal);
+            _pins = new HashSet<string>(effectivePins, StringComparer.Ordinal);
         }
 
         // Always enforce the normal chain first — SPKI pinning is in
