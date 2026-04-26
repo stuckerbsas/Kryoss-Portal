@@ -224,6 +224,9 @@ public class EvaluationService : IEvaluationService
             // Lifecycle
             machine.SystemAgeDays = payload.Hardware?.SystemAgeDays;
             machine.LastBootAt = payload.Hardware?.LastBootAt;
+            // Local admins
+            if (payload.LocalAdmins is { Count: > 0 })
+                machine.LocalAdminsJson = System.Text.Json.JsonSerializer.Serialize(payload.LocalAdmins);
 
             if (!string.Equals(prevOsName, machine.OsName, StringComparison.Ordinal)
                 || machine.PlatformId is null)
@@ -751,6 +754,7 @@ public class AgentPayload
     public List<SoftwareInfo> Software { get; set; } = [];
     public List<AgentCheckResult> Results { get; set; } = [];
     public NetworkDiagDto? NetworkDiag { get; set; }
+    public List<LocalAdminDto>? LocalAdmins { get; set; }
 }
 
 public class NetworkDiagDto
@@ -908,6 +912,13 @@ public class SoftwareInfo
     public string Name { get; set; } = null!;
     public string? Version { get; set; }
     public string? Publisher { get; set; }
+}
+
+public class LocalAdminDto
+{
+    public string Name { get; set; } = null!;
+    public string Type { get; set; } = null!;
+    public string Source { get; set; } = null!;
 }
 
 public class AgentCheckResult

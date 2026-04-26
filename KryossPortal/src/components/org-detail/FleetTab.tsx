@@ -108,7 +108,7 @@ export function FleetTab() {
                   <TableCell className="font-medium flex items-center gap-2">
                     <span
                       className={`inline-block size-2.5 rounded-full ${
-                        isOnline(m.lastHeartbeatAt) ? 'bg-green-500' : 'bg-gray-300'
+                        isOnline(m.lastHeartbeatAt) ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
                       }`}
                       title={isOnline(m.lastHeartbeatAt) ? 'Online' : 'Offline'}
                     />

@@ -142,6 +142,12 @@ public static class ScanCycle
             if (!silent) Console.WriteLine(" skipped");
         }
 
+        if (!silent) Console.Write("    Enumerating local administrators...");
+        List<LocalAdminItem> localAdmins;
+        try { localAdmins = PlatformDetector.EnumerateLocalAdmins(); }
+        catch { localAdmins = []; }
+        if (!silent) Console.WriteLine($" {localAdmins.Count} found");
+
         var payload = new AssessmentPayload
         {
             AgentId = config.AgentId,
@@ -153,6 +159,7 @@ public static class ScanCycle
             Software = softwareList,
             Results = allResults,
             NetworkDiag = networkDiag,
+            LocalAdmins = localAdmins.Count > 0 ? localAdmins : null,
         };
 
         return new ComplianceScanResult

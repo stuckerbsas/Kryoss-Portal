@@ -282,15 +282,15 @@ function OverviewTabContent({ machine, chartData }: { machine: any; chartData: a
           <InfoRow label="Domain" value={machine.domainName} />
         </SectionCard>
 
-        {machine.adminAccounts && machine.adminAccounts.length > 0 && (
-          <SectionCard icon={<Users className="size-4" />} title="Admin Accounts">
-            {machine.adminAccounts.map((a: { name: string; status: string; detail: string | null }, i: number) => (
+        {machine.localAdmins && machine.localAdmins.length > 0 && (
+          <SectionCard icon={<Users className="size-4" />} title="Local Administrators">
+            {machine.localAdmins.map((a: { name: string; type: string; source: string }, i: number) => (
               <div key={i} className="flex justify-between items-center py-1.5 border-b border-border/50 last:border-0">
                 <span className="text-sm">{a.name}</span>
                 <Badge variant="secondary" className={
-                  a.status === 'PrivilegedAccount' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'
+                  a.source === 'Domain' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                 }>
-                  {a.status === 'PrivilegedAccount' ? 'AD Privileged' : 'Local Admin'}
+                  {a.source === 'Domain' ? 'Domain' : 'Local'} {a.type}
                 </Badge>
               </div>
             ))}

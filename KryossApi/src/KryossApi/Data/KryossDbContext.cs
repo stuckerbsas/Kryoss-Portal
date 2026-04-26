@@ -261,6 +261,7 @@ public class KryossDbContext : DbContext
             e.Property(x => x.PrevKeyExpiresAt).HasColumnName("prev_key_expires_at");
             e.Property(x => x.KeyRotatedAt).HasColumnName("key_rotated_at");
             e.Property(x => x.AuthVersion).HasColumnName("auth_version");
+            e.Property(x => x.LocalAdminsJson).HasColumnName("local_admins_json");
         });
 
         // ── Assessment ──

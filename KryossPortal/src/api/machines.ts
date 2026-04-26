@@ -35,8 +35,8 @@ export interface MachineDetail extends Machine {
   lastBootAt: string | null;
   // Disks
   disks: { driveLetter: string; label: string | null; diskType: string | null; totalGb: number | null; freeGb: number | null; fileSystem: string | null; }[];
-  // Admin accounts (from AD hygiene)
-  adminAccounts: { name: string; status: string; detail: string | null; }[];
+  // Local administrators (per-machine, from agent)
+  localAdmins: { name: string; type: string; source: string; }[] | null;
   // History
   assessmentHistory: AssessmentRunSummary[];
 }

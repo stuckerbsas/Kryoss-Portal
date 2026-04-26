@@ -11,9 +11,9 @@
 
 | Component | Current | Where | Endpoint |
 |-----------|---------|-------|----------|
-| **API** | 1.20.1 | `KryossApi.csproj` `<Version>` | `GET /v2/version` (no auth) |
-| **Portal** | 1.10.0 | `KryossPortal/package.json` `"version"` | Sidebar footer "Powered by Kryoss vX.Y.Z" |
-| **Agent** | 2.2.1 | `KryossAgent.csproj` `<Version>` | Registry `HKLM\SOFTWARE\Kryoss\Agent\Version` |
+| **API** | 1.20.2 | `KryossApi.csproj` `<Version>` | `GET /v2/version` (no auth) |
+| **Portal** | 1.10.1 | `KryossPortal/package.json` `"version"` | Sidebar footer "Powered by Kryoss vX.Y.Z" |
+| **Agent** | 2.2.2 | `KryossAgent.csproj` `<Version>` | Registry `HKLM\SOFTWARE\Kryoss\Agent\Version` |
 
 **MANDATORY — VERSION SYNC PROTOCOL:**
 

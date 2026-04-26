@@ -15,7 +15,7 @@ public class ServiceWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Console.WriteLine("[SERVICE] Kryoss Agent v2.2.1 started as Windows Service");
+        Console.WriteLine("[SERVICE] Kryoss Agent v2.2.2 started as Windows Service");
 
         try
         {

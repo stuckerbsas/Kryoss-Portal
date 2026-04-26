@@ -75,6 +75,9 @@ public class Machine : IAuditable
     public DateTime? KeyRotatedAt { get; set; }
     public int AuthVersion { get; set; } = 1;
 
+    // Local admins (JSON array of {name, type, source})
+    public string? LocalAdminsJson { get; set; }
+
     // Trial
     public bool IsTrial { get; set; }
     public DateTime? TrialExpiresAt { get; set; }

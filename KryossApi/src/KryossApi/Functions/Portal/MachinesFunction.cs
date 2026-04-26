@@ -135,6 +135,7 @@ public class MachinesFunction
                 m.TrialExpiresAt,
                 m.LastSeenAt,
                 m.FirstSeenAt,
+                m.LocalAdminsJson,
                 // Assessment history (last 10 runs)
                 assessmentHistory = _db.AssessmentRuns
                     .Where(r => r.MachineId == m.Id)
@@ -189,21 +190,13 @@ public class MachinesFunction
             })
             .ToListAsync();
 
-        // Load privileged/local admin accounts from latest hygiene scan
-        var latestScanId = await _db.AdHygieneScans
-            .Where(s => s.OrganizationId == machine.OrganizationId)
-            .OrderByDescending(s => s.ScannedAt)
-            .Select(s => (Guid?)s.Id)
-            .FirstOrDefaultAsync();
-
-        var adminAccounts = latestScanId.HasValue
-            ? await _db.AdHygieneFindings
-                .Where(f => f.ScanId == latestScanId.Value && (f.Status == "PrivilegedAccount" || f.Status == "LocalAdmin"))
-                .OrderBy(f => f.Status)
-                .ThenBy(f => f.Name)
-                .Select(f => new { f.Name, f.Status, f.Detail })
-                .ToListAsync()
-            : [];
+        // Per-machine local administrators (from agent payload)
+        object? localAdmins = null;
+        if (!string.IsNullOrEmpty(machine.LocalAdminsJson))
+        {
+            try { localAdmins = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(machine.LocalAdminsJson); }
+            catch { }
+        }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new
@@ -239,7 +232,7 @@ public class MachinesFunction
             machine.FirstSeenAt,
             machine.assessmentHistory,
             disks,
-            adminAccounts
+            localAdmins
         });
         return response;
     }

@@ -395,4 +395,26 @@ public static class PlatformDetector
         catch { /* fallback */ }
         return "Unknown";
     }
+
+    public static List<LocalAdminItem> EnumerateLocalAdmins()
+    {
+        var admins = new List<LocalAdminItem>();
+        try
+        {
+            using var group = new System.DirectoryServices.DirectoryEntry(
+                $"WinNT://./{Environment.MachineName}/Administrators,group");
+            foreach (var memberObj in (System.Collections.IEnumerable)group.Invoke("Members"))
+            {
+                using var member = new System.DirectoryServices.DirectoryEntry(memberObj);
+                var name = member.Name;
+                var schemaClass = member.SchemaClassName; // User or Group
+                var path = member.Path; // WinNT://DOMAIN/name or WinNT://MACHINE/name
+                var source = path.Contains($"/{Environment.MachineName}/", StringComparison.OrdinalIgnoreCase)
+                    ? "Local" : "Domain";
+                admins.Add(new LocalAdminItem { Name = name, Type = schemaClass, Source = source });
+            }
+        }
+        catch { }
+        return admins;
+    }
 }

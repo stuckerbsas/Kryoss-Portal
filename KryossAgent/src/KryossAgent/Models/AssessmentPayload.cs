@@ -35,6 +35,10 @@ public class AssessmentPayload
     [JsonPropertyName("networkDiag")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public NetworkDiagResult? NetworkDiag { get; set; }
+
+    [JsonPropertyName("localAdmins")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LocalAdminItem>? LocalAdmins { get; set; }
 }
 
 public class PlatformInfo
@@ -300,6 +304,18 @@ public class EnrollRequest
     [JsonPropertyName("productType")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int ProductType { get; set; }
+}
+
+public class LocalAdminItem
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = null!;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = null!; // User, Group
+
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = null!; // Local, Domain
 }
 
 /// <summary>
