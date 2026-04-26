@@ -10,7 +10,7 @@ namespace KryossApi.Functions.Agent;
 public class EnrollFunction
 {
     private static readonly ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _rateLimitCache = new();
-    private const int RateLimitMax = 5;
+    private const int RateLimitMax = 30;
     private static readonly TimeSpan RateLimitWindow = TimeSpan.FromMinutes(15);
 
     private readonly IEnrollmentService _enrollment;

@@ -403,7 +403,7 @@ public static class PlatformDetector
         {
             using var group = new System.DirectoryServices.DirectoryEntry(
                 $"WinNT://./{Environment.MachineName}/Administrators,group");
-            foreach (var memberObj in (System.Collections.IEnumerable)group.Invoke("Members"))
+            foreach (var memberObj in (System.Collections.IEnumerable)group.Invoke("Members")!)
             {
                 using var member = new System.DirectoryServices.DirectoryEntry(memberObj);
                 var name = member.Name;

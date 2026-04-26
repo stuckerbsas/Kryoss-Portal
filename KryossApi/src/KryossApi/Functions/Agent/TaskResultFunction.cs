@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using KryossApi.Data;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -25,7 +26,15 @@ public class TaskResultFunction
             return bad;
         }
 
-        var body = await req.ReadFromJsonAsync<TaskResultRequest>();
+        TaskResultRequest? body = null;
+        var context = req.FunctionContext;
+        if (context.Items.TryGetValue("RequestBodyBytes", out var rawObj) && rawObj is byte[] rawBytes && rawBytes.Length > 0)
+            body = JsonSerializer.Deserialize<TaskResultRequest>(rawBytes);
+        else if (req.Body.CanSeek)
+        {
+            req.Body.Position = 0;
+            body = await req.ReadFromJsonAsync<TaskResultRequest>();
+        }
         if (body is null || body.TaskId == 0)
         {
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);

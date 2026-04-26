@@ -307,6 +307,60 @@ public static class ScanCycle
         }
     }
 
+    public static async Task RunNetworkScanAsync(ApiClient apiClient, bool silent, bool verbose)
+    {
+        try
+        {
+            if (!silent) Console.Write("  Discovering network targets...");
+            var targets = await TargetDiscovery.DiscoverAsync(Array.Empty<string>());
+            if (targets.Count == 0)
+            {
+                if (!silent) Console.WriteLine(" no targets found");
+                return;
+            }
+            if (!silent) Console.WriteLine($" {targets.Count} target(s)");
+
+            if (!silent) Console.Write("  Scanning ports...");
+            var portPayload = new PortBulkPayload();
+            var sem = new SemaphoreSlim(10);
+            await Task.WhenAll(targets.Select(async t =>
+            {
+                await sem.WaitAsync();
+                try
+                {
+                    var ports = await PortScanner.ScanTcpAsync(t.Address, timeoutMs: 1000);
+                    if (ports.Count > 0)
+                        lock (portPayload.Machines)
+                            portPayload.Machines.Add(new PortPayload
+                            {
+                                MachineHostname = t.Hostname,
+                                Ports = ports.Select(p => new PortEntry
+                                {
+                                    Port = p.Port, Protocol = p.Protocol,
+                                    Status = p.Status, Service = p.Service,
+                                    Banner = p.Banner, ServiceVersion = p.ServiceVersion,
+                                }).ToList()
+                            });
+                }
+                finally { sem.Release(); }
+            }));
+
+            var totalPorts = portPayload.Machines.Sum(h => h.Ports.Count);
+            if (!silent) Console.WriteLine($" {totalPorts} open port(s) on {portPayload.Machines.Count} host(s)");
+
+            if (portPayload.Machines.Count > 0)
+                await apiClient.SubmitPortResultsBulkAsync(portPayload);
+
+            var hw = PlatformDetector.DetectHardware();
+            if (hw.ProductType == 2)
+                await RunAdHygieneAsync(apiClient, hw, silent, verbose);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  [WARN] Network scan failed: {ex.Message}");
+        }
+    }
+
     public static async Task RunAdHygieneAsync(ApiClient apiClient, HardwareInfo hardwareInfo, bool silent, bool verbose)
     {
         if (hardwareInfo.ProductType != 2) return;

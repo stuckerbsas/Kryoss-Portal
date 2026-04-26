@@ -228,6 +228,11 @@ public class EvaluationService : IEvaluationService
             if (payload.LocalAdmins is { Count: > 0 })
                 machine.LocalAdminsJson = System.Text.Json.JsonSerializer.Serialize(payload.LocalAdmins);
 
+            // Denormalized latest score for fast list queries
+            machine.LatestScore = run.GlobalScore;
+            machine.LatestGrade = run.Grade;
+            machine.LatestScanAt = run.StartedAt;
+
             if (!string.Equals(prevOsName, machine.OsName, StringComparison.Ordinal)
                 || machine.PlatformId is null)
             {

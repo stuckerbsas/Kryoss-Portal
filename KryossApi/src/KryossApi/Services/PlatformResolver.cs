@@ -63,6 +63,10 @@ public class PlatformResolver : IPlatformResolver
         if (osName.Contains("Server 2019", StringComparison.OrdinalIgnoreCase))
             return isDc ? "DC19" : "MS19";
 
+        // Server 2016 shares the same control baseline as 2019
+        if (osName.Contains("Server 2016", StringComparison.OrdinalIgnoreCase))
+            return isDc ? "DC19" : "MS19";
+
         return null;
     }
 

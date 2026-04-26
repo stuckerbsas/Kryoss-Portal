@@ -10,22 +10,28 @@ public class ServiceWorker : BackgroundService
     private readonly Stopwatch _uptime = Stopwatch.StartNew();
     private DateTime? _lastComplianceScan;
     private DateTime? _lastSnmpScan;
+    private DateTime? _lastNetworkScan;
     private PassiveListener? _passiveListener;
     private DateTime? _lastUpdateCheck;
+    private volatile bool _forceScanRequested;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Console.WriteLine("[SERVICE] Kryoss Agent v2.2.2 started as Windows Service");
+        Console.WriteLine("[SERVICE] Kryoss Agent v2.4.0 started as Windows Service");
 
-        try
+        var initialConfig = AgentConfig.Load();
+        if (initialConfig.EnablePassiveDiscovery)
         {
-            _passiveListener = new PassiveListener(verbose: false);
-            _passiveListener.Start();
-            Console.WriteLine("[SERVICE] Passive discovery started (NetBIOS/mDNS/SSDP)");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[SERVICE] Passive discovery failed to start: {ex.Message}");
+            try
+            {
+                _passiveListener = new PassiveListener(verbose: false);
+                _passiveListener.Start();
+                Console.WriteLine("[SERVICE] Passive discovery started (NetBIOS/mDNS/SSDP)");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[SERVICE] Passive discovery failed to start: {ex.Message}");
+            }
         }
 
         while (!stoppingToken.IsCancellationRequested)
@@ -44,9 +50,12 @@ public class ServiceWorker : BackgroundService
             var snmpInterval = TimeSpan.FromMinutes(config.ScanIntervalMinutes);
 
 
-            if (_lastComplianceScan is null || now - _lastComplianceScan >= complianceInterval)
+            var forceNow = _forceScanRequested;
+            if (forceNow) _forceScanRequested = false;
+
+            if (forceNow || _lastComplianceScan is null || now - _lastComplianceScan >= complianceInterval)
             {
-                Console.WriteLine($"[SERVICE] Starting compliance scan at {now:HH:mm:ss} UTC");
+                Console.WriteLine($"[SERVICE] Starting compliance scan at {now:HH:mm:ss} UTC{(forceNow ? " (FORCED from portal)" : "")}");
                 try
                 {
                     var scanResult = await ScanCycle.RunComplianceScanAsync(config, silent: true, verbose: false);
@@ -97,6 +106,26 @@ public class ServiceWorker : BackgroundService
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[SERVICE] SNMP scan error: {ex.Message}");
+                }
+            }
+
+            // Network scan (discovery + ports + AD hygiene) — only if enabled from portal
+            if (config.EnableNetworkScan)
+            {
+                var networkScanInterval = TimeSpan.FromHours(config.NetworkScanIntervalHours);
+                if (_lastNetworkScan is null || now - _lastNetworkScan >= networkScanInterval)
+                {
+                    Console.WriteLine($"[SERVICE] Starting network scan at {DateTime.UtcNow:HH:mm:ss} UTC");
+                    try
+                    {
+                        using var apiClient = new ApiClient(config);
+                        await ScanCycle.RunNetworkScanAsync(apiClient, silent: true, verbose: false);
+                        _lastNetworkScan = DateTime.UtcNow;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[SERVICE] Network scan error: {ex.Message}");
+                    }
                 }
             }
 
@@ -160,6 +189,12 @@ public class ServiceWorker : BackgroundService
 
             if (response?.NewMachineSecret is not null)
                 Console.WriteLine("[HEARTBEAT] Received machine keys — upgraded to auth v2");
+
+            if (response?.ForceScan == true)
+            {
+                Console.WriteLine("[HEARTBEAT] Portal requested immediate compliance scan");
+                _forceScanRequested = true;
+            }
 
             if (response?.PendingTasks is { Count: > 0 })
             {

@@ -11,9 +11,9 @@
 
 | Component | Current | Where | Endpoint |
 |-----------|---------|-------|----------|
-| **API** | 1.20.2 | `KryossApi.csproj` `<Version>` | `GET /v2/version` (no auth) |
-| **Portal** | 1.10.1 | `KryossPortal/package.json` `"version"` | Sidebar footer "Powered by Kryoss vX.Y.Z" |
-| **Agent** | 2.2.2 | `KryossAgent.csproj` `<Version>` | Registry `HKLM\SOFTWARE\Kryoss\Agent\Version` |
+| **API** | 1.22.5 | `KryossApi.csproj` `<Version>` | `GET /v2/version` (no auth) |
+| **Portal** | 1.12.1 | `KryossPortal/package.json` `"version"` | Sidebar footer "Powered by Kryoss vX.Y.Z" |
+| **Agent** | 2.4.1 | `KryossAgent.csproj` `<Version>` | Registry `HKLM\SOFTWARE\Kryoss\Agent\Version` |
 
 **MANDATORY — VERSION SYNC PROTOCOL:**
 
@@ -283,6 +283,7 @@ full list. Key ones:
 | 2026-04-24 | IA-2: Network Topology Discovery (Phase 1) | `snmp_device_neighbors` table persists LLDP/CDP neighbor data (was discarded, only counts stored). `TopologyFunction.cs` returns graph (nodes + edges + phantom devices). Auto-resolve: matches remoteSysName/remoteChassisId/remoteIp to known devices. Portal: D3.js force-directed graph in Network → Topology sub-tab. Migration: `058_network_topology.sql`. API 1.17.0, Portal 1.10.0. |
 | 2026-04-25 | Agent v2.1.0: Full Network Pipeline + Remediation | 9 blocks: (1) Windows Service, (2) Trial + auto-report, (3) Port banner grab, (4) Reverse DNS + ping enrichment, (5) WMI probe, (6) Passive discovery (NetBIOS/mDNS/SSDP), (7) Self-updater, (8) External exposure (server-side port scan + findings), (9) Closed-set remediation (whitelist catalog ~50 controls, tasks with rollback, agent executor). SQL: `061-066`. API 1.19.0, Agent 2.1.0. |
 | 2026-04-25 | SH-KEY: Per-machine key rotation + rate limiting | Kerberos-inspired 3-layer auth: (1) enrollment code (one-time), (2) machine_secret (long-term CSPRNG 64-byte hex), (3) session_key (48h, rotated via heartbeat). HMAC validation chain: session_key → prev_session_key (24h grace) → machine_secret (reauth) → org ApiSecret (backward compat). Per-IP enrollment rate limit (5/15min). Per-org rate limit (200/min). `KeyRotationService` handles CSPRNG generation + rotation logic. Migration `067_machine_auth_keys.sql` adds 7 columns to machines. Backward compatible: pre-v2.2 agents keep using org ApiSecret. API 1.20.0, Agent 2.2.0. |
+| 2026-04-25 | Agent Remote Configuration from Portal | Portal sets 5 config params per machine (compliance interval, SNMP interval, network scan on/off + interval, passive discovery on/off). DB columns in `machines` table (migration `069_agent_remote_config.sql`). API delivers config via heartbeat response → agent saves to registry → ServiceWorker reads each loop. Portal UI: `AgentConfigCard` in MachineDetail. PATCH `/v2/machines/{id}/agent-config`. API 1.21.0, Agent 2.3.0, Portal 1.11.0. |
 
 ---
 

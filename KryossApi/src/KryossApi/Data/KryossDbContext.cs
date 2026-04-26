@@ -262,6 +262,11 @@ public class KryossDbContext : DbContext
             e.Property(x => x.KeyRotatedAt).HasColumnName("key_rotated_at");
             e.Property(x => x.AuthVersion).HasColumnName("auth_version");
             e.Property(x => x.LocalAdminsJson).HasColumnName("local_admins_json");
+            e.Property(x => x.ConfigComplianceIntervalHours).HasColumnName("config_compliance_interval_hours");
+            e.Property(x => x.ConfigSnmpIntervalMinutes).HasColumnName("config_snmp_interval_minutes");
+            e.Property(x => x.ConfigEnableNetworkScan).HasColumnName("config_enable_network_scan");
+            e.Property(x => x.ConfigNetworkScanIntervalHours).HasColumnName("config_network_scan_interval_hours");
+            e.Property(x => x.ConfigEnablePassiveDiscovery).HasColumnName("config_enable_passive_discovery");
         });
 
         // ── Assessment ──

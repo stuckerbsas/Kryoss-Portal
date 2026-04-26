@@ -50,18 +50,15 @@ public class DashboardFunction
             return empty;
         }
 
-        // Latest run per machine: get IDs via raw SQL, then load with EF
-        var latestRunIds = await _db.Database
-            .SqlQueryRaw<Guid>(@"
-                SELECT id AS [Value] FROM (
-                    SELECT id, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY started_at DESC) AS rn
-                    FROM assessment_runs
-                ) r WHERE r.rn = 1")
-            .ToListAsync();
+        // Latest run per machine — GroupBy+Max then join back (EF Core translates this reliably)
+        var latestPerMachine = _db.AssessmentRuns
+            .Where(r => machineIds.Contains(r.MachineId))
+            .GroupBy(r => r.MachineId)
+            .Select(g => new { MachineId = g.Key, MaxStartedAt = g.Max(r => r.StartedAt) });
 
         var latestRuns = await _db.AssessmentRuns
             .AsNoTracking()
-            .Where(r => latestRunIds.Contains(r.Id) && machineIds.Contains(r.MachineId))
+            .Where(r => latestPerMachine.Any(lp => lp.MachineId == r.MachineId && lp.MaxStartedAt == r.StartedAt))
             .Select(r => new
             {
                 r.Id, r.MachineId, r.GlobalScore, r.Grade,
@@ -188,25 +185,17 @@ public class DashboardFunction
             .Select(g => new { OrgId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.OrgId, x => x.Count);
 
-        // Latest run per machine per org
-        var latestRunIdsForOrgs = await _db.Database
-            .SqlQueryRaw<Guid>(@"
-                SELECT id AS [Value] FROM (
-                    SELECT id, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY started_at DESC) AS rn
-                    FROM assessment_runs
-                ) r WHERE r.rn = 1")
-            .ToListAsync();
-
-        var latestRunsByOrg = await _db.AssessmentRuns
+        // Use denormalized latest_score on machines — no assessment_runs query needed
+        var latestRunsByOrg = await _db.Machines
             .AsNoTracking()
-            .Where(r => latestRunIdsForOrgs.Contains(r.Id) && orgIds.Contains(r.OrganizationId))
-            .GroupBy(r => r.OrganizationId)
+            .Where(m => orgIds.Contains(m.OrganizationId) && m.IsActive && m.LatestScore != null)
+            .GroupBy(m => m.OrganizationId)
             .Select(g => new
             {
                 OrgId = g.Key,
                 AssessedCount = g.Count(),
-                AvgScore = Math.Round(g.Average(r => (double)(r.GlobalScore ?? 0)), 1),
-                LastAssessment = g.Max(r => r.StartedAt)
+                AvgScore = Math.Round(g.Average(m => (double)(m.LatestScore ?? 0)), 1),
+                LastAssessment = g.Max(m => m.LatestScanAt)
             })
             .ToDictionaryAsync(x => x.OrgId);
 

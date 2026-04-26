@@ -78,6 +78,22 @@ public class Machine : IAuditable
     // Local admins (JSON array of {name, type, source})
     public string? LocalAdminsJson { get; set; }
 
+    // Remote agent configuration (portal-controlled, delivered via heartbeat)
+    public int ConfigComplianceIntervalHours { get; set; } = 24;
+    public int ConfigSnmpIntervalMinutes { get; set; } = 240;
+    public bool ConfigEnableNetworkScan { get; set; }
+    public int ConfigNetworkScanIntervalHours { get; set; } = 12;
+    public bool ConfigEnablePassiveDiscovery { get; set; } = true;
+
+    // On-demand scan trigger (portal sets, heartbeat delivers, then clears)
+    public DateTime? ForceScanRequestedAt { get; set; }
+    public Guid? ForceScanRequestedBy { get; set; }
+
+    // Denormalized latest score (updated by EvaluationService on each run)
+    public decimal? LatestScore { get; set; }
+    public string? LatestGrade { get; set; }
+    public DateTime? LatestScanAt { get; set; }
+
     // Trial
     public bool IsTrial { get; set; }
     public DateTime? TrialExpiresAt { get; set; }

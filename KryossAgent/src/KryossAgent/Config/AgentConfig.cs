@@ -34,6 +34,9 @@ public class AgentConfig
 
     public int ScanIntervalMinutes { get; set; } = 240;
     public int ComplianceIntervalHours { get; set; } = 24;
+    public bool EnableNetworkScan { get; set; }
+    public int NetworkScanIntervalHours { get; set; } = 12;
+    public bool EnablePassiveDiscovery { get; set; } = true;
 
     public bool IsEnrolled => AgentId != Guid.Empty && !string.IsNullOrEmpty(ApiKey);
 
@@ -70,6 +73,12 @@ public class AgentConfig
                 config.ScanIntervalMinutes = scanInterval;
             if (int.TryParse(key.GetValue("ComplianceIntervalHours") as string, out var compInterval) && compInterval > 0)
                 config.ComplianceIntervalHours = compInterval;
+            if (key.GetValue("EnableNetworkScan") is string ens)
+                config.EnableNetworkScan = ens == "1";
+            if (int.TryParse(key.GetValue("NetworkScanIntervalHours") as string, out var netInterval) && netInterval > 0)
+                config.NetworkScanIntervalHours = netInterval;
+            if (key.GetValue("EnablePassiveDiscovery") is string epd)
+                config.EnablePassiveDiscovery = epd != "0";
 
             var pinsRaw = key.GetValue("SpkiPins") as string;
             if (!string.IsNullOrWhiteSpace(pinsRaw))
@@ -110,6 +119,11 @@ public class AgentConfig
             key.SetValue("AssessmentId", AssessmentId.Value.ToString());
         if (AssessmentName is not null)
             key.SetValue("AssessmentName", AssessmentName);
+        key.SetValue("ScanIntervalMinutes", ScanIntervalMinutes.ToString());
+        key.SetValue("ComplianceIntervalHours", ComplianceIntervalHours.ToString());
+        key.SetValue("EnableNetworkScan", EnableNetworkScan ? "1" : "0");
+        key.SetValue("NetworkScanIntervalHours", NetworkScanIntervalHours.ToString());
+        key.SetValue("EnablePassiveDiscovery", EnablePassiveDiscovery ? "1" : "0");
 
         // ACL: SYSTEM + Administrators full control, block everyone else.
         try

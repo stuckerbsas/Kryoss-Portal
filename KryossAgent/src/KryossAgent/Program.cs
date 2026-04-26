@@ -6,7 +6,8 @@ using KryossAgent.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-// ── Kryoss Security Agent v2.0.0 ──
+// ── Kryoss Security Agent ──
+var _agentVer = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
 // Global exception handler — NEVER let the agent die silently
 AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -110,7 +111,7 @@ if (!silent)
     else
     {
         Console.WriteLine("╔══════════════════════════════════════════╗");
-        Console.WriteLine("║       Kryoss Security Agent v2.0.0      ║");
+        Console.WriteLine($"║     Kryoss Security Agent v{_agentVer,-12}║");
         Console.WriteLine("║         TeamLogic IT Assessment          ║");
         Console.WriteLine("╚══════════════════════════════════════════╝");
     }
@@ -518,7 +519,7 @@ catch (Exception ex)
 }
 
 // ── SNMP infrastructure scan ──
-var noSnmp = args.Contains("--no-snmp", StringComparer.OrdinalIgnoreCase);
+var noSnmp = aloneMode || silent || args.Contains("--no-snmp", StringComparer.OrdinalIgnoreCase);
 if (!noSnmp)
 {
     try
@@ -1125,7 +1126,7 @@ static async Task RunCollectMode(string collectPath, string[] args, bool silent,
 static void PrintHelp()
 {
     Console.WriteLine(@"
-Kryoss Security Agent v2.0.0
+Kryoss Security Agent v" + (typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0") + @"
 TeamLogic IT — Security Assessment Tool
 
 USAGE:

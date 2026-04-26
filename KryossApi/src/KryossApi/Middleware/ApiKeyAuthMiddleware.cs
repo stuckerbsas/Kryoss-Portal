@@ -177,7 +177,7 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
             {
                 var machineAuth = await db.Machines
                     .IgnoreQueryFilters()
-                    .Where(m => m.Id == machineGuid && m.OrganizationId == org.Id && m.DeletedAt == null)
+                    .Where(m => m.AgentId == machineGuid && m.OrganizationId == org.Id && m.DeletedAt == null)
                     .Select(m => new
                     {
                         m.SessionKey,

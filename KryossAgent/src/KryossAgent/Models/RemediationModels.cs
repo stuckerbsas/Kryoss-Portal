@@ -21,6 +21,31 @@ public class HeartbeatResponse
     [JsonPropertyName("newSessionKeyExpiresAt")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTime? NewSessionKeyExpiresAt { get; set; }
+
+    [JsonPropertyName("config")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AgentRemoteConfig? Config { get; set; }
+
+    [JsonPropertyName("forceScan")]
+    public bool ForceScan { get; set; }
+}
+
+public class AgentRemoteConfig
+{
+    [JsonPropertyName("complianceIntervalHours")]
+    public int ComplianceIntervalHours { get; set; } = 24;
+
+    [JsonPropertyName("snmpIntervalMinutes")]
+    public int SnmpIntervalMinutes { get; set; } = 240;
+
+    [JsonPropertyName("enableNetworkScan")]
+    public bool EnableNetworkScan { get; set; }
+
+    [JsonPropertyName("networkScanIntervalHours")]
+    public int NetworkScanIntervalHours { get; set; } = 12;
+
+    [JsonPropertyName("enablePassiveDiscovery")]
+    public bool EnablePassiveDiscovery { get; set; } = true;
 }
 
 public class PendingRemediationTask

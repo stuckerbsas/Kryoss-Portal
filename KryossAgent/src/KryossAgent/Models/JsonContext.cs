@@ -79,6 +79,7 @@ namespace KryossAgent.Models;
 [JsonSerializable(typeof(List<LocalAdminItem>))]
 [JsonSerializable(typeof(HeartbeatPayload))]
 [JsonSerializable(typeof(HeartbeatResponse))]
+[JsonSerializable(typeof(AgentRemoteConfig))]
 [JsonSerializable(typeof(PendingRemediationTask))]
 [JsonSerializable(typeof(List<PendingRemediationTask>))]
 [JsonSerializable(typeof(TaskResultPayload))]

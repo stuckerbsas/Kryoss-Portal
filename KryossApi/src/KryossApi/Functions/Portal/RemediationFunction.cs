@@ -167,6 +167,32 @@ public class RemediationFunction
         return response;
     }
 
+    [Function("Remediation_CancelTask")]
+    [RequirePermission("machines:write")]
+    public async Task<HttpResponseData> CancelTask(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "v2/remediation/tasks/{taskId}/cancel")] HttpRequestData req,
+        long taskId)
+    {
+        var task = await _db.RemediationTasks.FirstOrDefaultAsync(t => t.Id == taskId);
+        if (task is null)
+            return req.CreateResponse(HttpStatusCode.NotFound);
+
+        if (task.Status is not ("approved" or "pending"))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Only pending/approved tasks can be cancelled" });
+            return bad;
+        }
+
+        task.Status = "cancelled";
+        task.CompletedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { task.Id, task.Status });
+        return response;
+    }
+
     [Function("Remediation_History")]
     [RequirePermission("machines:read")]
     public async Task<HttpResponseData> History(

@@ -51,6 +51,7 @@ public class MachinesFunction
 
         var total = await q.CountAsync();
         var machines = await q
+            .AsNoTracking()
             .OrderBy(m => m.Hostname)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -74,17 +75,43 @@ public class MachinesFunction
                 m.FirstSeenAt,
                 m.LastHeartbeatAt,
                 m.AgentMode,
-                // Latest assessment from runs
-                latestScore = _db.AssessmentRuns
-                    .Where(r => r.MachineId == m.Id)
-                    .OrderByDescending(r => r.StartedAt)
-                    .Select(r => new { r.GlobalScore, r.Grade, r.StartedAt })
-                    .FirstOrDefault()
+                m.LatestScore,
+                m.LatestGrade,
+                m.LatestScanAt,
             }).ToListAsync();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(new { total, page, pageSize, items = machines });
+        await response.WriteAsJsonAsync(new
+        {
+            total, page, pageSize,
+            items = machines.Select(m => new
+            {
+                m.Id, m.OrganizationId, m.Hostname, m.OsName, m.OsVersion,
+                m.CpuName, m.RamGb, m.DiskType, m.IpAddress, m.DomainStatus,
+                m.AgentVersion, m.IsActive, m.IsTrial, m.TrialExpiresAt,
+                m.LastSeenAt, m.FirstSeenAt, m.LastHeartbeatAt, m.AgentMode,
+                latestScore = m.LatestScore != null ? new { globalScore = m.LatestScore, grade = m.LatestGrade, startedAt = m.LatestScanAt } : null,
+            })
+        });
         return response;
+    }
+
+    [Function("Machines_GetByHostname")]
+    public async Task<HttpResponseData> GetByHostname(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/machines/by-hostname/{hostname}")] HttpRequestData req,
+        string hostname)
+    {
+        var machineId = await _db.Machines
+            .Where(m => m.Hostname == hostname && m.IsActive)
+            .Select(m => m.Id)
+            .FirstOrDefaultAsync();
+        if (machineId == Guid.Empty)
+        {
+            var nf = req.CreateResponse(HttpStatusCode.NotFound);
+            await nf.WriteAsJsonAsync(new { error = "Machine not found" });
+            return nf;
+        }
+        return await Get(req, machineId);
     }
 
     [Function("Machines_Get")]
@@ -93,6 +120,7 @@ public class MachinesFunction
         Guid id)
     {
         var machine = await _db.Machines
+            .AsNoTracking()
             .Where(m => m.Id == id)
             .Select(m => new
             {
@@ -136,6 +164,13 @@ public class MachinesFunction
                 m.LastSeenAt,
                 m.FirstSeenAt,
                 m.LocalAdminsJson,
+                // Agent config
+                m.ConfigComplianceIntervalHours,
+                m.ConfigSnmpIntervalMinutes,
+                m.ConfigEnableNetworkScan,
+                m.ConfigNetworkScanIntervalHours,
+                m.ConfigEnablePassiveDiscovery,
+                m.ForceScanRequestedAt,
                 // Assessment history (last 10 runs)
                 assessmentHistory = _db.AssessmentRuns
                     .Where(r => r.MachineId == m.Id)
@@ -232,7 +267,17 @@ public class MachinesFunction
             machine.FirstSeenAt,
             machine.assessmentHistory,
             disks,
-            localAdmins
+            localAdmins,
+            agentConfig = new
+            {
+                complianceIntervalHours = machine.ConfigComplianceIntervalHours,
+                snmpIntervalMinutes = machine.ConfigSnmpIntervalMinutes,
+                enableNetworkScan = machine.ConfigEnableNetworkScan,
+                networkScanIntervalHours = machine.ConfigNetworkScanIntervalHours,
+                enablePassiveDiscovery = machine.ConfigEnablePassiveDiscovery,
+            },
+            scanPending = machine.ForceScanRequestedAt.HasValue,
+            scanRequestedAt = machine.ForceScanRequestedAt,
         });
         return response;
     }
@@ -374,4 +419,83 @@ public class MachinesFunction
         await resp.WriteAsJsonAsync(new { total = software.Count, items = software });
         return resp;
     }
+
+    [Function("Machines_TriggerScan")]
+    [RequirePermission("machines:write")]
+    public async Task<HttpResponseData> TriggerScan(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/machines/{machineId:guid}/trigger-scan")] HttpRequestData req,
+        Guid machineId)
+    {
+        var machine = await _db.Machines.FirstOrDefaultAsync(m => m.Id == machineId);
+        if (machine is null)
+            return req.CreateResponse(HttpStatusCode.NotFound);
+
+        if (!_user.IsAdmin)
+        {
+            var hasAccess = (_user.OrganizationId.HasValue && machine.OrganizationId == _user.OrganizationId.Value)
+                || (_user.FranchiseId.HasValue && await _db.Organizations
+                    .AnyAsync(o => o.Id == machine.OrganizationId && o.FranchiseId == _user.FranchiseId.Value));
+            if (!hasAccess)
+            {
+                var forbidden = req.CreateResponse(HttpStatusCode.Forbidden);
+                await forbidden.WriteAsJsonAsync(new { error = "Access denied" });
+                return forbidden;
+            }
+        }
+
+        machine.ForceScanRequestedAt = DateTime.UtcNow;
+        machine.ForceScanRequestedBy = _user.UserId;
+        await _db.SaveChangesAsync();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { queued = true, message = "Scan will run on next heartbeat" });
+        return response;
+    }
+
+    [Function("Machines_PatchAgentConfig")]
+    public async Task<HttpResponseData> PatchAgentConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "v2/machines/{machineId:guid}/agent-config")] HttpRequestData req,
+        Guid machineId)
+    {
+        var machine = await _db.Machines.FirstOrDefaultAsync(m => m.Id == machineId);
+        if (machine is null)
+            return req.CreateResponse(HttpStatusCode.NotFound);
+
+        var body = await req.ReadFromJsonAsync<AgentConfigPatch>();
+        if (body is null)
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        if (body.ComplianceIntervalHours.HasValue)
+            machine.ConfigComplianceIntervalHours = Math.Clamp(body.ComplianceIntervalHours.Value, 1, 168);
+        if (body.SnmpIntervalMinutes.HasValue)
+            machine.ConfigSnmpIntervalMinutes = Math.Clamp(body.SnmpIntervalMinutes.Value, 30, 1440);
+        if (body.EnableNetworkScan.HasValue)
+            machine.ConfigEnableNetworkScan = body.EnableNetworkScan.Value;
+        if (body.NetworkScanIntervalHours.HasValue)
+            machine.ConfigNetworkScanIntervalHours = Math.Clamp(body.NetworkScanIntervalHours.Value, 1, 168);
+        if (body.EnablePassiveDiscovery.HasValue)
+            machine.ConfigEnablePassiveDiscovery = body.EnablePassiveDiscovery.Value;
+
+        await _db.SaveChangesAsync();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            complianceIntervalHours = machine.ConfigComplianceIntervalHours,
+            snmpIntervalMinutes = machine.ConfigSnmpIntervalMinutes,
+            enableNetworkScan = machine.ConfigEnableNetworkScan,
+            networkScanIntervalHours = machine.ConfigNetworkScanIntervalHours,
+            enablePassiveDiscovery = machine.ConfigEnablePassiveDiscovery,
+        });
+        return response;
+    }
+}
+
+public class AgentConfigPatch
+{
+    public int? ComplianceIntervalHours { get; set; }
+    public int? SnmpIntervalMinutes { get; set; }
+    public bool? EnableNetworkScan { get; set; }
+    public int? NetworkScanIntervalHours { get; set; }
+    public bool? EnablePassiveDiscovery { get; set; }
 }

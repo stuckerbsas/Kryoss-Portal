@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -30,20 +32,43 @@ public class AgentVersionFunction
         try
         {
             var container = new BlobContainerClient(connStr, "kryoss-agent-templates");
-            var metaBlob = container.GetBlobClient("latest/version.json");
 
-            if (!await metaBlob.ExistsAsync())
+            // Prefer version.json (structured), fall back to version.txt (legacy)
+            var jsonBlob = container.GetBlobClient("latest/version.json");
+            if (await jsonBlob.ExistsAsync())
             {
-                var resp = req.CreateResponse(HttpStatusCode.OK);
-                await resp.WriteAsJsonAsync(new { version = (string?)null, message = "No update available" });
-                return resp;
+                var download = await jsonBlob.DownloadContentAsync();
+                var response = req.CreateResponse(HttpStatusCode.OK);
+                response.Headers.Add("Content-Type", "application/json");
+                await response.Body.WriteAsync(download.Value.Content.ToArray());
+                return response;
             }
 
-            var download = await metaBlob.DownloadContentAsync();
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.Body.WriteAsync(download.Value.Content.ToArray());
-            return response;
+            var txtBlob = container.GetBlobClient("latest/version.txt");
+            if (await txtBlob.ExistsAsync())
+            {
+                var download = await txtBlob.DownloadContentAsync();
+                var raw = download.Value.Content.ToString().Trim();
+                // version.txt format: "2.2.2" or "2.2.2+commithash"
+                var version = raw.Contains('+') ? raw[..raw.IndexOf('+')] : raw;
+
+                // Compute hash of the binary if available
+                string? hash = null;
+                var exeBlob = container.GetBlobClient("latest/KryossAgent.exe");
+                if (await exeBlob.ExistsAsync())
+                {
+                    var exeDownload = await exeBlob.DownloadContentAsync();
+                    hash = Convert.ToHexString(SHA256.HashData(exeDownload.Value.Content.ToArray()));
+                }
+
+                var response = req.CreateResponse(HttpStatusCode.OK);
+                await response.WriteAsJsonAsync(new { version, hash });
+                return response;
+            }
+
+            var noUpdate = req.CreateResponse(HttpStatusCode.OK);
+            await noUpdate.WriteAsJsonAsync(new { version = (string?)null, message = "No update available" });
+            return noUpdate;
         }
         catch
         {

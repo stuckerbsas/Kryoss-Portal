@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using KryossApi.Data;
 using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
@@ -33,7 +34,15 @@ public class HeartbeatFunction
             return bad;
         }
 
-        var body = await req.ReadFromJsonAsync<HeartbeatRequest>();
+        HeartbeatRequest? body = null;
+        var context = req.FunctionContext;
+        if (context.Items.TryGetValue("RequestBodyBytes", out var rawObj) && rawObj is byte[] rawBytes && rawBytes.Length > 0)
+            body = JsonSerializer.Deserialize<HeartbeatRequest>(rawBytes);
+        else if (req.Body.CanSeek)
+        {
+            req.Body.Position = 0;
+            body = await req.ReadFromJsonAsync<HeartbeatRequest>();
+        }
 
         var machine = await _db.Machines.FirstOrDefaultAsync(m => m.AgentId == agentId);
         if (machine is null)
@@ -101,6 +110,14 @@ public class HeartbeatFunction
             }
         }
 
+        // On-demand scan: check if portal requested a forced scan
+        bool forceScan = machine.ForceScanRequestedAt.HasValue;
+        if (forceScan)
+        {
+            machine.ForceScanRequestedAt = null;
+            machine.ForceScanRequestedBy = null;
+        }
+
         await _db.SaveChangesAsync();
 
         var pendingTasks = await _db.RemediationTasks
@@ -116,16 +133,34 @@ public class HeartbeatFunction
             .ToListAsync();
 
         var ok = req.CreateResponse(HttpStatusCode.OK);
-        await ok.WriteAsJsonAsync(new { ack = true, pendingTasks, newMachineSecret, newSessionKey, newSessionKeyExpiresAt });
+        var config = new
+        {
+            complianceIntervalHours = machine.ConfigComplianceIntervalHours,
+            snmpIntervalMinutes = machine.ConfigSnmpIntervalMinutes,
+            enableNetworkScan = machine.ConfigEnableNetworkScan,
+            networkScanIntervalHours = machine.ConfigNetworkScanIntervalHours,
+            enablePassiveDiscovery = machine.ConfigEnablePassiveDiscovery,
+        };
+
+        await ok.WriteAsJsonAsync(new { ack = true, pendingTasks, newMachineSecret, newSessionKey, newSessionKeyExpiresAt, config, forceScan });
         return ok;
     }
 }
 
 public class HeartbeatRequest
 {
+    [System.Text.Json.Serialization.JsonPropertyName("agentId")]
     public Guid AgentId { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("version")]
     public string? Version { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("uptimeSeconds")]
     public long UptimeSeconds { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("lastScanAt")]
     public DateTime? LastScanAt { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("mode")]
     public string? Mode { get; set; }
 }

@@ -26,7 +26,8 @@
          that aren't reachable from any call graph. Saves ~30-40 MB. -->
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>partial</TrimMode>
-    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <TrimmerSingleWarn>true</TrimmerSingleWarn>
+    <NoWarn>IL2026;IL3000</NoWarn>
 
     <!-- Explicitly disable features we don't use, so the trimmer can
          remove entire subsystems. Saves ~10 MB. -->
@@ -48,7 +49,7 @@
     <!-- Assembly info -->
     <AssemblyName>KryossAgent</AssemblyName>
     <RootNamespace>KryossAgent</RootNamespace>
-    <Version>2.2.2</Version>
+    <Version>2.4.1</Version>
     <Company>TeamLogic IT</Company>
     <Product>Kryoss Security Agent</Product>
     <Description>Security assessment agent for Kryoss platform</Description>

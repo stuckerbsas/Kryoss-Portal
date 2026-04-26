@@ -365,7 +365,17 @@ public class ApiClient : IDisposable
                 _config.SessionKey = hbResponse.NewSessionKey;
                 _config.SessionKeyExpiresAt = hbResponse.NewSessionKeyExpiresAt;
             }
-            if (hbResponse?.NewMachineSecret is not null || hbResponse?.NewSessionKey is not null)
+            bool configChanged = hbResponse?.NewMachineSecret is not null || hbResponse?.NewSessionKey is not null;
+            if (hbResponse?.Config is { } rc)
+            {
+                _config.ComplianceIntervalHours = rc.ComplianceIntervalHours;
+                _config.ScanIntervalMinutes = rc.SnmpIntervalMinutes;
+                _config.EnableNetworkScan = rc.EnableNetworkScan;
+                _config.NetworkScanIntervalHours = rc.NetworkScanIntervalHours;
+                _config.EnablePassiveDiscovery = rc.EnablePassiveDiscovery;
+                configChanged = true;
+            }
+            if (configChanged)
                 _config.Save();
             return hbResponse;
         }
