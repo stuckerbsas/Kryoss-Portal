@@ -50,6 +50,7 @@ export interface Machine {
   lastSeenAt: string | null;
   firstSeenAt: string;
   lastHeartbeatAt: string | null;
+  agentVersion: string | null;
   agentMode: string | null;
   latestScore: {
     globalScore: number | null;

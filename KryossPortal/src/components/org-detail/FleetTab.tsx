@@ -93,6 +93,7 @@ export function FleetTab() {
                 <TableHead>CPU / RAM</TableHead>
                 <TableHead>Score</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Agent</TableHead>
                 <TableHead>Last Seen</TableHead>
               </TableRow>
             </TableHeader>
@@ -141,6 +142,9 @@ export function FleetTab() {
                     >
                       {m.isActive ? 'Active' : 'Inactive'}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs font-mono">
+                    {m.agentVersion ? `v${m.agentVersion}` : '—'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatRelativeTime(m.lastSeenAt)}
