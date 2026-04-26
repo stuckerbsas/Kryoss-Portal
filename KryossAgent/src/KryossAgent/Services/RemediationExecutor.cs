@@ -16,6 +16,14 @@ public static class RemediationExecutor
         "set_account_policy",
     };
 
+    private static readonly string[] AllowedRegistryPrefixes =
+    {
+        @"HKLM\SYSTEM\CurrentControlSet\Services\",
+        @"HKLM\SOFTWARE\Policies\",
+        @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\",
+        @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\",
+    };
+
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "Kryoss", "Remediation");
@@ -74,6 +82,12 @@ public static class RemediationExecutor
             var p = JsonSerializer.Deserialize<RegistryParams>(task.Params ?? "{}");
             if (p is null || string.IsNullOrEmpty(p.Path) || string.IsNullOrEmpty(p.ValueName))
                 return Fail(task, "Invalid registry params");
+
+            if (!IsPathAllowed(p.Path))
+            {
+                Console.Error.WriteLine($"[REMEDIATE] REJECTED registry path outside whitelist: {p.Path}");
+                return Fail(task, $"Registry path not in allowed prefixes: {p.Path}");
+            }
 
             var (hive, subPath) = ParseRegistryPath(p.Path);
             if (hive is null)
@@ -223,6 +237,15 @@ public static class RemediationExecutor
     {
         // Account policies are set via net accounts / LSA — agent uses registry approach
         return Fail(task, "set_account_policy not yet implemented — use GPO");
+    }
+
+    private static bool IsPathAllowed(string path)
+    {
+        var normalized = path.Replace("HKEY_LOCAL_MACHINE\\", "HKLM\\")
+            .Replace("HKLM:", "HKLM")
+            .TrimStart('\\');
+        return AllowedRegistryPrefixes.Any(prefix =>
+            normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
     private static (RegistryKey? hive, string subPath) ParseRegistryPath(string path)

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using KryossApi.Data;
 using KryossApi.Data.Entities;
 using KryossApi.Middleware;
@@ -12,12 +13,22 @@ namespace KryossApi.Functions.Portal;
 [RequirePermission("admin:write")]
 public class RemediationFunction
 {
+    private static readonly string[] AllowedRegistryPrefixes =
+    {
+        @"HKLM\SYSTEM\CurrentControlSet\Services\",
+        @"HKLM\SOFTWARE\Policies\",
+        @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\",
+        @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\",
+    };
+
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
+    private readonly IActlogService _actlog;
 
-    public RemediationFunction(KryossDbContext db, ICurrentUserService user)
+    public RemediationFunction(KryossDbContext db, ICurrentUserService user, IActlogService actlog)
     {
         _db = db;
+        _actlog = actlog;
         _user = user;
     }
 
@@ -40,6 +51,33 @@ public class RemediationFunction
             var notFound = req.CreateResponse(HttpStatusCode.NotFound);
             await notFound.WriteAsJsonAsync(new { error = "No remediation action available for this control" });
             return notFound;
+        }
+
+        if (action.ActionType.Equals("set_registry", StringComparison.OrdinalIgnoreCase))
+        {
+            var paramsJson = body.Params ?? action.ParamsTemplate;
+            if (!string.IsNullOrEmpty(paramsJson))
+            {
+                try
+                {
+                    var regParams = JsonSerializer.Deserialize<JsonElement>(paramsJson);
+                    if (regParams.TryGetProperty("Path", out var pathProp) || regParams.TryGetProperty("path", out pathProp))
+                    {
+                        var regPath = pathProp.GetString() ?? "";
+                        var normalized = regPath.Replace("HKEY_LOCAL_MACHINE\\", "HKLM\\")
+                            .Replace("HKLM:", "HKLM").TrimStart('\\');
+                        if (!AllowedRegistryPrefixes.Any(p => normalized.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            try { await _actlog.LogAsync("WARN", "remediation", "path_rejected",
+                                message: $"Registry path rejected: {regPath}"); } catch { }
+                            var forbidden = req.CreateResponse(HttpStatusCode.BadRequest);
+                            await forbidden.WriteAsJsonAsync(new { error = "Registry path not in allowed prefixes" });
+                            return forbidden;
+                        }
+                    }
+                }
+                catch { }
+            }
         }
 
         var machine = await _db.Machines.FirstOrDefaultAsync(m => m.Id == body.MachineId);
