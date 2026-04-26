@@ -109,6 +109,18 @@ public class AutoConsentFunction
             var tenantId = authResult.TenantId;
             var fabricToken = authResult.AccessToken;
 
+            var existingTenant = await _db.M365Tenants
+                .Where(t => t.OrganizationId == orgId)
+                .Select(t => t.TenantId)
+                .FirstOrDefaultAsync();
+            if (!string.IsNullOrEmpty(existingTenant) &&
+                !existingTenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
+            {
+                _log.LogWarning("PBI auto-enable tenant mismatch: org {OrgId} has {Existing}, got {Returned}",
+                    orgId, existingTenant, tenantId);
+                return Redirect(req, BuildRedirect(orgSlug, "pbi_error=tenant_mismatch"));
+            }
+
             var spnObjectId = await ResolveSpnObjectId(tenantId);
 
             var result = await _fabric.EnableServicePrincipalAccessAsync(
@@ -225,6 +237,14 @@ public class AutoConsentFunction
 
             var armToken = authResult.AccessToken;
             var tenantId = authResult.TenantId;
+
+            if (!string.IsNullOrEmpty(tenant) && tenant != "common" &&
+                !tenant.Equals(tenantId, StringComparison.OrdinalIgnoreCase))
+            {
+                _log.LogWarning("Azure auto-assign tenant mismatch: org {OrgId} has {Existing}, got {Returned}",
+                    orgId, tenant, tenantId);
+                return Redirect(req, BuildRedirect(orgSlug, "azure_error=tenant_mismatch"));
+            }
 
             // Discover subs + assign Reader
             var (subsCount, failed, note) = await AutoAssignReader(armToken, tenantId, orgId);
