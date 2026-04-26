@@ -66,6 +66,7 @@ export function useMachines(params: {
     queryKey: ['machines', params],
     queryFn: () => apiFetch<MachineListResponse>(`/v2/machines?${qs}`),
     enabled: !!params.organizationId,
+    refetchInterval: 30_000,
   });
 }
 
@@ -90,6 +91,7 @@ export function useMachine(idOrHostname: string | undefined, organizationId?: st
     queryKey: ['machine', resolvedId],
     queryFn: () => apiFetch<MachineDetail>(`/v2/machines/${resolvedId}`),
     enabled: !!resolvedId,
+    refetchInterval: 30_000,
   });
 }
 

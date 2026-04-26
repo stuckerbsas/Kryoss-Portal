@@ -8,6 +8,7 @@ export function useFleetDashboard(organizationId?: string) {
     queryKey: ['dashboard', 'fleet', organizationId],
     queryFn: () => apiFetch<FleetDashboard>(`/v2/dashboard/fleet${qs}`),
     enabled: !!organizationId,
+    refetchInterval: 60_000,
   });
 }
 
