@@ -2,7 +2,7 @@
 
 > **Role of this file:** Single source of truth for what's done, what's queued, what's backlog. Use as orchestrator entry-point at start of every session. Update status inline as phases ship.
 >
-> **Last updated:** 2026-04-25 (agent v2.1.0 sync)
+> **Last updated:** 2026-04-26 (session: NinjaOne deploy fixes + query optimization)
 > **Owner:** Federico
 > **Orchestrator:** Claude (caveman mode default)
 
@@ -18,10 +18,10 @@
 
 ---
 
-## Current State Snapshot (2026-04-25)
+## Current State Snapshot (2026-04-26)
 
 **Shipped in production:**
-- Kryoss Agent v2.1.0 — 918 controls (827 active: 647 baseline + 80 SRV + 100 DC), 12 engines, Windows Service mode (compliance 24h / SNMP 4h / heartbeat 15min), passive discovery (NetBIOS/mDNS/SSDP), self-updater, closed-set remediation (~50 controls), port banner grab, reverse DNS + ping enrichment, WMI probe, external exposure (server-side), trial enrollment + auto-report, zero Process.Start
+- Kryoss Agent v2.4.1 — 918 controls (827 active: 647 baseline + 80 SRV + 100 DC), 12 engines, Windows Service mode (compliance 24h / SNMP 4h / heartbeat 15min), passive discovery (NetBIOS/mDNS/SSDP), self-updater (6h check), closed-set remediation (~50 controls), port banner grab, reverse DNS + ping enrichment, WMI probe, external exposure (server-side), trial enrollment + auto-report, zero Process.Start, per-machine key rotation (SH-KEY), remote config from portal via heartbeat, SNMP MAC-based dedup + HOST-RESOURCES-MIB
 - Assessment engine — 5 frameworks (CIS, NIST, HIPAA, ISO27001, PCI-DSS), 4 report types (C-Level, Technical, Preventas, Framework)
 - M365 Security Checks (50 checks) — DEPRECATED, rolled into Cloud Assessment. Portal M365 route redirects to `/cloud-assessment`. Dead files cleaned up 2026-04-20
 - Copilot Readiness Assessment — DEPRECATED as standalone (2026-04-18), Copilot Lens tab inside Cloud Assessment reads from CA scan data
@@ -37,18 +37,24 @@
 
 **In progress:** None
 
+**Shipped 2026-04-26 session:**
+- Agent v2.4.1: banner version fix (was hardcoded v2.0.0), SNMP skip in one-shot mode (--alone/--silent), remote config delivery via heartbeat
+- API v1.22.5: Server 2016→MS19/DC19 platform mapping, enrollment rate limit 5→30 (NinjaOne mass deploy), HeartbeatRequest JsonPropertyName fix (agent_mode was NULL), remediation cancel endpoint, denormalized latest_score on machines table (eliminates correlated subquery), Dashboard Fleet GroupBy+Max rewrite (EF Core 8 translatable), OrgComparison uses denormalized columns, GET /v2/machines/by-hostname/{hostname} endpoint, AsNoTracking on list/detail queries, SQL migration 071
+- Portal v1.12.1: Tasks tab in MachineDetail (remediation + scan pending + cancel button), useMachine/useResolvedMachineId rewrite (direct by-hostname call, eliminates full 100-machine list fetch)
+- NinjaOne deploy script v5.0: service mode install, legacy task migration, auto-update from blob, Defender ASR exclusion
+
 **✅ Accuracy notes resolved (2026-04-25 housekeeping):**
-- Agent `.csproj` at 2.1.0. All v2.0.0/v2.1.0 features verified (ServiceWorker, ScanCycle, PassiveListener, SelfUpdater, RemediationExecutor, WmiProbe, ExternalExposure, TargetDiscovery)
+- Agent `.csproj` at 2.4.1. All features verified through v2.4.1
 - Portal M365Tab dead files deleted, route already redirected to `/cloud-assessment`
 - CopilotReadinessFunction already returns 410 Gone (earlier audit was false negative)
 - Agent + API + master CLAUDE.md updated to match actual code state
-- SQL migrations 061-066 applied and verified (17/17 checks pass)
+- SQL migrations 061-071 applied and verified
 
 **Codebase inventory (2026-04-25 audit):**
 
 | Pillar | Metric | Count |
 |--------|--------|-------|
-| **API** | Version | 1.19.0 |
+| **API** | Version | 1.22.5 |
 | | HTTP endpoints | 163 |
 | | Entity classes | 28 |
 | | Services | 50+ |
@@ -56,19 +62,19 @@
 | | Report blocks | 35+ |
 | | Report recipes | 16 |
 | | CA pipelines | 7 (Identity, Endpoint, Data, Productivity, Azure, MailFlow, PowerBI) |
-| **Agent** | Version | 2.1.0 |
+| **Agent** | Version | 2.4.1 |
 | | Source files | 48 |
 | | Engines | 13 (12 + NetAccountCompat wrapper) |
 | | Services | 22 |
 | | CLI flags | 23 |
 | | Models | 11 files, 35+ classes |
-| **Portal** | Version | 1.10.0 |
+| **Portal** | Version | 1.12.1 |
 | | Pages | 8 |
 | | Tabs (org detail) | 18 |
 | | CA tabs | 7 |
 | | API modules | 20 |
 | | Routes | 30+ (incl. redirects) |
-| **DB** | SQL migrations | 66 (001-066, no gaps) |
+| **DB** | SQL migrations | 71 (001-071, no gaps) |
 | | Seed files | 24 |
 | | Tables | 154+ |
 | | Check/utility scripts | 7 |
@@ -663,6 +669,10 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 | 2026-04-25 | Agent v2.1.0: 9-block network pipeline + remediation | Trial enrollment, port banners, reverse DNS, WMI probe, passive discovery, self-updater, external exposure, closed-set remediation (~50 controls). SQL 061-066 |
 | 2026-04-25 | Remediation = closed-set whitelist only | Agent only executes pre-approved action types (set_registry, enable/disable_service, set_audit_policy). No arbitrary command execution. Heartbeat = task delivery channel |
 | 2026-04-25 | Self-updater checks `/v1/agent-version` every 6h | Downloads new binary, replaces exe, restarts service. No code signing yet (deferred to A-11 full version) |
+| 2026-04-26 | Denormalized `latest_score`/`latest_grade`/`latest_scan_at` on `machines` table | Eliminates correlated subquery in fleet list + org comparison. `EvaluationService` updates on each run. Migration `071_machine_latest_score.sql` |
+| 2026-04-26 | EF Core 8: GroupBy+First() → GroupBy+Max()+join-back pattern | EF Core 8 cannot translate `GroupBy().Select(g => g.OrderByDescending().First())` to SQL. Must use `GroupBy+Max()` aggregate then join. Applied to Dashboard Fleet + OrgComparison |
+| 2026-04-26 | `GET /v2/machines/by-hostname/{hostname}` endpoint | Portal hostname resolution now uses direct endpoint instead of fetching full machine list. Portal `useMachine` hook auto-detects GUID vs hostname |
+| 2026-04-26 | NinjaOne deploy v5.0: auto-installs service mode | Script detects missing service, runs `--install`, migrates legacy scheduled task, auto-updates binary from blob. v2.3.0+ agents transition to service mode on next NinjaOne run |
 
 ---
 
