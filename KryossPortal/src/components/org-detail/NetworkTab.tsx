@@ -7,9 +7,11 @@ import { ExternalScanTab } from './ExternalScanTab';
 import { NetworkSitesTab } from './NetworkSitesTab';
 import { ProtocolUsageTab } from './ProtocolUsageTab';
 import { TopologyTab } from './TopologyTab';
+import { WanHealthTab } from './WanHealthTab';
 
 const sections = [
   { value: 'topology', label: 'Topology' },
+  { value: 'wan-health', label: 'WAN Health' },
   { value: 'diagnostics', label: 'Diagnostics' },
   { value: 'ports', label: 'Ports' },
   { value: 'sites', label: 'Sites' },
@@ -37,6 +39,9 @@ export function NetworkTab() {
 
       <TabsContent value="topology">
         <TopologyTab />
+      </TabsContent>
+      <TabsContent value="wan-health">
+        <WanHealthTab />
       </TabsContent>
       <TabsContent value="diagnostics">
         <NetworkDiagnosticsTab />

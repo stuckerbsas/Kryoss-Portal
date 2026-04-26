@@ -24,6 +24,16 @@ export interface NetworkSite {
   avgLatencyMs: number | null;
   isAutoDerived: boolean;
   updatedAt: string;
+  wanScore: number | null;
+  avgJitterMs: number | null;
+  avgPacketLossPct: number | null;
+  hopCount: number | null;
+  uniqueIspCount: number;
+  monthlyCost: number | null;
+  linkType: string | null;
+  isRedundant: boolean;
+  findingCount: number;
+  criticalCount: number;
 }
 
 export interface IpHistoryEntry {
@@ -83,6 +93,9 @@ export interface SpeedHistoryPoint {
   internetLatencyMs: number | null;
   dnsResolutionMs: number | null;
   cloudEndpointAvgMs: number | null;
+  jitterMs: number | null;
+  packetLossPct: number | null;
+  hopCount: number | null;
   machineName: string;
 }
 
@@ -138,6 +151,9 @@ export function useUpdateSite(organizationId: string | undefined) {
       siteName?: string;
       contractedDownMbps?: number;
       contractedUpMbps?: number;
+      monthlyCost?: number;
+      linkType?: string;
+      isRedundant?: boolean;
     }) =>
       apiFetch(`/v2/network-sites/${data.siteId}`, {
         method: 'PATCH',
@@ -145,6 +161,80 @@ export function useUpdateSite(organizationId: string | undefined) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['network-sites', organizationId] });
+      qc.invalidateQueries({ queryKey: ['wan-health', organizationId] });
     },
+  });
+}
+
+// WAN Health
+
+export interface WanFinding {
+  severity: string;
+  category: string;
+  title: string;
+  detail: string | null;
+  metricValue: number | null;
+  metricThreshold: number | null;
+}
+
+export interface WanSiteSummary {
+  id: string;
+  siteName: string;
+  publicIp: string | null;
+  geoCity: string | null;
+  isp: string | null;
+  wanScore: number | null;
+  avgJitterMs: number | null;
+  avgPacketLossPct: number | null;
+  hopCount: number | null;
+  avgDownMbps: number | null;
+  avgUpMbps: number | null;
+  avgLatencyMs: number | null;
+  contractedDownMbps: number | null;
+  contractedUpMbps: number | null;
+  monthlyCost: number | null;
+  linkType: string | null;
+  isRedundant: boolean;
+  uniqueIspCount: number;
+  agentCount: number;
+  findings: WanFinding[];
+}
+
+export interface WanHealthResponse {
+  orgScore: number;
+  summary: { severity: string; count: number }[];
+  sites: WanSiteSummary[];
+}
+
+export function useWanHealth(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['wan-health', organizationId],
+    queryFn: () =>
+      apiFetch<WanHealthResponse>(
+        `/v2/network-sites/wan-health?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+export interface TracerouteEntry {
+  machineId: string;
+  machineName: string;
+  tracerouteTarget: string | null;
+  tracerouteJson: string | null;
+  hopCount: number | null;
+  jitterMs: number | null;
+  packetLossPct: number | null;
+  scannedAt: string;
+}
+
+export function useSiteTraceroute(siteId: string | undefined) {
+  return useQuery({
+    queryKey: ['site-traceroute', siteId],
+    queryFn: () =>
+      apiFetch<TracerouteEntry[]>(
+        `/v2/network-sites/${siteId}/traceroute`,
+      ),
+    enabled: !!siteId,
   });
 }
