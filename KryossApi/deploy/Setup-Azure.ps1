@@ -73,8 +73,8 @@ Write-Host "        Subscription: $($account.name) ($($account.id))" -Foreground
 if (-not $SqlAdminPassword) {
     $SqlAdminPassword = Read-Host -Prompt "  Enter SQL admin password (min 8 chars, upper+lower+number+special)" -AsSecureString
 }
-$sqlPwd = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SqlAdminPassword))
+# Extract password via NetworkCredential for single-use (no persistent plaintext variable)
+$sqlCred = New-Object System.Net.NetworkCredential("", $SqlAdminPassword)
 
 if (-not $SkipInfra) {
 
@@ -94,7 +94,7 @@ az sql server create `
     --resource-group $ResourceGroup `
     --location $Location `
     --admin-user $SqlAdminUser `
-    --admin-password $sqlPwd `
+    --admin-password $($sqlCred.Password) `
     --output none
 
 # Allow Azure services to access
@@ -184,7 +184,7 @@ Write-Host "        Done." -ForegroundColor Green
 Write-Host ""
 Write-Host "  [6/8] Configuring app settings..." -ForegroundColor Cyan
 
-$azureSqlConn = "Server=tcp:${sqlServerName}.database.windows.net,1433;Database=$sqlDbName;User ID=$SqlAdminUser;Password=$sqlPwd;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+$azureSqlConn = "Server=tcp:${sqlServerName}.database.windows.net,1433;Database=$sqlDbName;User ID=$SqlAdminUser;Password=$($sqlCred.Password);Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
 
 az functionapp config appsettings set `
     --name $funcAppName `
@@ -251,6 +251,9 @@ foreach ($file in $allSqlFiles) {
         }
     }
 }
+
+# Clean up SQL credential
+$sqlCred = $null
 
 # ─── Step 8: Deploy the Functions app ─────────────────────────────
 Write-Host ""
