@@ -72,7 +72,7 @@ public class EnrollFunction
         if (result is null)
         {
             await _actlog.LogAsync("SEC", "agent", "enrollment.failed",
-                $"Invalid or expired enrollment code attempted: {body.Code[..4]}***",
+                $"Invalid or expired code: {body.Code[..4]}*** from IP {clientIp}, hostname={body.Hostname}",
                 entityType: "EnrollmentCode");
 
             var gone = req.CreateResponse(HttpStatusCode.Gone);
@@ -81,7 +81,7 @@ public class EnrollFunction
         }
 
         await _actlog.LogAsync("SEC", "agent", "machine.enrolled",
-            $"Machine '{body.Hostname}' enrolled successfully",
+            $"Machine '{body.Hostname}' enrolled from IP {clientIp}, OS={body.Os}, code={body.Code[..4]}***",
             entityType: "Machine", entityId: result.AgentId.ToString());
 
         _logger.LogInformation("Machine {Hostname} enrolled with agent {AgentId}", body.Hostname, result.AgentId);

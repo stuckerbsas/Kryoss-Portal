@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -90,6 +91,7 @@ public class ApiClient : IDisposable
             string error;
             try { error = await response.Content.ReadAsStringAsync(); }
             catch { error = response.StatusCode.ToString(); }
+            LogAuthFailure((int)response.StatusCode, "/v1/enroll");
             throw new ApiException($"Enrollment failed ({response.StatusCode}): {error}");
         }
 
@@ -106,7 +108,10 @@ public class ApiClient : IDisposable
         var response = await _http.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
+        {
+            LogAuthFailure((int)response.StatusCode, "/v1/schedule");
             return null;
+        }
 
         return await response.Content.ReadFromJsonAsync(KryossJsonContext.Default.ScheduleResponse);
     }
@@ -125,6 +130,7 @@ public class ApiClient : IDisposable
             string error;
             try { error = await response.Content.ReadAsStringAsync(); }
             catch { error = response.StatusCode.ToString(); }
+            LogAuthFailure((int)response.StatusCode, "/v1/controls");
             throw new ApiException($"Get controls failed ({response.StatusCode}): {error}");
         }
 
@@ -186,6 +192,7 @@ public class ApiClient : IDisposable
             string error;
             try { error = await response.Content.ReadAsStringAsync(); }
             catch { error = response.StatusCode.ToString(); }
+            LogAuthFailure((int)response.StatusCode, "/v1/results");
             throw new ApiException($"Submit results failed ({response.StatusCode}): {error}");
         }
 
@@ -355,7 +362,11 @@ public class ApiClient : IDisposable
         try
         {
             var response = await _http.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+            {
+                LogAuthFailure((int)response.StatusCode, "/v1/heartbeat");
+                return null;
+            }
             var stream = await response.Content.ReadAsStreamAsync();
             var hbResponse = await JsonSerializer.DeserializeAsync(stream, KryossJsonContext.Default.HeartbeatResponse);
             if (hbResponse?.NewMachineSecret is not null)
@@ -549,6 +560,19 @@ public class ApiClient : IDisposable
             return await response.Content.ReadAsByteArrayAsync();
         }
         catch { return null; }
+    }
+
+    private static void LogAuthFailure(int statusCode, string endpoint)
+    {
+        if (statusCode is not (401 or 403 or 429)) return;
+        var msg = $"Auth failure on {endpoint}: HTTP {statusCode}";
+        try
+        {
+            if (!EventLog.SourceExists("KryossAgent"))
+                EventLog.CreateEventSource("KryossAgent", "Application");
+            EventLog.WriteEntry("KryossAgent", msg, EventLogEntryType.Warning, 5001);
+        }
+        catch { /* non-SYSTEM context may lack EventLog write access */ }
     }
 
     public void Dispose()
