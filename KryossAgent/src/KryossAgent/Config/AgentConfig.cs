@@ -94,17 +94,7 @@ public class AgentConfig
         return config;
     }
 
-    /// <summary>
-    /// Save config to registry after enrollment.
-    ///
-    /// v1.3.0 change: ACL is now Administrators + SYSTEM (was SYSTEM-only).
-    /// Rationale: the stateless cycle wipes credentials after every successful
-    /// upload, so persistent on-disk storage is already short-lived. A local
-    /// administrator could read the process memory anyway, so SYSTEM-only was
-    /// theater. Keeping Administrators allows re-testing from an elevated
-    /// PowerShell. Non-admin users are still blocked.
-    /// </summary>
-    public void Save()
+    public void Save(bool debugAcl = false)
     {
         using var key = Registry.LocalMachine.CreateSubKey(RegistryPath);
         key.SetValue("ApiUrl", ApiUrl);
@@ -125,12 +115,10 @@ public class AgentConfig
         key.SetValue("NetworkScanIntervalHours", NetworkScanIntervalHours.ToString());
         key.SetValue("EnablePassiveDiscovery", EnablePassiveDiscovery ? "1" : "0");
 
-        // ACL: SYSTEM + Administrators full control, block everyone else.
         try
         {
             var security = new System.Security.AccessControl.RegistrySecurity();
 
-            // SYSTEM full control
             security.AddAccessRule(new System.Security.AccessControl.RegistryAccessRule(
                 new System.Security.Principal.SecurityIdentifier(
                     System.Security.Principal.WellKnownSidType.LocalSystemSid, null),
@@ -140,22 +128,24 @@ public class AgentConfig
                 System.Security.AccessControl.PropagationFlags.None,
                 System.Security.AccessControl.AccessControlType.Allow));
 
-            // BUILTIN\Administrators full control
-            security.AddAccessRule(new System.Security.AccessControl.RegistryAccessRule(
-                new System.Security.Principal.SecurityIdentifier(
-                    System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null),
-                System.Security.AccessControl.RegistryRights.FullControl,
-                System.Security.AccessControl.InheritanceFlags.ContainerInherit |
-                    System.Security.AccessControl.InheritanceFlags.ObjectInherit,
-                System.Security.AccessControl.PropagationFlags.None,
-                System.Security.AccessControl.AccessControlType.Allow));
+            if (debugAcl)
+            {
+                Console.Error.WriteLine("[WARN] --debug-acl: registry ACL includes Administrators (testing only)");
+                security.AddAccessRule(new System.Security.AccessControl.RegistryAccessRule(
+                    new System.Security.Principal.SecurityIdentifier(
+                        System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null),
+                    System.Security.AccessControl.RegistryRights.FullControl,
+                    System.Security.AccessControl.InheritanceFlags.ContainerInherit |
+                        System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                    System.Security.AccessControl.PropagationFlags.None,
+                    System.Security.AccessControl.AccessControlType.Allow));
+            }
 
             security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
             key.SetAccessControl(security);
         }
         catch
         {
-            // Non-critical — best effort. Log if verbose.
             if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
                 Console.Error.WriteLine("[WARN] Failed to set ACL on registry key.");
         }

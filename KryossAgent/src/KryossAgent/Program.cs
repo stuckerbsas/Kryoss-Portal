@@ -60,7 +60,7 @@ var knownFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "--code", "--api-url", "--threads", "--targets", "--targets-file",
     "--discover-ad", "--discover-arp", "--discover-subnet",
     "--offline", "--share", "--collect",
-    "--install", "--uninstall", "--service", "--trial",
+    "--install", "--uninstall", "--service", "--trial", "--debug-acl",
 };
 foreach (var arg in args)
 {
@@ -91,6 +91,7 @@ var noPorts = args.Contains("--no-ports", StringComparer.OrdinalIgnoreCase);
 var noAd = args.Contains("--no-ad", StringComparer.OrdinalIgnoreCase);
 var noThreats = args.Contains("--no-threats", StringComparer.OrdinalIgnoreCase);
 var trialMode = args.Contains("--trial", StringComparer.OrdinalIgnoreCase);
+var debugAcl = args.Contains("--debug-acl", StringComparer.OrdinalIgnoreCase);
 if (trialMode) aloneMode = true; // trial = local scan only, no network
 
 // ── Banner (always show first, even in --scan mode) ──
@@ -282,7 +283,7 @@ if (!config.IsEnrolled)
         config.MachineSecret = enrollment.MachineSecret;
         config.SessionKey = enrollment.SessionKey;
         config.SessionKeyExpiresAt = enrollment.SessionKeyExpiresAt;
-        config.Save();
+        config.Save(debugAcl);
 
         if (silent)
         {
@@ -1069,7 +1070,7 @@ static async Task RunCollectMode(string collectPath, string[] args, bool silent,
         config.MachineSecret = enrollment.MachineSecret;
         config.SessionKey = enrollment.SessionKey;
         config.SessionKeyExpiresAt = enrollment.SessionKeyExpiresAt;
-        config.Save();
+        config.Save(debugAcl);
         if (!silent) Console.WriteLine($"  Collector enrolled.");
     }
 
