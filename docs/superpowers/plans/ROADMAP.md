@@ -2,7 +2,7 @@
 
 > **Role of this file:** Single source of truth for what's done, what's queued, what's backlog. Use as orchestrator entry-point at start of every session. Update status inline as phases ship.
 >
-> **Last updated:** 2026-04-26 (session: NinjaOne deploy fixes + query optimization)
+> **Last updated:** 2026-04-26 (session: security remediation Sprints 1-4 complete)
 > **Owner:** Federico
 > **Orchestrator:** Claude (caveman mode default)
 
@@ -21,7 +21,7 @@
 ## Current State Snapshot (2026-04-26)
 
 **Shipped in production:**
-- Kryoss Agent v2.4.1 — 918 controls (827 active: 647 baseline + 80 SRV + 100 DC), 12 engines, Windows Service mode (compliance 24h / SNMP 4h / heartbeat 15min), passive discovery (NetBIOS/mDNS/SSDP), self-updater (6h check), closed-set remediation (~50 controls), port banner grab, reverse DNS + ping enrichment, WMI probe, external exposure (server-side), trial enrollment + auto-report, zero Process.Start, per-machine key rotation (SH-KEY), remote config from portal via heartbeat, SNMP MAC-based dedup + HOST-RESOURCES-MIB
+- Kryoss Agent v2.4.4 — 918 controls (827 active: 647 baseline + 80 SRV + 100 DC), 12 engines, Windows Service mode (compliance 24h / SNMP 4h / heartbeat 15min), passive discovery (NetBIOS/mDNS/SSDP), self-updater (6h check, SHA256 mandatory), closed-set remediation (~50 controls, registry path whitelist), port banner grab, reverse DNS + ping enrichment, WMI probe, external exposure (server-side), trial enrollment + auto-report, zero Process.Start, per-machine key rotation (SH-KEY), remote config from portal via heartbeat, SNMP MAC-based dedup + HOST-RESOURCES-MIB, DPAPI offline encryption, EventLog auth failures, HMAC session key expiry check, enrollment retry with backoff
 - Assessment engine — 5 frameworks (CIS, NIST, HIPAA, ISO27001, PCI-DSS), 4 report types (C-Level, Technical, Preventas, Framework)
 - M365 Security Checks (50 checks) — DEPRECATED, rolled into Cloud Assessment. Portal M365 route redirects to `/cloud-assessment`. Dead files cleaned up 2026-04-20
 - Copilot Readiness Assessment — DEPRECATED as standalone (2026-04-18), Copilot Lens tab inside Cloud Assessment reads from CA scan data
@@ -36,6 +36,13 @@
 - **Unified Report System** — `ReportComposer` with 35+ blocks, 16 recipes: C-Level, Technical, PreventaOpener, PreventaDetailed, Framework, Proposal, Monthly, Network, CloudExecutive, ExecOnePager, M365, Compliance, Hygiene, RiskAssessment, Inventory, TestFixture. 3 SVG chart generators (Donut, Radar, Sparkline). All functional. Monthly may need Ninja data enrichment for full value.
 
 **In progress:** None
+
+**Shipped 2026-04-26 security Sprint 3+4 (9 MEDIUM + 8 LOW):**
+- API v1.22.8: SNMP JsonElement typed DTOs (M1), AutoConsent tenant mismatch validation (M2), enrollment actlog enriched with IP/OS (M9), deploy-config credentials removed (L4)
+- Agent v2.4.4: HMAC session key expiry check (M3), verbose credential leak removed (M4), EventLog on auth failures (M5), ZeroMemory on HMAC key bytes (L1), DPAPI offline payload encryption (L2), API URL documented (L7), enrollment retry with backoff (L8)
+- Portal v1.12.3: RequirePermission UI-guard comment (M6), qs() URLSearchParams helper (L6)
+- Docs: `docs/agent-service-hardening.md` (M8), deploy script retry with backoff (L5)
+- Infra-only remaining: H2 (Key Vault HSM), L3 (firewall rule on install)
 
 **Shipped 2026-04-26 security Sprint 2 (13 HIGH):**
 - API v1.22.7: /v1/schedule auth required (H1), SSL callback rejects expired/wrong-host (H3), Redis-backed NonceCache with in-memory fallback (H4), remediation registry path whitelist server-side (H8)
@@ -68,7 +75,7 @@
 
 | Pillar | Metric | Count |
 |--------|--------|-------|
-| **API** | Version | 1.22.7 |
+| **API** | Version | 1.22.8 |
 | | HTTP endpoints | 163 |
 | | Entity classes | 28 |
 | | Services | 50+ |
@@ -76,13 +83,13 @@
 | | Report blocks | 35+ |
 | | Report recipes | 16 |
 | | CA pipelines | 7 (Identity, Endpoint, Data, Productivity, Azure, MailFlow, PowerBI) |
-| **Agent** | Version | 2.4.3 |
+| **Agent** | Version | 2.4.4 |
 | | Source files | 48 |
 | | Engines | 13 (12 + NetAccountCompat wrapper) |
 | | Services | 22 |
 | | CLI flags | 23 |
 | | Models | 11 files, 35+ classes |
-| **Portal** | Version | 1.12.1 |
+| **Portal** | Version | 1.12.3 |
 | | Pages | 8 |
 | | Tabs (org detail) | 18 |
 | | CA tabs | 7 |
