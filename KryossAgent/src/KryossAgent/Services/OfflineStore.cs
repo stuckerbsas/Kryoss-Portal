@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using KryossAgent.Config;
 using KryossAgent.Models;
@@ -22,9 +23,11 @@ public static class OfflineStore
             Directory.CreateDirectory(StorePath);
             var filename = $"result_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.json";
             var path = Path.Combine(StorePath, filename);
-            var json = JsonSerializer.Serialize(payload, KryossJsonContext.Default.AssessmentPayload);
-            File.WriteAllText(path, json);
-            Console.WriteLine($"  Saved results offline: {filename}");
+            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(payload, KryossJsonContext.Default.AssessmentPayload);
+            var protectedBytes = ProtectedData.Protect(jsonBytes, null, DataProtectionScope.LocalMachine);
+            File.WriteAllBytes(path, protectedBytes);
+            CryptographicOperations.ZeroMemory(jsonBytes);
+            Console.WriteLine($"  Saved results offline (DPAPI): {filename}");
         }
         catch (Exception ex)
         {
@@ -81,8 +84,18 @@ public static class OfflineStore
         {
             try
             {
-                var json = File.ReadAllText(file);
-                var payload = JsonSerializer.Deserialize(json, KryossJsonContext.Default.AssessmentPayload);
+                var raw = File.ReadAllBytes(file);
+                byte[] jsonBytes;
+                try
+                {
+                    jsonBytes = ProtectedData.Unprotect(raw, null, DataProtectionScope.LocalMachine);
+                }
+                catch (CryptographicException)
+                {
+                    // Legacy unprotected file — read as plain text
+                    jsonBytes = raw;
+                }
+                var payload = JsonSerializer.Deserialize(jsonBytes, KryossJsonContext.Default.AssessmentPayload);
                 if (payload is not null)
                     results.Add((file, payload));
             }

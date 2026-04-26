@@ -508,12 +508,11 @@ public class ApiClient : IDisposable
             // validation in ApiKeyAuthMiddleware.cs matches this format.
             var agentId = _config.AgentId != Guid.Empty ? _config.AgentId.ToString() : "";
             var signingString = $"{timestamp}{method.Method.ToUpperInvariant()}{path}{agentId}{bodyHash}";
+            var keyBytes = Encoding.UTF8.GetBytes(signingKey);
             var signature = Convert.ToHexString(
-                HMACSHA256.HashData(
-                    Encoding.UTF8.GetBytes(signingKey),
-                    Encoding.UTF8.GetBytes(signingString)
-                )
+                HMACSHA256.HashData(keyBytes, Encoding.UTF8.GetBytes(signingString))
             ).ToLowerInvariant();
+            CryptographicOperations.ZeroMemory(keyBytes);
 
             if (Environment.GetEnvironmentVariable("KRYOSS_VERBOSE") == "1")
             {
