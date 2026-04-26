@@ -1,12 +1,17 @@
 using System.Text.Json;
 using KryossApi.Data;
 using KryossApi.Data.Entities;
+using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace KryossApi.Middleware;
 
@@ -21,26 +26,25 @@ namespace KryossApi.Middleware;
 /// Bootstrap: if no users exist at all, the first authenticated caller
 /// is auto-provisioned as super_admin to allow initial setup.
 ///
-/// HIGH-02 SECURITY WARNING: This middleware trusts X-MS-CLIENT-PRINCIPAL
-/// without cryptographic verification. Easy Auth is configured with
-/// requireAuthentication=false (AllowAnonymous), so Azure does NOT block
-/// unauthenticated requests. Security relies on:
-///   1. Azure SWA proxy strips/replaces the X-MS-CLIENT-PRINCIPAL header
-///      before forwarding — preventing client-side forgery.
-///   2. The Function App URL (func-kryoss.azurewebsites.net) MUST be
-///      firewalled to only accept traffic from the SWA backend.
-///
-/// If the Function App is directly accessible without SWA in front, an
-/// attacker can craft a fake X-MS-CLIENT-PRINCIPAL header and impersonate
-/// any user. MITIGATIONS:
-///   - Network restriction: configure Azure Networking on the Function App
-///     to accept only the SWA backend IP range.
-///   - Long-term: validate the JWT from the Authorization header directly
-///     using Microsoft.Identity.Web instead of trusting Easy Auth headers.
-///   - Alternative: set requireAuthentication=true in Easy Auth config.
+/// HIGH-02 FIX (C3): Primary auth path now validates JWT signature via OIDC
+/// discovery (Entra ID v2.0). X-MS-CLIENT-PRINCIPAL is only trusted as
+/// fallback when X-Forwarded-Host indicates the request came through Azure
+/// Static Web Apps (*.azurestaticapps.net or *kryoss*). Direct callers
+/// MUST supply a valid Authorization: Bearer token.
 /// </summary>
 public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
 {
+    private static readonly string _tenantId =
+        Environment.GetEnvironmentVariable("AzureAd__TenantId") ?? "840e016d-d1c4-4329-8cb0-670f2554525d";
+
+    private static readonly string _clientId =
+        Environment.GetEnvironmentVariable("AzureAd__ClientId") ?? "83bd6db8-3cbb-40fa-bdd4-0ef5347b1923";
+
+    private static readonly ConfigurationManager<OpenIdConnectConfiguration> _configManager =
+        new($"https://login.microsoftonline.com/{_tenantId}/v2.0/.well-known/openid-configuration",
+            new OpenIdConnectConfigurationRetriever(),
+            new HttpDocumentRetriever());
+
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var httpReq = await context.GetHttpRequestDataAsync();
@@ -68,37 +72,49 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        // Read EasyAuth header (set by Azure App Service / SWA authentication)
-        var principalHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL", out var principalValues)
-            ? principalValues.FirstOrDefault() : null;
-
         EasyAuthPrincipal? principal = null;
+        var actlog = context.InstanceServices.GetService<IActlogService>();
 
-        if (!string.IsNullOrEmpty(principalHeader))
+        // Primary path: validate JWT from Authorization header
+        var authHeader = httpReq.Headers.TryGetValues("Authorization", out var authValues)
+            ? authValues.FirstOrDefault() : null;
+
+        if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
-            // HIGH-02: Additional header check
-            var principalIdHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL-ID", out var pidValues)
-                ? pidValues.FirstOrDefault() : null;
-            if (string.IsNullOrEmpty(principalIdHeader))
-            {
-                var logger2 = context.InstanceServices.GetRequiredService<ILogger<BearerAuthMiddleware>>();
-                logger2.LogWarning("X-MS-CLIENT-PRINCIPAL present but X-MS-CLIENT-PRINCIPAL-ID missing — possible forgery attempt");
-            }
-
-            var principalJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(principalHeader));
-            principal = JsonSerializer.Deserialize<EasyAuthPrincipal>(principalJson,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var jwt = authHeader["Bearer ".Length..];
+            var logger0 = context.InstanceServices.GetRequiredService<ILogger<BearerAuthMiddleware>>();
+            principal = await ValidateJwtAsync(jwt, logger0, actlog);
         }
-        else
-        {
-            // Fallback: decode JWT from Authorization header (for local dev / direct API calls)
-            var authHeader = httpReq.Headers.TryGetValues("Authorization", out var authValues)
-                ? authValues.FirstOrDefault() : null;
 
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        // Fallback: X-MS-CLIENT-PRINCIPAL only from SWA
+        if (principal is null)
+        {
+            var principalHeader = httpReq.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL", out var principalValues)
+                ? principalValues.FirstOrDefault() : null;
+
+            if (!string.IsNullOrEmpty(principalHeader))
             {
-                var jwt = authHeader["Bearer ".Length..];
-                principal = DecodeJwtToPrincipal(jwt);
+                var forwardedHost = httpReq.Headers.TryGetValues("X-Forwarded-Host", out var fhValues)
+                    ? fhValues.FirstOrDefault() : null;
+
+                var isSwa = forwardedHost != null &&
+                    (forwardedHost.Contains(".azurestaticapps.net", StringComparison.OrdinalIgnoreCase) ||
+                     forwardedHost.Contains("kryoss", StringComparison.OrdinalIgnoreCase));
+
+                if (isSwa)
+                {
+                    var principalJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(principalHeader));
+                    principal = JsonSerializer.Deserialize<EasyAuthPrincipal>(principalJson,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                else
+                {
+                    var logger1 = context.InstanceServices.GetRequiredService<ILogger<BearerAuthMiddleware>>();
+                    logger1.LogWarning("X-MS-CLIENT-PRINCIPAL from non-SWA source rejected (Host: {Host})", forwardedHost);
+                    if (actlog != null)
+                        await actlog.LogAsync("WARN", "auth", "bearer_untrusted_header",
+                            $"X-MS-CLIENT-PRINCIPAL from non-SWA host: {forwardedHost}");
+                }
             }
         }
 
@@ -106,14 +122,6 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
         {
             var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
             await resp.WriteAsJsonAsync(new { error = "Authentication required" });
-            context.GetInvocationResult().Value = resp;
-            return;
-        }
-
-        if (principal is null)
-        {
-            var resp = httpReq.CreateResponse(System.Net.HttpStatusCode.Unauthorized);
-            await resp.WriteAsJsonAsync(new { error = "Invalid principal" });
             context.GetInvocationResult().Value = resp;
             return;
         }
@@ -298,46 +306,57 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
         await next(context);
     }
 
-    private static EasyAuthPrincipal? DecodeJwtToPrincipal(string jwt)
+    private static async Task<EasyAuthPrincipal?> ValidateJwtAsync(string jwt, ILogger logger, IActlogService? actlog)
     {
-        var parts = jwt.Split('.');
-        if (parts.Length < 2) return null;
-
         try
         {
-            var payload = parts[1];
-            // Fix base64url padding
-            payload = payload.Replace('-', '+').Replace('_', '/');
-            switch (payload.Length % 4)
-            {
-                case 2: payload += "=="; break;
-                case 3: payload += "="; break;
-            }
+            var oidcConfig = await _configManager.GetConfigurationAsync(CancellationToken.None);
 
-            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
-            var claims = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
-            if (claims is null) return null;
+            var validationParams = new TokenValidationParameters
+            {
+                ValidIssuer = $"https://login.microsoftonline.com/{_tenantId}/v2.0",
+                ValidAudiences = new[] { _clientId, $"api://{_clientId}" },
+                IssuerSigningKeys = oidcConfig.SigningKeys,
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true
+            };
+
+            var handler = new JsonWebTokenHandler();
+            var result = await handler.ValidateTokenAsync(jwt, validationParams);
+
+            if (!result.IsValid)
+            {
+                logger.LogWarning("JWT validation failed: {Error}", result.Exception?.Message);
+                if (actlog != null)
+                    await actlog.LogAsync("ERR", "auth", "bearer_jwt_invalid",
+                        result.Exception?.Message);
+                return null;
+            }
 
             var claimList = new List<EasyAuthClaim>();
-            foreach (var (key, value) in claims)
+            foreach (var claim in result.Claims)
             {
-                if (value.ValueKind == JsonValueKind.String)
-                    claimList.Add(new EasyAuthClaim { Typ = key, Val = value.GetString()! });
-                else if (value.ValueKind == JsonValueKind.Number)
-                    claimList.Add(new EasyAuthClaim { Typ = key, Val = value.GetRawText() });
+                if (claim.Value is string strVal)
+                    claimList.Add(new EasyAuthClaim { Typ = claim.Key, Val = strVal });
+                else
+                    claimList.Add(new EasyAuthClaim { Typ = claim.Key, Val = claim.Value?.ToString() ?? "" });
             }
 
-            // Map standard JWT claims to the types EasyAuth uses
-            var oid = claims.TryGetValue("oid", out var oidEl) ? oidEl.GetString() : null;
+            // Map short JWT claims to the schema URIs that downstream code expects
+            var oid = result.Claims.TryGetValue("oid", out var oidVal) ? oidVal?.ToString() : null;
             if (oid != null)
                 claimList.Add(new EasyAuthClaim { Typ = "http://schemas.microsoft.com/identity/claims/objectidentifier", Val = oid });
 
-            var tid = claims.TryGetValue("tid", out var tidEl) ? tidEl.GetString() : null;
+            var tid = result.Claims.TryGetValue("tid", out var tidVal) ? tidVal?.ToString() : null;
             if (tid != null)
                 claimList.Add(new EasyAuthClaim { Typ = "http://schemas.microsoft.com/identity/claims/tenantid", Val = tid });
 
-            var email = claims.TryGetValue("preferred_username", out var emailEl) ? emailEl.GetString()
-                : claims.TryGetValue("email", out emailEl) ? emailEl.GetString() : null;
+            var email = result.Claims.TryGetValue("preferred_username", out var emailVal) ? emailVal?.ToString()
+                : result.Claims.TryGetValue("email", out emailVal) ? emailVal?.ToString() : null;
+
+            logger.LogInformation("JWT validated for OID {Oid}", oid);
 
             return new EasyAuthPrincipal
             {
@@ -346,8 +365,11 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
                 UserDetails = email
             };
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogWarning(ex, "JWT validation exception");
+            if (actlog != null)
+                await actlog.LogAsync("ERR", "auth", "bearer_jwt_invalid", ex.Message);
             return null;
         }
     }
