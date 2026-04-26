@@ -32,8 +32,11 @@ import {
   Users,
   Settings,
   Play,
+  ClipboardList,
+  XCircle,
 } from 'lucide-react';
 import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan } from '@/api/machines';
+import { useMachineTasks, useCancelTask } from '@/api/remediation';
 import type { AgentConfig } from '@/api/machines';
 import { useMachinePorts } from '@/api/ports';
 import { useMachineThreats } from '@/api/threats';
@@ -695,6 +698,115 @@ function ThreatsTabContent({ machineId }: { machineId: string | undefined }) {
   );
 }
 
+// ── Tab: Tasks ──
+
+function TasksTabContent({ machineId }: { machineId: string | undefined }) {
+  const { data, isLoading } = useMachineTasks(machineId);
+  const cancel = useCancelTask(machineId);
+
+  if (isLoading) return <TabSkeleton rows={4} />;
+
+  if (!data || data.tasks.length === 0)
+    return <EmptyState icon={<ClipboardList className="size-10" />} title="No remediation tasks" description="No tasks have been created for this machine." />;
+
+  const pending = data.tasks.filter(t => t.status === 'approved' || t.status === 'pending');
+  const completed = data.tasks.filter(t => t.status !== 'approved' && t.status !== 'pending');
+
+  function taskStatusBadge(status: string) {
+    const cls: Record<string, string> = {
+      approved: 'bg-blue-100 text-blue-800',
+      pending: 'bg-yellow-100 text-yellow-800',
+      executing: 'bg-purple-100 text-purple-800',
+      completed: 'bg-green-100 text-green-800',
+      failed: 'bg-red-100 text-red-800',
+      cancelled: 'bg-gray-100 text-gray-500',
+      rolled_back: 'bg-orange-100 text-orange-800',
+    };
+    return <Badge variant="secondary" className={cls[status] ?? 'bg-gray-100 text-gray-500'}>{status}</Badge>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {pending.length > 0 && (
+        <>
+          <h4 className="text-sm font-semibold">Pending ({pending.length})</h4>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Control</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-20"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pending.map(t => (
+                  <TableRow key={t.id}>
+                    <TableCell>
+                      <span className="font-mono text-xs text-muted-foreground mr-2">{t.controlId}</span>
+                      <span className="text-sm">{t.controlName}</span>
+                    </TableCell>
+                    <TableCell className="text-sm">{t.actionType}</TableCell>
+                    <TableCell>{taskStatusBadge(t.status)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{formatDate(t.createdAt)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        disabled={cancel.isPending}
+                        onClick={() => cancel.mutate(t.id)}
+                      >
+                        <XCircle className="size-3.5 mr-1" />
+                        Cancel
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+
+      {completed.length > 0 && (
+        <>
+          <h4 className="text-sm font-semibold text-muted-foreground">History ({completed.length})</h4>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Control</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Completed</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {completed.map(t => (
+                  <TableRow key={t.id}>
+                    <TableCell>
+                      <span className="font-mono text-xs text-muted-foreground mr-2">{t.controlId}</span>
+                      <span className="text-sm">{t.controlName}</span>
+                    </TableCell>
+                    <TableCell className="text-sm">{t.actionType}</TableCell>
+                    <TableCell>{taskStatusBadge(t.status)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{t.completedAt ? formatDate(t.completedAt) : '--'}</TableCell>
+                    <TableCell className="text-sm text-red-600 max-w-xs truncate">{t.errorMessage ?? '--'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Shared Controls View (reused by Controls and could be reused elsewhere) ──
 
 function ControlResultsView({ run, severity, setSeverity, status, setStatus, search, setSearch }: any) {
@@ -898,6 +1010,9 @@ export function MachineDetail() {
           <TabsTrigger value="ports" className="gap-1.5">
             <Plug className="size-3.5" /> Ports
           </TabsTrigger>
+          <TabsTrigger value="tasks" className="gap-1.5">
+            <ClipboardList className="size-3.5" /> Tasks
+          </TabsTrigger>
           <TabsTrigger value="history" className="gap-1.5">
             <History className="size-3.5" /> History
           </TabsTrigger>
@@ -925,6 +1040,10 @@ export function MachineDetail() {
 
         <TabsContent value="ports">
           <PortsTabContent machineId={machineId} />
+        </TabsContent>
+
+        <TabsContent value="tasks">
+          <TasksTabContent machineId={machineId} />
         </TabsContent>
 
         <TabsContent value="history">
