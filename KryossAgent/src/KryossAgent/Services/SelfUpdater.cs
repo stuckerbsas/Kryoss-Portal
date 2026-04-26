@@ -31,7 +31,6 @@ public static class SelfUpdater
             var exePath = Environment.ProcessPath ?? typeof(SelfUpdater).Assembly.Location;
             var dir = Path.GetDirectoryName(exePath)!;
             var tempPath = Path.Combine(dir, "KryossAgent.update.exe");
-            var backupPath = Path.Combine(dir, "KryossAgent.backup.exe");
 
             // Download new binary
             var bytes = await client.DownloadAgentBinaryAsync();
@@ -55,39 +54,13 @@ public static class SelfUpdater
             // Write to temp
             await File.WriteAllBytesAsync(tempPath, bytes);
 
-            // Backup current
-            if (File.Exists(exePath))
-                File.Copy(exePath, backupPath, overwrite: true);
+            Log($"Update to v{versionInfo.Version} staged at {tempPath}");
+            Console.WriteLine($"[UPDATE] v{versionInfo.Version} staged. Exiting for SCM restart...");
 
-            // Replace: can't replace running exe directly on Windows.
-            // Write a small batch script that waits, replaces, and restarts the service.
-            var batPath = Path.Combine(dir, "kryoss-update.bat");
-            var bat = $"""
-                @echo off
-                timeout /t 3 /nobreak >nul
-                sc stop KryossAgent >nul 2>&1
-                timeout /t 5 /nobreak >nul
-                copy /y "{tempPath}" "{exePath}" >nul
-                del "{tempPath}" >nul 2>&1
-                sc start KryossAgent >nul 2>&1
-                del "%~f0" >nul 2>&1
-                """;
-            File.WriteAllText(batPath, bat);
-
-            Log($"Update to v{versionInfo.Version} staged — restart will apply");
-            Console.WriteLine($"[UPDATE] Update staged. Service will restart with v{versionInfo.Version}");
-
-            // Launch the batch silently
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = $"/c \"{batPath}\"",
-                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-            });
-
-            return true;
+            // Exit with non-zero code — SCM recovery restarts the service.
+            // ServiceWorker applies the staged binary on next startup.
+            Environment.Exit(1);
+            return true; // unreachable but satisfies compiler
         }
         catch (Exception ex)
         {

@@ -15,6 +15,8 @@ internal static partial class ServiceInstaller
     private const uint SERVICE_AUTO_START = 0x2;
     private const uint SERVICE_ERROR_NORMAL = 0x1;
     private const uint SERVICE_CONFIG_DESCRIPTION = 1;
+    private const uint SERVICE_CONFIG_FAILURE_ACTIONS = 2;
+    private const int SC_ACTION_RESTART = 1;
     private const uint SERVICE_CONTROL_STOP = 0x1;
     private const uint DELETE = 0x10000;
     private const uint SERVICE_QUERY_STATUS = 0x4;
@@ -51,6 +53,10 @@ internal static partial class ServiceInstaller
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ChangeServiceConfig2(IntPtr hService, uint infoLevel, ref SERVICE_DESCRIPTION info);
 
+    [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfig2W", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ChangeServiceConfig2ForRecovery(IntPtr hService, uint infoLevel, ref SERVICE_FAILURE_ACTIONS info);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct SERVICE_STATUS
     {
@@ -68,6 +74,23 @@ internal static partial class ServiceInstaller
     {
         [MarshalAs(UnmanagedType.LPWStr)]
         public string lpDescription;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SC_ACTION
+    {
+        public int Type;
+        public uint Delay;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SERVICE_FAILURE_ACTIONS
+    {
+        public uint dwResetPeriod;
+        public IntPtr lpRebootMsg;
+        public IntPtr lpCommand;
+        public uint cActions;
+        public IntPtr lpsaActions;
     }
 
     public static void Install()
@@ -100,6 +123,29 @@ internal static partial class ServiceInstaller
             {
                 var desc = new SERVICE_DESCRIPTION { lpDescription = Description };
                 ChangeServiceConfig2(svc, SERVICE_CONFIG_DESCRIPTION, ref desc);
+
+                var actions = new SC_ACTION[]
+                {
+                    new() { Type = SC_ACTION_RESTART, Delay = 5000 },
+                    new() { Type = SC_ACTION_RESTART, Delay = 10000 },
+                    new() { Type = SC_ACTION_RESTART, Delay = 30000 },
+                };
+                var actionsPtr = Marshal.AllocHGlobal(Marshal.SizeOf<SC_ACTION>() * actions.Length);
+                try
+                {
+                    for (int i = 0; i < actions.Length; i++)
+                        Marshal.StructureToPtr(actions[i], actionsPtr + i * Marshal.SizeOf<SC_ACTION>(), false);
+                    var failureActions = new SERVICE_FAILURE_ACTIONS
+                    {
+                        dwResetPeriod = 86400,
+                        lpRebootMsg = IntPtr.Zero,
+                        lpCommand = IntPtr.Zero,
+                        cActions = (uint)actions.Length,
+                        lpsaActions = actionsPtr,
+                    };
+                    ChangeServiceConfig2ForRecovery(svc, SERVICE_CONFIG_FAILURE_ACTIONS, ref failureActions);
+                }
+                finally { Marshal.FreeHGlobal(actionsPtr); }
 
                 StartService(svc, 0, IntPtr.Zero);
                 Console.WriteLine($"  Service '{ServiceName}' installed and started.");

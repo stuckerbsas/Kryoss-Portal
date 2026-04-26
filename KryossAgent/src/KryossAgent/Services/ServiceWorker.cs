@@ -17,6 +17,25 @@ public class ServiceWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Apply staged update if present (placed by SelfUpdater before exit)
+        try
+        {
+            var exePath = Environment.ProcessPath ?? typeof(ServiceWorker).Assembly.Location;
+            var dir = Path.GetDirectoryName(exePath)!;
+            var stagedPath = Path.Combine(dir, "KryossAgent.update.exe");
+            if (File.Exists(stagedPath))
+            {
+                Console.WriteLine($"[SERVICE] Staged update found at {stagedPath} — applying");
+                File.Move(stagedPath, exePath, overwrite: true);
+                Console.WriteLine("[SERVICE] Update applied. Restarting...");
+                Environment.Exit(0);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[SERVICE] Failed to apply staged update: {ex.Message}");
+        }
+
         Console.WriteLine("[SERVICE] Kryoss Agent v2.4.0 started as Windows Service");
 
         var initialConfig = AgentConfig.Load();
