@@ -920,7 +920,7 @@ function ControlResultsView({ run, severity, setSeverity, status, setStatus, sea
 // ── Main Component ──
 
 export function MachineDetail() {
-  const { orgId, orgSlug, machineId, machineSlug } = useMachineParam();
+  const { orgSlug, machineId, machineSlug } = useMachineParam();
   const navigate = useNavigate();
 
   const { data: machine, isLoading } = useMachine(machineSlug);
