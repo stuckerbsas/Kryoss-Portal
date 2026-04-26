@@ -9,6 +9,6 @@ import { useOrgParam } from './useOrgParam';
 export function useMachineParam() {
   const { orgId, orgSlug } = useOrgParam();
   const { machineId: machineSlug } = useParams<{ machineId: string }>();
-  const machineId = useResolvedMachineId(machineSlug, orgId);
+  const machineId = useResolvedMachineId(machineSlug);
   return { machineId, machineSlug, orgId, orgSlug };
 }

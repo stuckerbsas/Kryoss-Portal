@@ -73,46 +73,26 @@ export function useMachines(params: {
   });
 }
 
-/**
- * Accepts either a GUID or a hostname. If hostname, resolves via the machine list.
- */
-export function useMachine(idOrHostname: string | undefined, organizationId?: string) {
-  const isMachineId = idOrHostname ? isGuid(idOrHostname) : false;
-
-  // If hostname, resolve from machine list
-  const { data: machineList } = useMachines({
-    organizationId,
-    pageSize: 100,
-  });
-  const resolvedId = isMachineId
-    ? idOrHostname
-    : machineList?.items.find(
-        (m) => m.hostname.toLowerCase() === idOrHostname?.toLowerCase(),
-      )?.id;
+export function useMachine(idOrHostname: string | undefined) {
+  const isId = idOrHostname ? isGuid(idOrHostname) : false;
+  const url = isId
+    ? `/v2/machines/${idOrHostname}`
+    : `/v2/machines/by-hostname/${encodeURIComponent(idOrHostname!)}`;
 
   return useQuery({
-    queryKey: ['machine', resolvedId],
-    queryFn: () => apiFetch<MachineDetail>(`/v2/machines/${resolvedId}`),
-    enabled: !!resolvedId,
+    queryKey: ['machine', idOrHostname],
+    queryFn: () => apiFetch<MachineDetail>(url),
+    enabled: !!idOrHostname,
     refetchInterval: 30_000,
   });
 }
 
-/** Get the resolved GUID for a machine hostname/id. */
 export function useResolvedMachineId(
   idOrHostname: string | undefined,
-  organizationId?: string,
 ): string | undefined {
-  const isMachineId = idOrHostname ? isGuid(idOrHostname) : false;
-  const { data: machineList } = useMachines({
-    organizationId,
-    pageSize: 100,
-  });
-
-  if (isMachineId) return idOrHostname;
-  return machineList?.items.find(
-    (m) => m.hostname.toLowerCase() === idOrHostname?.toLowerCase(),
-  )?.id;
+  if (idOrHostname && isGuid(idOrHostname)) return idOrHostname;
+  const { data } = useMachine(idOrHostname);
+  return data?.id;
 }
 
 export function useRunDetail(

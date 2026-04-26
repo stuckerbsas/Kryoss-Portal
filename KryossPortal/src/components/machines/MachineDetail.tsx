@@ -923,7 +923,7 @@ export function MachineDetail() {
   const { orgId, orgSlug, machineId, machineSlug } = useMachineParam();
   const navigate = useNavigate();
 
-  const { data: machine, isLoading } = useMachine(machineSlug, orgId);
+  const { data: machine, isLoading } = useMachine(machineSlug);
   const { data: trendData } = useTrend({ machineId, months: 6 });
   const triggerScan = useTriggerScan(machineId);
 
