@@ -33,7 +33,7 @@
 - **Network Diagnostics (Phase 5a)** — agent + API (`NetworkDiagnosticsFunction`, `SpeedTestFunction`, 3 tables, 50 controls NET-001..050) + `NetworkBlock`/`NetworkRecipe` report. Portal `NetworkDiagnosticsTab.tsx`
 - **Network Topology (IA-2 Phase 1)** — LLDP/CDP neighbor persistence, `TopologyFunction`, D3.js force-directed graph in portal `TopologyTab.tsx`
 - **Recycle Bin** — portal `RecycleBinPage` + API endpoints for soft-delete restore. NOT in previous roadmap
-- **Unified Report System** — `ReportComposer` with 35+ blocks, 16 recipes: C-Level, Technical, PreventaOpener, PreventaDetailed, Framework, Proposal, Monthly, Network, CloudExecutive, ExecOnePager, M365, Compliance, Hygiene, RiskAssessment, Inventory, TestFixture. 3 SVG chart generators (Donut, Radar, Sparkline). All functional. Monthly may need Ninja data enrichment for full value.
+- **Unified Report System (RP-EXPANSION complete)** — `ReportComposer` with 35 blocks, 16 recipes: C-Level, Technical, PreventaOpener, PreventaDetailed, Framework, Proposal, Monthly, Network, CloudExecutive, ExecOnePager, M365, Compliance, Hygiene, RiskAssessment, Inventory, TestFixture. 3 SVG chart generators (Donut, Radar, Sparkline). KpiVariant (Exec/Business/Compact), CtaMode (Simple/Stepped), AudiencePerspective (Technical/Audit). New blocks: RiskRoi, DecisionsMatrix, ControlDetail, EvidenceAppendix, CategoryBreakdown, Top3Risk, FrameworkCover, NetworkMini, NextStep. DeltaBlock removed (orphaned). All functional.
 
 **In progress:** None
 
@@ -80,7 +80,7 @@
 | | Entity classes | 28 |
 | | Services | 50+ |
 | | Middleware | 7 (ApiKeyAuth, BearerAuth, RBAC, RLS, Actlog, ErrorSanitization, SecurityHeaders) |
-| | Report blocks | 35+ |
+| | Report blocks | 35 (DeltaBlock removed) |
 | | Report recipes | 16 |
 | | CA pipelines | 7 (Identity, Endpoint, Data, Productivity, Azure, MailFlow, PowerBI) |
 | **Agent** | Version | 2.4.4 |
@@ -121,9 +121,9 @@ Execute in order. Each ships independently. Prompts ready below.
 | 7 | ~~**CA-15** Drift Alerts + Notifications~~ | ✅ shipped 2026-04-21 | 1 session | MSP retention |
 | 8 | ~~**A-SVC** Agent v2.0.0: Windows Service mode~~ | ✅ shipped 2026-04-25 | 1 session | ServiceWorker, ScanCycle, P/Invoke install |
 | 9 | ~~**A-NET** Agent v2.1.0: Full Network Pipeline + Remediation~~ | ✅ shipped 2026-04-25 | 1 session | 9 blocks: service, trial, banners, DNS+ping, WMI, passive, self-update, external exposure, remediation |
-| 10 | **RP-EXPANSION** Report Block Library Finalization | ⚪ queued | 3.25 sessions | Unlocks consistent reports across all tiers. Spec: `2026-04-20-report-block-library.md` (37 tasks, 5 phases) |
+| 10 | ~~**RP-EXPANSION** Report Block Library Finalization~~ | ✅ shipped 2026-04-26 | 3.25 sessions | 35 blocks, 16 recipes, 3 SVG chart helpers, test fixture. DeltaBlock removed (orphaned). |
 
-After active queue complete → replan from Backlog.
+**Active queue complete.** Replan from Backlog — next candidates: CA-16 (PSA), IA-3 (WAN health), CA-17 (auto-remediation).
 
 ---
 
