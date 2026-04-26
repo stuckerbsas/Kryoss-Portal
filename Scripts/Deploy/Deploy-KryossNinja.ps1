@@ -169,10 +169,23 @@ function Download-Agent {
     param([string]$Url)
     $tempPath = Join-Path $INSTALL_DIR "KryossAgent_$([Guid]::NewGuid().ToString('N')).exe.tmp"
     try {
-        Write-Log "Downloading agent from $Url..."
-        $wc = New-Object System.Net.WebClient
-        $wc.DownloadFile($Url, $tempPath)
-        $wc.Dispose()
+        $downloaded = $false
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+                Write-Log "Downloading agent from $Url (attempt $attempt/3)..."
+                $wc = New-Object System.Net.WebClient
+                $wc.DownloadFile($Url, $tempPath)
+                $wc.Dispose()
+                $downloaded = $true
+                break
+            } catch {
+                if ($attempt -lt 3) {
+                    $delay = [Math]::Pow(2, $attempt)
+                    Write-Log "Download attempt $attempt failed, retrying in ${delay}s: $_" "WARN"
+                    Start-Sleep -Seconds $delay
+                } else { throw }
+            }
+        }
 
         # Restrict ACL to SYSTEM + Administrators
         try {

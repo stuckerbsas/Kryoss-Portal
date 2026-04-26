@@ -78,24 +78,40 @@ public class ApiClient : IDisposable
         var json = JsonSerializer.Serialize(enrollBody, KryossJsonContext.Default.EnrollRequest);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        // Send hwid on enrollment so the server can bind it immediately,
-        // rather than waiting for the first signed request.
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/enroll")
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            Content = content
-        };
-        request.Headers.Add("X-Hwid", _hwid);
-        var response = await _http.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-        {
-            string error;
-            try { error = await response.Content.ReadAsStringAsync(); }
-            catch { error = response.StatusCode.ToString(); }
-            LogAuthFailure((int)response.StatusCode, "/v1/enroll");
-            throw new ApiException($"Enrollment failed ({response.StatusCode}): {error}");
-        }
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/enroll")
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            request.Headers.Add("X-Hwid", _hwid);
 
-        return await response.Content.ReadFromJsonAsync(KryossJsonContext.Default.EnrollmentResponse);
+            HttpResponseMessage response;
+            try { response = await _http.SendAsync(request); }
+            catch (Exception) when (attempt < 2)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)));
+                continue;
+            }
+
+            if ((int)response.StatusCode == 429 && attempt < 2)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)));
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string error;
+                try { error = await response.Content.ReadAsStringAsync(); }
+                catch { error = response.StatusCode.ToString(); }
+                LogAuthFailure((int)response.StatusCode, "/v1/enroll");
+                throw new ApiException($"Enrollment failed ({response.StatusCode}): {error}");
+            }
+
+            return await response.Content.ReadFromJsonAsync(KryossJsonContext.Default.EnrollmentResponse);
+        }
+        throw new ApiException("Enrollment failed after 3 attempts");
     }
 
     /// <summary>
