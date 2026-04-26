@@ -17,6 +17,7 @@ import { NetworkTab } from './components/org-detail/NetworkTab';
 import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
 import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
 import { CveFindingsTab } from './components/org-detail/CveFindingsTab';
+import { PatchComplianceTab } from './components/org-detail/PatchComplianceTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { RecycleBinPage } from './pages/RecycleBinPage';
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
               { path: 'hygiene', element: <HygieneTab /> },
               { path: 'threats', element: <ThreatsTab /> },
               { path: 'cve', element: <CveFindingsTab /> },
+              { path: 'patches', element: <PatchComplianceTab /> },
               { path: 'network', element: <NetworkTab /> },
               { path: 'm365', element: <Navigate to="../cloud-assessment" replace /> },
               { path: 'cloud-assessment', element: <CloudAssessmentTab /> },

@@ -27,6 +27,7 @@ const tabs = [
   { label: 'AD Hygiene', to: 'hygiene', end: false, permission: 'assessment:read' },
   { label: 'Threats', to: 'threats', end: false, permission: 'machines:read' },
   { label: 'CVE', to: 'cve', end: false, permission: 'machines:read' },
+  { label: 'Patches', to: 'patches', end: false, permission: 'machines:read' },
   { label: 'Network', to: 'network', end: false, permission: 'machines:read' },
   { label: 'Cloud Assessment', to: 'cloud-assessment', end: false, permission: 'assessment:read' },
   { label: 'Infra Assessment', to: 'infra-assessment', end: false, permission: 'assessment:read' },

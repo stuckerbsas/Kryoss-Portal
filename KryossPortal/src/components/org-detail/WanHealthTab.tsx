@@ -5,10 +5,8 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronRight,
-  Gauge,
   Router,
   Signal,
-  Wifi,
   XCircle,
 } from 'lucide-react';
 import { useWanHealth } from '@/api/networkSites';
