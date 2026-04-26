@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from './client';
+import { apiFetch, qs } from './client';
 
 export interface HygieneFinding {
   name: string;
@@ -28,7 +28,7 @@ export function useHygiene(organizationId: string | undefined) {
   return useQuery({
     queryKey: ['hygiene', organizationId],
     queryFn: () =>
-      apiFetch<HygieneScan>(`/v2/hygiene?organizationId=${organizationId}`),
+      apiFetch<HygieneScan>(`/v2/hygiene${qs({ organizationId })}`),
     enabled: !!organizationId,
   });
 }

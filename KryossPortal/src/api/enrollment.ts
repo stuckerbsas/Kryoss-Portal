@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from './client';
+import { apiFetch, qs } from './client';
 import type { EnrollmentCode } from '../types';
 
 export function useEnrollmentCodes(organizationId?: string) {
@@ -7,7 +7,7 @@ export function useEnrollmentCodes(organizationId?: string) {
     queryKey: ['enrollment-codes', organizationId],
     queryFn: () =>
       apiFetch<EnrollmentCode[]>(
-        `/v2/enrollment-codes?organizationId=${organizationId}`,
+        `/v2/enrollment-codes${qs({ organizationId })}`,
       ),
     enabled: !!organizationId,
   });

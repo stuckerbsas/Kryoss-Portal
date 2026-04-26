@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from './client';
+import { apiFetch, qs } from './client';
 import type { FleetDashboard } from '../types';
 
 export function useFleetDashboard(organizationId?: string) {
-  const qs = organizationId ? `?organizationId=${organizationId}` : '';
   return useQuery({
     queryKey: ['dashboard', 'fleet', organizationId],
-    queryFn: () => apiFetch<FleetDashboard>(`/v2/dashboard/fleet${qs}`),
+    queryFn: () => apiFetch<FleetDashboard>(`/v2/dashboard/fleet${qs({ organizationId })}`),
     enabled: !!organizationId,
     refetchInterval: 60_000,
   });

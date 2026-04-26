@@ -52,6 +52,14 @@ export class ApiError extends Error {
   }
 }
 
+export function qs(params: Record<string, string | number | boolean | undefined | null>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null) sp.set(k, String(v));
+  }
+  return sp.toString() ? `?${sp}` : '';
+}
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const token = await getAccessToken();
 
