@@ -3,7 +3,7 @@
     "FunctionApp":  "func-kryoss",
     "SqlAdminUser":  "kryossadmin",
     "AppInsights":  "ai-kryoss",
-    "EnrollmentCode":  "K7X9-M2P4-Q8R1-T5W3",
+    "EnrollmentCode":  "<ENROLLMENT_CODE>",
     "StorageAccount":  "stkryoss4031",
     "FunctionUrl":  "https://func-kryoss.azurewebsites.net",
     "Timestamp":  "2026-04-07 13:52:16",

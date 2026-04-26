@@ -261,10 +261,10 @@ Write-Host "  2. Run the agent (as Admin, in another terminal):" -ForegroundColo
 Write-Host "     cd KryossAgent\src\KryossAgent" -ForegroundColor Gray
 Write-Host "     dotnet run" -ForegroundColor Gray
 Write-Host "     URL:  http://localhost:7071" -ForegroundColor Gray
-Write-Host "     Code: K7X9-M2P4-Q8R1-T5W3" -ForegroundColor Gray
+Write-Host "     Code: <ENROLLMENT_CODE>" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  3. Or test with the PowerShell script:" -ForegroundColor White
 Write-Host "     .\Test-AgentFlow.ps1 -BaseUrl http://localhost:7071/v1" -ForegroundColor Gray
 Write-Host ""
-Write-Host "  Enrollment Code: K7X9-M2P4-Q8R1-T5W3" -ForegroundColor Yellow
+Write-Host "  Enrollment Code: <ENROLLMENT_CODE>" -ForegroundColor Yellow
 Write-Host ""

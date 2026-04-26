@@ -46,14 +46,14 @@
 .EXAMPLE
     .\Deploy-KryossGPO.ps1 `
         -AgentPath "C:\Temp\KryossAgent.exe" `
-        -EnrollmentCode "K7X9-M2P4-Q8R1-T5W3" `
+        -EnrollmentCode "<ENROLLMENT_CODE>" `
         -TargetOU "OU=Workstations,DC=contoso,DC=local"
 
 .EXAMPLE
     # Daily scheduled scan instead of startup
     .\Deploy-KryossGPO.ps1 `
         -AgentPath "C:\Temp\KryossAgent.exe" `
-        -EnrollmentCode "K7X9-M2P4-Q8R1-T5W3" `
+        -EnrollmentCode "<ENROLLMENT_CODE>" `
         -TargetOU "OU=Workstations,DC=contoso,DC=local" `
         -ScheduleType Scheduled
 #>

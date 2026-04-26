@@ -78,7 +78,7 @@ Deploy Kryoss Agent v1.3.0+ as a Win32 app via Microsoft Intune.
 
 | Field | Value |
 |---|---|
-| Install command | `powershell.exe -ExecutionPolicy Bypass -File install.ps1 -EnrollmentCode "K7X9-M2P4-Q8R1-T5W3"` |
+| Install command | `powershell.exe -ExecutionPolicy Bypass -File install.ps1 -EnrollmentCode "<ENROLLMENT_CODE>"` |
 | Uninstall command | `cmd.exe /c rmdir /s /q "%ProgramData%\Kryoss" && reg delete "HKLM\SOFTWARE\Kryoss" /f` |
 | Install behavior | System |
 | Device restart behavior | No specific action |

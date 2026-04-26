@@ -348,7 +348,7 @@ full list. Key ones:
    `Server: tcp:sql-kryoss.database.windows.net,1433`
    `DB: KryossDb`
    `User: kryossadmin` (password in user's local notes, don't hard-code)
-5. **Default test enrollment code:** `K7X9-M2P4-Q8R1-T5W3`
+5. **Default test enrollment code:** `<ENROLLMENT_CODE>` (see `KryossApi/sql/seed_100_test_data.sql` or DB)
 
 ---
 

@@ -13,12 +13,12 @@
 
 .EXAMPLE
     .\Test-AgentFlow.ps1 -BaseUrl "https://localhost:7071/v1"
-    .\Test-AgentFlow.ps1 -BaseUrl "https://kryoss-api.azurewebsites.net/v1" -EnrollmentCode "K7X9-M2P4-Q8R1-T5W3"
+    .\Test-AgentFlow.ps1 -BaseUrl "https://kryoss-api.azurewebsites.net/v1" -EnrollmentCode "<ENROLLMENT_CODE>"
 #>
 [CmdletBinding()]
 param(
     [string]$BaseUrl = "https://localhost:7071/v1",
-    [string]$EnrollmentCode = "K7X9-M2P4-Q8R1-T5W3",
+    [string]$EnrollmentCode = $env:KRYOSS_TEST_CODE,  # set env var, do not hardcode
     [switch]$SkipEnroll
 )
 
@@ -63,7 +63,7 @@ if (-not $SkipEnroll) {
     Write-Host "══════════════════════════════════════════════" -ForegroundColor Cyan
 
     $enrollBody = Get-Content "$scriptDir\01_enroll_request.json" -Raw
-    $enrollBody = $enrollBody -replace '"K7X9-M2P4-Q8R1-T5W3"', "`"$EnrollmentCode`""
+    $enrollBody = $enrollBody -replace '"TEST-0000-0000-0000"', "`"$EnrollmentCode`""
 
     Write-Host "  Request body:" -ForegroundColor Gray
     Write-Host $enrollBody

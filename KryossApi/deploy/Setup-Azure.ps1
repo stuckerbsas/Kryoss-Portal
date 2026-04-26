@@ -296,7 +296,7 @@ Write-Host "      POST $funcUrl/v1/enroll" -ForegroundColor White
 Write-Host "      GET  $funcUrl/v1/controls?assessmentId=1" -ForegroundColor White
 Write-Host "      POST $funcUrl/v1/results" -ForegroundColor White
 Write-Host ""
-Write-Host "    Enrollment Code: K7X9-M2P4-Q8R1-T5W3" -ForegroundColor Yellow
+Write-Host "    Enrollment Code: <ENROLLMENT_CODE>" -ForegroundColor Yellow
 Write-Host "  ====================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Test with:" -ForegroundColor Cyan
@@ -305,7 +305,7 @@ Write-Host ""
 Write-Host "  Or run the agent on any Windows machine:" -ForegroundColor Cyan
 Write-Host "    KryossAgent.exe" -ForegroundColor White
 Write-Host "    > URL:  $funcUrl" -ForegroundColor White
-Write-Host "    > Code: K7X9-M2P4-Q8R1-T5W3" -ForegroundColor White
+Write-Host "    > Code: <ENROLLMENT_CODE>" -ForegroundColor White
 Write-Host ""
 
 # ─── Save config for future reference ─────────────────────────────
@@ -320,7 +320,7 @@ $deployConfig = @{
     FunctionUrl     = $funcUrl
     StorageAccount  = $storageAccount
     AppInsights     = $appInsights
-    EnrollmentCode  = "K7X9-M2P4-Q8R1-T5W3"
+    EnrollmentCode  = "<ENROLLMENT_CODE>"
 }
 
 $configPath = Join-Path (Split-Path $MyInvocation.MyCommand.Path) "deploy-config.json"

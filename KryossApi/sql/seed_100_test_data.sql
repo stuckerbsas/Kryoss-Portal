@@ -579,7 +579,7 @@ SELECT @assessmentId, id FROM control_defs WHERE deleted_at IS NULL;
 -- ENROLLMENT CODE: Ready to use for testing
 -- =============================================
 INSERT INTO enrollment_codes (organization_id, code, assessment_id, label, expires_at, created_by)
-VALUES (@orgId, 'K7X9-M2P4-Q8R1-T5W3', @assessmentId, N'Test Enrollment Code',
+VALUES (@orgId, 'TEST-0000-0000-0000', @assessmentId, N'Test Enrollment Code',
         DATEADD(YEAR, 1, SYSUTCDATETIME()), @systemUserId);
 
 -- =============================================
@@ -632,7 +632,7 @@ UNION ALL
 SELECT 'Platform links', COUNT(*) FROM control_platforms;
 
 PRINT 'Test data seeded successfully!';
-PRINT 'Enrollment code: K7X9-M2P4-Q8R1-T5W3';
+PRINT 'Enrollment code: TEST-0000-0000-0000';
 PRINT 'Assessment ID: ' + CAST(@assessmentId AS VARCHAR);
 PRINT 'Organization: Demo Client (' + CAST(@orgId AS VARCHAR(36)) + ')';
 PRINT 'Franchise: TeamLogic IT Panama (' + CAST(@franchiseId AS VARCHAR(36)) + ')';

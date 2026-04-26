@@ -48,7 +48,7 @@ public class EnrollmentService : IEnrollmentService
 
     public async Task<string> GenerateCodeAsync(Guid organizationId, int? assessmentId, string? label, int expiryDays = 7, int? maxUses = null, bool isTrial = false, int? trialDays = null)
     {
-        var code = GenerateRandomCode(19); // K7X9-M2P4-Q8R1-T5W3 format
+        var code = GenerateRandomCode(19); // XXXX-XXXX-XXXX-XXXX format
 
         var enrollment = new EnrollmentCode
         {

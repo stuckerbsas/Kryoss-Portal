@@ -94,7 +94,7 @@
 **H-5. Enrollment Code Passed on Command Line and Visible in Process List (Program.cs, NetworkScanner.cs)**
 
 - **File:** `Program.cs`, `Services/NetworkScanner.cs`
-- **Description:** The enrollment code is passed as `--code K7X9-M2P4-Q8R1-T5W3` on the command line. In NetworkScanner (line 117), it is also forwarded to remote PsExec executions. Enrollment codes can be multi-use and represent organizational access.
+- **Description:** The enrollment code is passed as `--code <ENROLLMENT_CODE>` on the command line. In NetworkScanner (line 117), it is also forwarded to remote PsExec executions. Enrollment codes can be multi-use and represent organizational access.
 - **Risk:** Enrollment codes are visible in process listings, command history, and audit logs. If the code supports multi-use enrollment, a leaked code allows an attacker to enroll rogue machines into the organization.
 - **Recommendation:** (1) Support reading the enrollment code from a file or environment variable instead of the command line. (2) For patched binaries (which embed the code), this is less of an issue since the code is not on the command line.
 

@@ -235,7 +235,7 @@ KryossAgent.exe --install
 KryossAgent.exe --uninstall
 
 # Default: one-shot scan local + entire network
-KryossAgent.exe --code K7X9-M2P4-Q8R1-T5W3
+KryossAgent.exe --code <ENROLLMENT_CODE>
 
 # Scan only this machine (skip network scan)
 KryossAgent.exe --alone
@@ -244,11 +244,11 @@ KryossAgent.exe --alone
 KryossAgent.exe --scan --threads 20
 
 # Silent mode (for RMM/PsExec remote execution)
-KryossAgent.exe --silent --code K7X9-M2P4-Q8R1-T5W3
+KryossAgent.exe --silent --code <ENROLLMENT_CODE>
 
 # Offline collection (machines without internet)
 KryossAgent.exe --offline --share \\fileserver\kryoss-collect
-KryossAgent.exe --collect \\fileserver\kryoss-collect --code K7X9-M2P4-Q8R1-T5W3
+KryossAgent.exe --collect \\fileserver\kryoss-collect --code <ENROLLMENT_CODE>
 ```
 
 Exit codes: `0` = success, `1` = fatal error, `2` = warning/upload-deferred, `99` = unhandled exception.
