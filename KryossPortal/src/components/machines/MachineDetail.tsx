@@ -31,8 +31,9 @@ import {
   ShieldAlert,
   Users,
   Settings,
+  Play,
 } from 'lucide-react';
-import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig } from '@/api/machines';
+import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan } from '@/api/machines';
 import type { AgentConfig } from '@/api/machines';
 import { useMachinePorts } from '@/api/ports';
 import { useMachineThreats } from '@/api/threats';
@@ -797,6 +798,7 @@ export function MachineDetail() {
 
   const { data: machine, isLoading } = useMachine(machineSlug, orgId);
   const { data: trendData } = useTrend({ machineId, months: 6 });
+  const triggerScan = useTriggerScan(machineId);
 
   if (isLoading) {
     return (
@@ -856,12 +858,23 @@ export function MachineDetail() {
             {machine.osName && <span className="text-sm text-muted-foreground">{machine.osName}</span>}
           </div>
         </div>
-        {latestRun && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">Latest:</span>
-            <GradeBadge grade={latestRun.grade} score={latestRun.globalScore} />
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={triggerScan.isPending}
+            onClick={() => triggerScan.mutate()}
+          >
+            <Play className="size-3.5 mr-1" />
+            {triggerScan.isPending ? 'Queuing...' : triggerScan.isSuccess ? 'Scan Queued' : 'Run Scan'}
+          </Button>
+          {latestRun && (
+            <>
+              <span className="text-sm text-muted-foreground">Latest:</span>
+              <GradeBadge grade={latestRun.grade} score={latestRun.globalScore} />
+            </>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}

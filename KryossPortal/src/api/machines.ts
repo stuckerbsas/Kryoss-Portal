@@ -155,3 +155,14 @@ export function useUpdateAgentConfig(machineId: string | undefined) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['machine', machineId] }),
   });
 }
+
+export function useTriggerScan(machineId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ queued: boolean; message: string }>(`/v2/machines/${machineId}/trigger-scan`, {
+        method: 'POST',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['machine', machineId] }),
+  });
+}
