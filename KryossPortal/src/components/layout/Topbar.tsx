@@ -1,4 +1,5 @@
 import { useMe } from '@/api/me';
+import { msalInstance } from '@/auth/msalInstance';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -50,7 +51,7 @@ export function Topbar() {
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={() => { window.location.href = '/.auth/logout'; }}
+            onClick={() => { msalInstance.logoutRedirect({ postLogoutRedirectUri: '/' }); }}
             className="text-red-600 focus:text-red-600"
           >
             <LogOut className="h-4 w-4 mr-2" />

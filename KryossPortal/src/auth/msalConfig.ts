@@ -1,10 +1,16 @@
 import type { Configuration } from '@azure/msal-browser';
 import { LogLevel } from '@azure/msal-browser';
 
+const clientId = import.meta.env.VITE_AZURE_CLIENT_ID
+  ?? '83bd6db8-3cbb-40fa-bdd4-0ef5347b1923';
+
+const authority = import.meta.env.VITE_AZURE_AUTHORITY
+  ?? 'https://login.microsoftonline.com/840e016d-d1c4-4329-8cb0-670f2554525d';
+
 export const msalConfig: Configuration = {
   auth: {
-    clientId: '83bd6db8-3cbb-40fa-bdd4-0ef5347b1923',
-    authority: 'https://login.microsoftonline.com/840e016d-d1c4-4329-8cb0-670f2554525d',
+    clientId,
+    authority,
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
@@ -19,7 +25,7 @@ export const msalConfig: Configuration = {
 };
 
 export const loginRequest = {
-  scopes: [`api://83bd6db8-3cbb-40fa-bdd4-0ef5347b1923/.default`],
+  scopes: [`api://${clientId}/.default`],
 };
 
 export const API_BASE = import.meta.env.VITE_API_BASE

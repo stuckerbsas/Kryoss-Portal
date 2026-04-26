@@ -32,6 +32,26 @@ function toCamelCase(obj: unknown): unknown {
   return result;
 }
 
+const genericMessages: Record<number, string> = {
+  400: 'Invalid request',
+  401: 'Authentication required',
+  403: 'Access denied',
+  404: 'Not found',
+  409: 'Conflict',
+  429: 'Too many requests',
+};
+
+export class ApiError extends Error {
+  status: number;
+  traceId?: string;
+
+  constructor(message: string, status: number, traceId?: string) {
+    super(message);
+    this.status = status;
+    this.traceId = traceId;
+  }
+}
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const token = await getAccessToken();
 
@@ -46,14 +66,18 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 
   if (res.status === 401) {
     msalInstance.clearCache();
-    throw new Error('Authentication required');
+    throw new ApiError('Authentication required', 401);
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    const err = new Error(body.error || res.statusText);
-    (err as any).status = res.status;
-    throw err;
+    const body = await res.json().catch(() => ({}));
+    const traceId = (body as Record<string, unknown>)?.traceId as string | undefined;
+    const msg = genericMessages[res.status] || 'Request failed';
+    throw new ApiError(
+      traceId ? `${msg} — ref: ${traceId}` : msg,
+      res.status,
+      traceId,
+    );
   }
 
   // 204 No Content has no body
