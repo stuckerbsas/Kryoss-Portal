@@ -226,6 +226,14 @@ public class HypervisorConfigFunction
             }
         }
 
+        if (!config.VerifySsl)
+        {
+            try { await _actlog.LogAsync("WARN", "hypervisor", "ssl_relaxed",
+                entityType: "infra_hypervisor_configs", entityId: config.Id.ToString(),
+                message: $"SSL verification relaxed for '{config.DisplayName}' ({config.HostUrl})"); }
+            catch { }
+        }
+
         bool success = false;
         string? error = null;
 
@@ -233,7 +241,15 @@ public class HypervisorConfigFunction
         {
             using var handler = new HttpClientHandler();
             if (!config.VerifySsl)
-                handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+                handler.ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                {
+                    if (errors == System.Net.Security.SslPolicyErrors.None) return true;
+                    // Allow self-signed (chain error only) but reject expired or wrong hostname
+                    if (errors == System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors
+                        && cert is not null && cert.NotAfter > DateTime.UtcNow)
+                        return true;
+                    return false;
+                };
             using var http = new HttpClient(handler) { BaseAddress = new Uri(config.HostUrl.TrimEnd('/')) };
             http.Timeout = TimeSpan.FromSeconds(10);
 
