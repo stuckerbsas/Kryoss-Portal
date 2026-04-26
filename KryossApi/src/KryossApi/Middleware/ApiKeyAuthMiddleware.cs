@@ -47,8 +47,7 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
 
         // Enroll and speedtest endpoints are public (no sensitive data)
         if (path.EndsWith("/enroll", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith("/speedtest", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith("/schedule", StringComparison.OrdinalIgnoreCase))
+            path.EndsWith("/speedtest", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
