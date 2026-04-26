@@ -30,8 +30,10 @@ import {
   Plug,
   ShieldAlert,
   Users,
+  Settings,
 } from 'lucide-react';
-import { useMachine, useMachineSoftware, useRunDetail } from '@/api/machines';
+import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig } from '@/api/machines';
+import type { AgentConfig } from '@/api/machines';
 import { useMachinePorts } from '@/api/ports';
 import { useMachineThreats } from '@/api/threats';
 import { useTrend } from '@/api/dashboard';
@@ -42,6 +44,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -51,14 +55,6 @@ import {
   TableBody,
   TableCell,
 } from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-
 // ── Security categories for the Security tab ──
 const SECURITY_CATEGORIES = new Set([
   'Account Policies',
@@ -184,7 +180,7 @@ function SectionCard({ icon, title, children }: { icon: React.ReactNode; title: 
 
 // ── Tab: Overview ──
 
-function OverviewTabContent({ machine, chartData }: { machine: any; chartData: any[] | undefined }) {
+function OverviewTabContent({ machine, chartData, machineId }: { machine: any; chartData: any[] | undefined; machineId?: string }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -308,6 +304,10 @@ function OverviewTabContent({ machine, chartData }: { machine: any; chartData: a
           <InfoRow label="Last Boot" value={machine.lastBootAt ? formatDate(machine.lastBootAt) : null} />
           <InfoRow label="Last Seen" value={formatTimeAgo(machine.lastSeenAt)} />
         </SectionCard>
+
+        {machine.agentConfig && (
+          <AgentConfigCard config={machine.agentConfig} machineId={machineId} />
+        )}
       </div>
 
       {chartData && chartData.length > 0 && (
@@ -891,7 +891,7 @@ export function MachineDetail() {
         </TabsList>
 
         <TabsContent value="overview">
-          <OverviewTabContent machine={machine} chartData={chartData} />
+          <OverviewTabContent machine={machine} chartData={chartData} machineId={machine?.id} />
         </TabsContent>
 
         <TabsContent value="software">
@@ -919,5 +919,62 @@ export function MachineDetail() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId?: string }) {
+  const mutation = useUpdateAgentConfig(machineId);
+  const update = (patch: Partial<AgentConfig>) => mutation.mutate(patch);
+
+  return (
+    <SectionCard icon={<Settings className="size-4" />} title="Agent Configuration">
+      <div className="space-y-3">
+        <div className="flex justify-between items-center py-1">
+          <span className="text-sm text-muted-foreground">Compliance scan interval</span>
+          <Select value={String(config.complianceIntervalHours)} onValueChange={(v) => update({ complianceIntervalHours: Number(v) })}>
+            <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="6">6h</SelectItem>
+              <SelectItem value="12">12h</SelectItem>
+              <SelectItem value="24">24h</SelectItem>
+              <SelectItem value="48">48h</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex justify-between items-center py-1">
+          <span className="text-sm text-muted-foreground">SNMP scan interval</span>
+          <Select value={String(config.snmpIntervalMinutes)} onValueChange={(v) => update({ snmpIntervalMinutes: Number(v) })}>
+            <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="60">1h</SelectItem>
+              <SelectItem value="120">2h</SelectItem>
+              <SelectItem value="240">4h</SelectItem>
+              <SelectItem value="480">8h</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex justify-between items-center py-1">
+          <span className="text-sm text-muted-foreground">Network scan</span>
+          <div className="flex items-center gap-2">
+            {config.enableNetworkScan && (
+              <Select value={String(config.networkScanIntervalHours)} onValueChange={(v) => update({ networkScanIntervalHours: Number(v) })}>
+                <SelectTrigger className="w-20 h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="6">6h</SelectItem>
+                  <SelectItem value="12">12h</SelectItem>
+                  <SelectItem value="24">24h</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <Switch checked={config.enableNetworkScan} onCheckedChange={(v) => update({ enableNetworkScan: v })} />
+          </div>
+        </div>
+        <div className="flex justify-between items-center py-1">
+          <span className="text-sm text-muted-foreground">Passive discovery</span>
+          <Switch checked={config.enablePassiveDiscovery} onCheckedChange={(v) => update({ enablePassiveDiscovery: v })} />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground mt-2">Changes apply on next heartbeat (~15 min)</p>
+    </SectionCard>
   );
 }

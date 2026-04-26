@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './client';
 import type { Machine, RunDetail } from '../types';
 import type { AssessmentRunSummary } from '../types';
@@ -37,8 +37,18 @@ export interface MachineDetail extends Machine {
   disks: { driveLetter: string; label: string | null; diskType: string | null; totalGb: number | null; freeGb: number | null; fileSystem: string | null; }[];
   // Local administrators (per-machine, from agent)
   localAdmins: { name: string; type: string; source: string; }[] | null;
+  // Agent config (portal-controlled)
+  agentConfig: AgentConfig;
   // History
   assessmentHistory: AssessmentRunSummary[];
+}
+
+export interface AgentConfig {
+  complianceIntervalHours: number;
+  snmpIntervalMinutes: number;
+  enableNetworkScan: boolean;
+  networkScanIntervalHours: number;
+  enablePassiveDiscovery: boolean;
 }
 
 export function useMachines(params: {
@@ -129,5 +139,17 @@ export function useMachineSoftware(machineId: string | undefined) {
     queryFn: () =>
       apiFetch<SoftwareListResponse>(`/v2/machines/${machineId}/software`),
     enabled: !!machineId,
+  });
+}
+
+export function useUpdateAgentConfig(machineId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: Partial<AgentConfig>) =>
+      apiFetch<AgentConfig>(`/v2/machines/${machineId}/agent-config`, {
+        method: 'PATCH',
+        body: JSON.stringify(config),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['machine', machineId] }),
   });
 }
