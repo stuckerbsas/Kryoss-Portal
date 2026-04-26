@@ -57,6 +57,7 @@ $REG_PATH      = "HKLM:\SOFTWARE\Kryoss\Agent"
 $SERVICE_NAME  = "KryossAgent"
 $LEGACY_TASK   = "Kryoss Agent Scan"
 $DEFAULT_BLOB  = "https://stkryossagent.blob.core.windows.net/kryoss-agent-templates/latest"
+$ALLOWED_BLOB_DOMAINS = @("stkryossagent.blob.core.windows.net")
 
 # ── Logging ──
 if (-not (Test-Path $LOG_DIR)) { New-Item -Path $LOG_DIR -ItemType Directory -Force | Out-Null }
@@ -88,6 +89,19 @@ if (-not $EnrollmentCode) {
 if (-not $BlobBaseUrl) {
     if ($AgentUrl) { $BlobBaseUrl = $null }
     else { $BlobBaseUrl = $DEFAULT_BLOB }
+}
+
+# H13: Enforce HTTPS + allowed domains
+if ($BlobBaseUrl) {
+    if ($BlobBaseUrl -notmatch '^https://') {
+        Write-Log "Blob URL must use HTTPS: $BlobBaseUrl" "ERROR"
+        exit 1
+    }
+    $blobUri = [System.Uri]::new($BlobBaseUrl)
+    if ($ALLOWED_BLOB_DOMAINS -notcontains $blobUri.Host) {
+        Write-Log "Blob domain not in allowlist: $($blobUri.Host)" "ERROR"
+        exit 1
+    }
 }
 
 # ── Defender ASR exclusion ──
@@ -128,13 +142,18 @@ function Get-LocalVersion {
     return $null
 }
 
+$script:RemoteHash = $null
+
 function Get-RemoteVersion {
     param([string]$BaseUrl)
     try {
         $versionUrl = "$BaseUrl/version.txt"
         $wc = New-Object System.Net.WebClient
-        $remoteVer = $wc.DownloadString($versionUrl).Trim()
+        $content = $wc.DownloadString($versionUrl).Trim()
         $wc.Dispose()
+        $lines = $content -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+        $remoteVer = $lines[0]
+        if ($lines.Count -ge 2) { $script:RemoteHash = $lines[1] }
         # Strip +commithash suffix (e.g., "2.3.0+abc123" -> "2.3.0")
         if ($remoteVer -match '^\d+\.\d+\.\d+') {
             return $Matches[0]
@@ -148,12 +167,26 @@ function Get-RemoteVersion {
 
 function Download-Agent {
     param([string]$Url)
-    $tempPath = "$AGENT_EXE.tmp"
+    $tempPath = Join-Path $INSTALL_DIR "KryossAgent_$([Guid]::NewGuid().ToString('N')).exe.tmp"
     try {
         Write-Log "Downloading agent from $Url..."
         $wc = New-Object System.Net.WebClient
         $wc.DownloadFile($Url, $tempPath)
         $wc.Dispose()
+
+        # Restrict ACL to SYSTEM + Administrators
+        try {
+            $acl = Get-Acl $tempPath
+            $acl.SetAccessRuleProtection($true, $false)
+            $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) } | Out-Null
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "NT AUTHORITY\SYSTEM", "FullControl", "Allow")))
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "BUILTIN\Administrators", "FullControl", "Allow")))
+            Set-Acl $tempPath $acl
+        } catch {
+            Write-Log "Could not restrict temp file ACL: $_" "WARN"
+        }
 
         # Verify download is a valid PE
         $bytes = [System.IO.File]::ReadAllBytes($tempPath)
@@ -161,6 +194,19 @@ function Download-Agent {
             Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
             Write-Log "Downloaded file is not a valid executable." "ERROR"
             return $false
+        }
+
+        # H11: Verify SHA256 checksum if provided by version.txt
+        if ($script:RemoteHash) {
+            $localHash = (Get-FileHash -Path $tempPath -Algorithm SHA256).Hash
+            if ($localHash -ne $script:RemoteHash) {
+                Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
+                Write-Log "SHA256 mismatch: expected $($script:RemoteHash), got $localHash" "ERROR"
+                return $false
+            }
+            Write-Log "SHA256 checksum verified."
+        } else {
+            Write-Log "No SHA256 hash in version.txt — skipping checksum verification." "WARN"
         }
 
         # Stop service or process before replacing binary
