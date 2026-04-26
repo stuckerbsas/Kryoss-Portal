@@ -62,9 +62,25 @@ builder.Services.AddDbContextFactory<KryossDbContext>((sp, options) =>
 }, ServiceLifetime.Scoped);
 
 // ── Services ──
-// NonceCache is a SINGLETON — the whole point is in-process state that
-// outlives individual requests. See NonceCache.cs for multi-instance notes.
-builder.Services.AddSingleton<INonceCache, NonceCache>();
+// NonceCache: Redis when available (multi-instance safe), in-memory fallback.
+var redisConn = Environment.GetEnvironmentVariable("RedisConnectionString");
+if (!string.IsNullOrEmpty(redisConn))
+{
+    try
+    {
+        var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(redisConn);
+        builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(redis);
+        builder.Services.AddSingleton<INonceCache, RedisNonceCache>();
+    }
+    catch
+    {
+        builder.Services.AddSingleton<INonceCache, InMemoryNonceCache>();
+    }
+}
+else
+{
+    builder.Services.AddSingleton<INonceCache, InMemoryNonceCache>();
+}
 builder.Services.AddSingleton<IDnsLookup, DnsLookup>();
 builder.Services.AddScoped<IHwidVerifier, HwidVerifier>();
 builder.Services.AddScoped<IPlatformResolver, PlatformResolver>();
