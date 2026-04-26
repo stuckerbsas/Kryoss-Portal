@@ -10,6 +10,7 @@ public class AgentConfig
 {
     private const string RegistryPath = @"SOFTWARE\Kryoss\Agent";
 
+    // Intentional: cloud-hosted service, overridable via --api-url or binary patching. SPKI pinning (PinnedHttpHandler) guards DNS.
     public string ApiUrl { get; set; } = "https://func-kryoss.azurewebsites.net";
     public Guid AgentId { get; set; }
     public string ApiKey { get; set; } = "";

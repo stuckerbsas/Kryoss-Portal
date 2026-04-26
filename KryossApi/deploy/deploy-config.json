@@ -1,12 +1,9 @@
 {
     "SqlServer":  "sql-kryoss.database.windows.net",
     "FunctionApp":  "func-kryoss",
-    "SqlAdminUser":  "kryossadmin",
     "AppInsights":  "ai-kryoss",
-    "EnrollmentCode":  "<ENROLLMENT_CODE>",
     "StorageAccount":  "stkryoss4031",
     "FunctionUrl":  "https://func-kryoss.azurewebsites.net",
-    "Timestamp":  "2026-04-07 13:52:16",
     "ResourceGroup":  "rg-kryoss",
     "Location":  "centralus",
     "SqlDatabase":  "KryossDb"
