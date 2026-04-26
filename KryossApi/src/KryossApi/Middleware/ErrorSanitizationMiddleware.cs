@@ -60,11 +60,18 @@ public class ErrorSanitizationMiddleware : IFunctionsWorkerMiddleware
             try
             {
                 var actlog = context.InstanceServices.GetRequiredService<IActlogService>();
+                var detail = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    type = ex.GetType().FullName,
+                    message = ex.Message,
+                    stack = ex.StackTrace,
+                    inner = ex.InnerException?.Message
+                });
                 await actlog.LogAsync(
                     severity: "ERR",
-                    module: "middleware",
-                    action: $"unhandled.{context.FunctionDefinition.Name}",
-                    message: $"[{traceId}] {ex.GetType().Name}: {ex.Message}");
+                    module: "error",
+                    action: "unhandled_exception",
+                    message: $"[{traceId}] {detail}");
             }
             catch { /* actlog write must never break error handling */ }
 
@@ -82,16 +89,10 @@ public class ErrorSanitizationMiddleware : IFunctionsWorkerMiddleware
                     ? origins.First() : "*");
             resp.Headers.TryAddWithoutValidation("Access-Control-Allow-Credentials", "true");
 
-            // DEBUG MODE: expose error details until pre-production hardening.
-            // TODO(SH): revert to frozen shape before go-live.
             await resp.WriteAsJsonAsync(new
             {
                 error = "internal_error",
-                traceId,
-                debug_type = ex.GetType().FullName,
-                debug_message = ex.Message,
-                debug_stack = ex.StackTrace,
-                debug_inner = ex.InnerException?.Message
+                traceId
             });
 
             var result = context.GetInvocationResult();
