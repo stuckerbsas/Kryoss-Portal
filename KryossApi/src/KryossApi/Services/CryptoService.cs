@@ -22,6 +22,9 @@ public interface ICryptoService
     /// the AES key, then AES-256-GCM decrypt the payload, then deserialize.
     /// </summary>
     Task<T?> DecryptEnvelopeAsync<T>(Guid organizationId, AgentEnvelope envelope);
+
+    byte[] EncryptSymmetric(Guid organizationId, string orgKeyFingerprint, string plaintext);
+    string DecryptSymmetric(Guid organizationId, string orgKeyFingerprint, byte[] ciphertext);
 }
 
 /// <summary>
@@ -153,6 +156,62 @@ public class CryptoService : ICryptoService
         {
             CryptographicOperations.ZeroMemory(aesKey);
         }
+    }
+
+    public byte[] EncryptSymmetric(Guid organizationId, string orgKeyFingerprint, string plaintext)
+    {
+        var key = DeriveOrgKey(organizationId, orgKeyFingerprint);
+        try
+        {
+            var nonce = new byte[12];
+            RandomNumberGenerator.Fill(nonce);
+            var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+            var ciphertext = new byte[plaintextBytes.Length];
+            var tag = new byte[16];
+
+            using var gcm = new AesGcm(key, 16);
+            gcm.Encrypt(nonce, plaintextBytes, ciphertext, tag);
+
+            var result = new byte[12 + 16 + ciphertext.Length];
+            nonce.CopyTo(result, 0);
+            tag.CopyTo(result, 12);
+            ciphertext.CopyTo(result, 28);
+            return result;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    public string DecryptSymmetric(Guid organizationId, string orgKeyFingerprint, byte[] blob)
+    {
+        if (blob.Length < 29) throw new CryptographicException("Ciphertext too short");
+
+        var key = DeriveOrgKey(organizationId, orgKeyFingerprint);
+        try
+        {
+            var nonce = blob[..12];
+            var tag = blob[12..28];
+            var ciphertext = blob[28..];
+            var plaintext = new byte[ciphertext.Length];
+
+            using var gcm = new AesGcm(key, 16);
+            gcm.Decrypt(nonce, ciphertext, tag, plaintext);
+            return Encoding.UTF8.GetString(plaintext);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    private static byte[] DeriveOrgKey(Guid organizationId, string fingerprint)
+    {
+        var ikm = Encoding.UTF8.GetBytes(fingerprint);
+        var salt = organizationId.ToByteArray();
+        return HKDF.DeriveKey(HashAlgorithmName.SHA256, ikm, 32, salt,
+            Encoding.UTF8.GetBytes("kryoss-hypervisor-v1"));
     }
 }
 

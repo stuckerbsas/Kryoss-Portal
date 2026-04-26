@@ -16,12 +16,25 @@ public class HypervisorConfigFunction
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
     private readonly IHypervisorPipeline _pipeline;
+    private readonly ICryptoService _crypto;
+    private readonly IActlogService _actlog;
 
-    public HypervisorConfigFunction(KryossDbContext db, ICurrentUserService user, IHypervisorPipeline pipeline)
+    public HypervisorConfigFunction(KryossDbContext db, ICurrentUserService user,
+        IHypervisorPipeline pipeline, ICryptoService crypto, IActlogService actlog)
     {
         _db = db;
         _user = user;
         _pipeline = pipeline;
+        _crypto = crypto;
+        _actlog = actlog;
+    }
+
+    private async Task<string?> GetOrgFingerprint(Guid orgId)
+    {
+        return await _db.OrgCryptoKeys
+            .Where(k => k.OrganizationId == orgId && k.IsActive)
+            .Select(k => k.Fingerprint)
+            .FirstOrDefaultAsync();
     }
 
     [Function("HypervisorConfig_List")]
@@ -84,13 +97,28 @@ public class HypervisorConfigFunction
             DisplayName = body.DisplayName,
             HostUrl = body.HostUrl,
             Username = body.Username,
-            EncryptedPassword = body.Password, // TODO: encrypt
+            EncryptedPassword = null,
             ApiToken = body.ApiToken,
             VerifySsl = body.VerifySsl ?? true,
         };
 
+        if (!string.IsNullOrEmpty(body.Password))
+        {
+            var fp = await GetOrgFingerprint(body.OrganizationId);
+            if (fp != null)
+                config.EncryptedPassword = Convert.ToBase64String(
+                    _crypto.EncryptSymmetric(body.OrganizationId, fp, body.Password));
+            else
+                config.EncryptedPassword = body.Password;
+        }
+
         _db.InfraHypervisorConfigs.Add(config);
         await _db.SaveChangesAsync();
+
+        try { await _actlog.LogAsync("INFO", "hypervisor", "config_create",
+            entityType: "infra_hypervisor_configs", entityId: config.Id.ToString(),
+            message: $"Created config '{config.DisplayName}' ({config.Platform})"); }
+        catch { }
 
         var res = req.CreateResponse(HttpStatusCode.Created);
         await res.WriteAsJsonAsync(new { config.Id, config.Platform, config.HostUrl, config.DisplayName });
@@ -124,13 +152,26 @@ public class HypervisorConfigFunction
         if (!string.IsNullOrWhiteSpace(body.DisplayName)) config.DisplayName = body.DisplayName;
         if (!string.IsNullOrWhiteSpace(body.HostUrl)) config.HostUrl = body.HostUrl;
         if (!string.IsNullOrWhiteSpace(body.Username)) config.Username = body.Username;
-        if (!string.IsNullOrWhiteSpace(body.Password)) config.EncryptedPassword = body.Password;
+        if (!string.IsNullOrWhiteSpace(body.Password))
+        {
+            var fp = await GetOrgFingerprint(config.OrganizationId);
+            if (fp != null)
+                config.EncryptedPassword = Convert.ToBase64String(
+                    _crypto.EncryptSymmetric(config.OrganizationId, fp, body.Password));
+            else
+                config.EncryptedPassword = body.Password;
+        }
         if (!string.IsNullOrWhiteSpace(body.ApiToken)) config.ApiToken = body.ApiToken;
         if (body.VerifySsl.HasValue) config.VerifySsl = body.VerifySsl.Value;
         if (body.IsActive.HasValue) config.IsActive = body.IsActive.Value;
         config.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+
+        try { await _actlog.LogAsync("INFO", "hypervisor", "config_update",
+            entityType: "infra_hypervisor_configs", entityId: config.Id.ToString(),
+            message: $"Updated config '{config.DisplayName}'"); }
+        catch { }
 
         var res = req.CreateResponse(HttpStatusCode.OK);
         await res.WriteAsJsonAsync(new { config.Id, config.Platform, config.HostUrl, config.DisplayName, config.IsActive });
@@ -167,6 +208,24 @@ public class HypervisorConfigFunction
         var config = await _db.InfraHypervisorConfigs.FindAsync(id);
         if (config is null) return req.CreateResponse(HttpStatusCode.NotFound);
 
+        string? password = null;
+        if (!string.IsNullOrEmpty(config.EncryptedPassword))
+        {
+            try
+            {
+                var fp = await GetOrgFingerprint(config.OrganizationId);
+                if (fp != null)
+                    password = _crypto.DecryptSymmetric(config.OrganizationId, fp,
+                        Convert.FromBase64String(config.EncryptedPassword));
+                else
+                    password = config.EncryptedPassword;
+            }
+            catch
+            {
+                password = config.EncryptedPassword; // pre-encryption legacy value
+            }
+        }
+
         bool success = false;
         string? error = null;
 
@@ -182,7 +241,7 @@ public class HypervisorConfigFunction
             {
                 var authReq = new HttpRequestMessage(HttpMethod.Post, "/api/session");
                 authReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic",
-                    Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{config.Username}:{config.EncryptedPassword}")));
+                    Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{config.Username}:{password}")));
                 using var resp = await http.SendAsync(authReq);
                 success = resp.IsSuccessStatusCode;
                 if (!success) error = $"HTTP {(int)resp.StatusCode}";
@@ -201,7 +260,7 @@ public class HypervisorConfigFunction
                     var ticketBody = new FormUrlEncodedContent(new[]
                     {
                         new KeyValuePair<string, string>("username", config.Username ?? ""),
-                        new KeyValuePair<string, string>("password", config.EncryptedPassword ?? ""),
+                        new KeyValuePair<string, string>("password", password ?? ""),
                     });
                     using var resp = await http.PostAsync("/api2/json/access/ticket", ticketBody);
                     success = resp.IsSuccessStatusCode;
