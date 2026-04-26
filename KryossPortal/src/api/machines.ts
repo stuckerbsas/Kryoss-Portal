@@ -39,6 +39,9 @@ export interface MachineDetail extends Machine {
   localAdmins: { name: string; type: string; source: string; }[] | null;
   // Agent config (portal-controlled)
   agentConfig: AgentConfig;
+  // Scan trigger
+  scanPending: boolean;
+  scanRequestedAt: string | null;
   // History
   assessmentHistory: AssessmentRunSummary[];
 }

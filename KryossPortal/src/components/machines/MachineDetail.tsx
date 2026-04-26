@@ -700,17 +700,18 @@ function ThreatsTabContent({ machineId }: { machineId: string | undefined }) {
 
 // ── Tab: Tasks ──
 
-function TasksTabContent({ machineId }: { machineId: string | undefined }) {
+function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineId: string | undefined; scanPending?: boolean; scanRequestedAt?: string | null }) {
   const { data, isLoading } = useMachineTasks(machineId);
   const cancel = useCancelTask(machineId);
 
   if (isLoading) return <TabSkeleton rows={4} />;
 
-  if (!data || data.tasks.length === 0)
-    return <EmptyState icon={<ClipboardList className="size-10" />} title="No remediation tasks" description="No tasks have been created for this machine." />;
+  const hasTasks = data && data.tasks.length > 0;
+  if (!hasTasks && !scanPending)
+    return <EmptyState icon={<ClipboardList className="size-10" />} title="No tasks" description="No remediation or scan tasks for this machine." />;
 
-  const pending = data.tasks.filter(t => t.status === 'approved' || t.status === 'pending');
-  const completed = data.tasks.filter(t => t.status !== 'approved' && t.status !== 'pending');
+  const pending = data?.tasks.filter(t => t.status === 'approved' || t.status === 'pending') ?? [];
+  const completed = data?.tasks.filter(t => t.status !== 'approved' && t.status !== 'pending') ?? [];
 
   function taskStatusBadge(status: string) {
     const cls: Record<string, string> = {
@@ -725,11 +726,13 @@ function TasksTabContent({ machineId }: { machineId: string | undefined }) {
     return <Badge variant="secondary" className={cls[status] ?? 'bg-gray-100 text-gray-500'}>{status}</Badge>;
   }
 
+  const pendingCount = pending.length + (scanPending ? 1 : 0);
+
   return (
     <div className="space-y-4">
-      {pending.length > 0 && (
+      {pendingCount > 0 && (
         <>
-          <h4 className="text-sm font-semibold">Pending ({pending.length})</h4>
+          <h4 className="text-sm font-semibold">Pending ({pendingCount})</h4>
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -742,6 +745,18 @@ function TasksTabContent({ machineId }: { machineId: string | undefined }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {scanPending && (
+                  <TableRow>
+                    <TableCell>
+                      <span className="font-mono text-xs text-muted-foreground mr-2">SCAN</span>
+                      <span className="text-sm">Compliance scan requested</span>
+                    </TableCell>
+                    <TableCell className="text-sm">scan</TableCell>
+                    <TableCell><Badge variant="secondary" className="bg-blue-100 text-blue-800">waiting</Badge></TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{scanRequestedAt ? formatDate(scanRequestedAt) : '--'}</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                )}
                 {pending.map(t => (
                   <TableRow key={t.id}>
                     <TableCell>
@@ -974,11 +989,11 @@ export function MachineDetail() {
           <Button
             size="sm"
             variant="outline"
-            disabled={triggerScan.isPending}
+            disabled={triggerScan.isPending || machine.scanPending}
             onClick={() => triggerScan.mutate()}
           >
             <Play className="size-3.5 mr-1" />
-            {triggerScan.isPending ? 'Queuing...' : triggerScan.isSuccess ? 'Scan Queued' : 'Run Scan'}
+            {triggerScan.isPending ? 'Queuing...' : machine.scanPending ? 'Scan Pending...' : 'Run Scan'}
           </Button>
           {latestRun && (
             <>
@@ -1043,7 +1058,7 @@ export function MachineDetail() {
         </TabsContent>
 
         <TabsContent value="tasks">
-          <TasksTabContent machineId={machineId} />
+          <TasksTabContent machineId={machineId} scanPending={machine.scanPending} scanRequestedAt={machine.scanRequestedAt} />
         </TabsContent>
 
         <TabsContent value="history">
