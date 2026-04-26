@@ -37,6 +37,13 @@
 
 **In progress:** None
 
+**Shipped 2026-04-26 security Sprint 1 (8 CRITICAL):**
+- API v1.22.6: ErrorSanitization frozen to {error,traceId} (C1), hypervisor password AES-256-GCM encryption (C2), JWT signature validation via OIDC + X-MS-CLIENT-PRINCIPAL restricted to SWA (C3), QUOTENAME in dynamic SQL (C8)
+- Agent v2.4.2: SelfUpdater uses SCM recovery instead of cmd.exe batch (C4), trial mode prints path instead of UseShellExecute (C5)
+- Scripts: hardcoded enrollment code removed from 12+ files (C6), Setup-Azure.ps1 plaintext password eliminated (C7)
+- Spec: `docs/superpowers/specs/2026-04-26-security-remediation-design.md` (30 findings, 4 sprints)
+- Plan: `docs/superpowers/plans/2026-04-26-security-remediation-sprint1.md`
+
 **Shipped 2026-04-26 session:**
 - Agent v2.4.1: banner version fix (was hardcoded v2.0.0), SNMP skip in one-shot mode (--alone/--silent), remote config delivery via heartbeat
 - API v1.22.5: Server 2016→MS19/DC19 platform mapping, enrollment rate limit 5→30 (NinjaOne mass deploy), HeartbeatRequest JsonPropertyName fix (agent_mode was NULL), remediation cancel endpoint, denormalized latest_score on machines table (eliminates correlated subquery), Dashboard Fleet GroupBy+Max rewrite (EF Core 8 translatable), OrgComparison uses denormalized columns, GET /v2/machines/by-hostname/{hostname} endpoint, AsNoTracking on list/detail queries, SQL migration 071
@@ -54,7 +61,7 @@
 
 | Pillar | Metric | Count |
 |--------|--------|-------|
-| **API** | Version | 1.22.5 |
+| **API** | Version | 1.22.6 |
 | | HTTP endpoints | 163 |
 | | Entity classes | 28 |
 | | Services | 50+ |
@@ -62,7 +69,7 @@
 | | Report blocks | 35+ |
 | | Report recipes | 16 |
 | | CA pipelines | 7 (Identity, Endpoint, Data, Productivity, Azure, MailFlow, PowerBI) |
-| **Agent** | Version | 2.4.1 |
+| **Agent** | Version | 2.4.2 |
 | | Source files | 48 |
 | | Engines | 13 (12 + NetAccountCompat wrapper) |
 | | Services | 22 |
@@ -673,6 +680,7 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 | 2026-04-26 | EF Core 8: GroupBy+First() → GroupBy+Max()+join-back pattern | EF Core 8 cannot translate `GroupBy().Select(g => g.OrderByDescending().First())` to SQL. Must use `GroupBy+Max()` aggregate then join. Applied to Dashboard Fleet + OrgComparison |
 | 2026-04-26 | `GET /v2/machines/by-hostname/{hostname}` endpoint | Portal hostname resolution now uses direct endpoint instead of fetching full machine list. Portal `useMachine` hook auto-detects GUID vs hostname |
 | 2026-04-26 | NinjaOne deploy v5.0: auto-installs service mode | Script detects missing service, runs `--install`, migrates legacy scheduled task, auto-updates binary from blob. v2.3.0+ agents transition to service mode on next NinjaOne run |
+| 2026-04-26 | Security Sprint 1: 8 CRITICAL findings fixed | ErrorSanitization frozen, hypervisor AES-256-GCM, JWT validation via OIDC, SelfUpdater SCM recovery, trial UseShellExecute removed, enrollment code scrubbed, Setup-Azure password fixed, QUOTENAME in SQL. API 1.22.6 + Agent 2.4.2. Sprints 2-4 (HIGH/MED/LOW) queued. |
 
 ---
 
