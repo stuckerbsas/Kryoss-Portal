@@ -40,15 +40,18 @@ public static class SelfUpdater
                 return false;
             }
 
-            // Verify hash if provided
-            if (!string.IsNullOrEmpty(versionInfo.Hash))
+            if (string.IsNullOrEmpty(versionInfo.Hash))
             {
-                var hash = Convert.ToHexString(SHA256.HashData(bytes));
-                if (!hash.Equals(versionInfo.Hash, StringComparison.OrdinalIgnoreCase))
-                {
-                    Log($"Hash mismatch: expected {versionInfo.Hash}, got {hash}");
-                    return false;
-                }
+                Log("Update rejected: server did not provide SHA256 hash");
+                Console.Error.WriteLine("[UPDATE] Rejected — no hash provided by server");
+                return false;
+            }
+
+            var hash = Convert.ToHexString(SHA256.HashData(bytes));
+            if (!hash.Equals(versionInfo.Hash, StringComparison.OrdinalIgnoreCase))
+            {
+                Log($"Hash mismatch: expected {versionInfo.Hash}, got {hash}");
+                return false;
             }
 
             // Write to temp
