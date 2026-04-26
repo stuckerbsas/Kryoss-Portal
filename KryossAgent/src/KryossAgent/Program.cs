@@ -839,8 +839,7 @@ try
             File.WriteAllText(reportPath, html);
             if (!silent) Console.WriteLine($" saved to {reportPath}");
 
-            try { Process.Start(new ProcessStartInfo(reportPath) { UseShellExecute = true }); }
-            catch { }
+            Console.WriteLine($"  Report: {reportPath}");
 
             AgentConfig.Wipe();
             if (!silent)
