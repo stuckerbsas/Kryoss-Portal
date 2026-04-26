@@ -186,17 +186,17 @@ public class SnmpConfigFunction
 
         var result = devices.Select(d =>
         {
-            object? lldpNeighbors = null;
-            object? cdpNeighbors = null;
+            JsonElement? lldpNeighbors = null;
+            JsonElement? cdpNeighbors = null;
             if (!string.IsNullOrEmpty(d.RawData))
             {
                 try
                 {
                     using var doc = JsonDocument.Parse(d.RawData);
                     if (doc.RootElement.TryGetProperty("lldpNeighbors", out var lldp))
-                        lldpNeighbors = JsonSerializer.Deserialize<object>(lldp.GetRawText());
+                        lldpNeighbors = JsonSerializer.Deserialize<JsonElement>(lldp.GetRawText());
                     if (doc.RootElement.TryGetProperty("cdpNeighbors", out var cdp))
-                        cdpNeighbors = JsonSerializer.Deserialize<object>(cdp.GetRawText());
+                        cdpNeighbors = JsonSerializer.Deserialize<JsonElement>(cdp.GetRawText());
                 }
                 catch { }
             }
@@ -211,7 +211,7 @@ public class SnmpConfigFunction
                 d.ScannedAt, d.interfaces, d.supplies,
                 lldpNeighbors, cdpNeighbors,
                 vendorData = !string.IsNullOrEmpty(d.VendorData)
-                    ? JsonSerializer.Deserialize<object>(d.VendorData) : null,
+                    ? JsonSerializer.Deserialize<JsonElement>(d.VendorData) : null,
             };
         });
 
