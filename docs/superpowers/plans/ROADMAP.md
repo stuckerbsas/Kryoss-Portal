@@ -37,6 +37,13 @@
 
 **In progress:** None
 
+**Shipped 2026-04-26 security Sprint 2 (13 HIGH):**
+- API v1.22.7: /v1/schedule auth required (H1), SSL callback rejects expired/wrong-host (H3), Redis-backed NonceCache with in-memory fallback (H4), remediation registry path whitelist server-side (H8)
+- Agent v2.4.3: SelfUpdater hash mandatory (H5), SPKI compiled-in fallback pins (H6), registry ACL SYSTEM-only + --debug-acl (H7), remediation path whitelist agent-side (H8)
+- Portal v1.12.2: MSAL config via env vars (H9), generic error messages with traceId (H10), MSAL logout replaces /.auth/logout
+- Scripts: SHA256 checksum verification (H11), GUID temp path + ACL (H12), HTTPS + domain allowlist (H13)
+- H2 (M365 secrets → Key Vault): infrastructure-only, no code change needed
+
 **Shipped 2026-04-26 security Sprint 1 (8 CRITICAL):**
 - API v1.22.6: ErrorSanitization frozen to {error,traceId} (C1), hypervisor password AES-256-GCM encryption (C2), JWT signature validation via OIDC + X-MS-CLIENT-PRINCIPAL restricted to SWA (C3), QUOTENAME in dynamic SQL (C8)
 - Agent v2.4.2: SelfUpdater uses SCM recovery instead of cmd.exe batch (C4), trial mode prints path instead of UseShellExecute (C5)
@@ -61,7 +68,7 @@
 
 | Pillar | Metric | Count |
 |--------|--------|-------|
-| **API** | Version | 1.22.6 |
+| **API** | Version | 1.22.7 |
 | | HTTP endpoints | 163 |
 | | Entity classes | 28 |
 | | Services | 50+ |
@@ -69,7 +76,7 @@
 | | Report blocks | 35+ |
 | | Report recipes | 16 |
 | | CA pipelines | 7 (Identity, Endpoint, Data, Productivity, Azure, MailFlow, PowerBI) |
-| **Agent** | Version | 2.4.2 |
+| **Agent** | Version | 2.4.3 |
 | | Source files | 48 |
 | | Engines | 13 (12 + NetAccountCompat wrapper) |
 | | Services | 22 |
@@ -681,6 +688,7 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 | 2026-04-26 | `GET /v2/machines/by-hostname/{hostname}` endpoint | Portal hostname resolution now uses direct endpoint instead of fetching full machine list. Portal `useMachine` hook auto-detects GUID vs hostname |
 | 2026-04-26 | NinjaOne deploy v5.0: auto-installs service mode | Script detects missing service, runs `--install`, migrates legacy scheduled task, auto-updates binary from blob. v2.3.0+ agents transition to service mode on next NinjaOne run |
 | 2026-04-26 | Security Sprint 1: 8 CRITICAL findings fixed | ErrorSanitization frozen, hypervisor AES-256-GCM, JWT validation via OIDC, SelfUpdater SCM recovery, trial UseShellExecute removed, enrollment code scrubbed, Setup-Azure password fixed, QUOTENAME in SQL. API 1.22.6 + Agent 2.4.2. Sprints 2-4 (HIGH/MED/LOW) queued. |
+| 2026-04-26 | Security Sprint 2: 13 HIGH findings fixed | Schedule auth (H1), SSL validation (H3), Redis nonce cache (H4), hash mandatory (H5), SPKI fallback (H6), SYSTEM-only ACL (H7), remediation path whitelist (H8), MSAL env vars (H9), generic errors (H10), deploy checksum+GUID+HTTPS (H11-13). API 1.22.7 + Agent 2.4.3 + Portal 1.12.2. H2 is infra-only. Sprints 3-4 queued. |
 
 ---
 
