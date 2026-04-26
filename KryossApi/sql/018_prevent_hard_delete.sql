@@ -29,14 +29,14 @@ WHILE @@FETCH_STATUS = 0
 BEGIN
     -- Drop existing trigger if present
     SET @sql = N'
-        IF EXISTS (SELECT 1 FROM sys.triggers WHERE name = N''trg_' + @tableName + N'_prevent_delete'' AND parent_id = OBJECT_ID(N''' + @tableName + N'''))
-            DROP TRIGGER [trg_' + @tableName + N'_prevent_delete];';
+        IF EXISTS (SELECT 1 FROM sys.triggers WHERE name = N''trg_' + @tableName + N'_prevent_delete'' AND parent_id = OBJECT_ID(' + QUOTENAME(@tableName, '''') + N'))
+            DROP TRIGGER ' + QUOTENAME('trg_' + @tableName + '_prevent_delete') + N';';
     EXEC sp_executesql @sql;
 
     -- Create INSTEAD OF DELETE trigger
     SET @sql = N'
-CREATE TRIGGER [trg_' + @tableName + N'_prevent_delete]
-ON [dbo].[' + @tableName + N']
+CREATE TRIGGER ' + QUOTENAME('trg_' + @tableName + '_prevent_delete') + N'
+ON ' + QUOTENAME(@tableName) + N'
 INSTEAD OF DELETE
 AS
 BEGIN
