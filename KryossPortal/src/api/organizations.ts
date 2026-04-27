@@ -10,7 +10,10 @@ interface OrgListResponse {
   items: Organization[];
 }
 
-export function useOrganizations(params?: { status?: string; search?: string }) {
+export function useOrganizations(
+  params?: { status?: string; search?: string },
+  options?: { enabled?: boolean },
+) {
   const qs = new URLSearchParams();
   if (params?.status) qs.set('status', params.status);
   if (params?.search) qs.set('search', params.search);
@@ -19,17 +22,18 @@ export function useOrganizations(params?: { status?: string; search?: string }) 
   return useQuery({
     queryKey: ['organizations', params],
     queryFn: () => apiFetch<OrgListResponse>(`/v2/organizations${query}`),
+    enabled: options?.enabled ?? true,
   });
 }
 
 /**
  * Accepts either a GUID or a slug. If slug, resolves via the org list cache.
+ * If already a GUID, skips the org list fetch entirely (no waterfall).
  */
 export function useOrganization(idOrSlug: string | undefined) {
   const isId = idOrSlug ? isGuid(idOrSlug) : false;
 
-  // If it's a slug, we need the org list to resolve it
-  const { data: orgList } = useOrganizations();
+  const { data: orgList } = useOrganizations(undefined, { enabled: !isId });
   const resolvedId = isId
     ? idOrSlug
     : orgList?.items.find((o) => slugify(o.name) === idOrSlug)?.id;
@@ -44,7 +48,7 @@ export function useOrganization(idOrSlug: string | undefined) {
 /** Get the resolved GUID for an org slug/id. */
 export function useResolvedOrgId(idOrSlug: string | undefined): string | undefined {
   const isId = idOrSlug ? isGuid(idOrSlug) : false;
-  const { data: orgList } = useOrganizations();
+  const { data: orgList } = useOrganizations(undefined, { enabled: !isId });
 
   if (isId) return idOrSlug;
   return orgList?.items.find((o) => slugify(o.name) === idOrSlug)?.id;
