@@ -60,7 +60,7 @@ var knownFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     "--code", "--api-url", "--threads", "--targets", "--targets-file",
     "--discover-ad", "--discover-arp", "--discover-subnet",
     "--offline", "--share", "--collect",
-    "--install", "--uninstall", "--service", "--trial", "--debug-acl",
+    "--install", "--uninstall", "--service", "--trial", "--debug-acl", "--enroll-only",
 };
 foreach (var arg in args)
 {
@@ -323,6 +323,14 @@ if (!config.IsEnrolled)
         Environment.Exit(1);
         return;
     }
+}
+
+// ── Enroll-only mode: exit after enrollment (used by NinjaOne deploy) ──
+if (args.Contains("--enroll-only", StringComparer.OrdinalIgnoreCase))
+{
+    if (!silent) Console.WriteLine("  Enrollment complete (--enroll-only). Exiting.");
+    Environment.Exit(0);
+    return;
 }
 
 // ── Upload pending offline results ──
@@ -1070,7 +1078,7 @@ static async Task RunCollectMode(string collectPath, string[] args, bool silent,
         config.MachineSecret = enrollment.MachineSecret;
         config.SessionKey = enrollment.SessionKey;
         config.SessionKeyExpiresAt = enrollment.SessionKeyExpiresAt;
-        config.Save(debugAcl);
+        config.Save(args.Contains("--debug-acl", StringComparer.OrdinalIgnoreCase));
         if (!silent) Console.WriteLine($"  Collector enrolled.");
     }
 

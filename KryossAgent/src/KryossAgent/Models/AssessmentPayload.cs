@@ -39,6 +39,10 @@ public class AssessmentPayload
     [JsonPropertyName("localAdmins")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<LocalAdminItem>? LocalAdmins { get; set; }
+
+    [JsonPropertyName("patchStatus")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PatchStatusInfo? PatchStatus { get; set; }
 }
 
 public class PlatformInfo
@@ -276,6 +280,181 @@ public class PortBulkPayload
 {
     [JsonPropertyName("machines")]
     public List<PortPayload> Machines { get; set; } = [];
+}
+
+public class PatchStatusInfo
+{
+    [JsonPropertyName("updateSource")]
+    public string? UpdateSource { get; set; }
+
+    [JsonPropertyName("wsusServer")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WsusServer { get; set; }
+
+    [JsonPropertyName("wufbRing")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WufbRing { get; set; }
+
+    [JsonPropertyName("lastCheckUtc")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? LastCheckUtc { get; set; }
+
+    [JsonPropertyName("lastInstallUtc")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? LastInstallUtc { get; set; }
+
+    [JsonPropertyName("rebootPending")]
+    public bool RebootPending { get; set; }
+
+    [JsonPropertyName("installedCount30d")]
+    public int InstalledCount30d { get; set; }
+
+    [JsonPropertyName("installedCount90d")]
+    public int InstalledCount90d { get; set; }
+
+    [JsonPropertyName("wuServiceStatus")]
+    public string? WuServiceStatus { get; set; }
+
+    [JsonPropertyName("ninjaManaged")]
+    public bool NinjaManaged { get; set; }
+
+    [JsonPropertyName("hotfixes")]
+    public List<HotfixItem> Hotfixes { get; set; } = [];
+}
+
+public class HotfixItem
+{
+    [JsonPropertyName("hotfixId")]
+    public string HotfixId { get; set; } = null!;
+
+    [JsonPropertyName("description")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("installedOn")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? InstalledOn { get; set; }
+
+    [JsonPropertyName("installedBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? InstalledBy { get; set; }
+}
+
+/// <summary>
+/// POST /v1/dc-health payload
+/// </summary>
+public class DcHealthPayload
+{
+    [JsonPropertyName("scannedBy")]
+    public string ScannedBy { get; set; } = null!;
+
+    [JsonPropertyName("schemaVersion")]
+    public int? SchemaVersion { get; set; }
+
+    [JsonPropertyName("schemaVersionLabel")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SchemaVersionLabel { get; set; }
+
+    [JsonPropertyName("forestLevel")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ForestLevel { get; set; }
+
+    [JsonPropertyName("domainLevel")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DomainLevel { get; set; }
+
+    [JsonPropertyName("forestName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ForestName { get; set; }
+
+    [JsonPropertyName("domainName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DomainName { get; set; }
+
+    [JsonPropertyName("schemaMaster")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SchemaMaster { get; set; }
+
+    [JsonPropertyName("domainNamingMaster")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DomainNamingMaster { get; set; }
+
+    [JsonPropertyName("pdcEmulator")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PdcEmulator { get; set; }
+
+    [JsonPropertyName("ridMaster")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RidMaster { get; set; }
+
+    [JsonPropertyName("infrastructureMaster")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? InfrastructureMaster { get; set; }
+
+    [JsonPropertyName("fsmoSinglePoint")]
+    public bool FsmoSinglePoint { get; set; }
+
+    [JsonPropertyName("replPartnerCount")]
+    public int ReplPartnerCount { get; set; }
+
+    [JsonPropertyName("replFailureCount")]
+    public int ReplFailureCount { get; set; }
+
+    [JsonPropertyName("lastSuccessfulRepl")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? LastSuccessfulRepl { get; set; }
+
+    [JsonPropertyName("siteCount")]
+    public int SiteCount { get; set; }
+
+    [JsonPropertyName("subnetCount")]
+    public int SubnetCount { get; set; }
+
+    [JsonPropertyName("dcCount")]
+    public int DcCount { get; set; }
+
+    [JsonPropertyName("gcCount")]
+    public int GcCount { get; set; }
+
+    [JsonPropertyName("replicationPartners")]
+    public List<DcReplPartner> ReplicationPartners { get; set; } = [];
+}
+
+public class DcReplPartner
+{
+    [JsonPropertyName("partnerHostname")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PartnerHostname { get; set; }
+
+    [JsonPropertyName("partnerDn")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PartnerDn { get; set; }
+
+    [JsonPropertyName("direction")]
+    public string Direction { get; set; } = null!;
+
+    [JsonPropertyName("namingContext")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NamingContext { get; set; }
+
+    [JsonPropertyName("lastSuccess")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? LastSuccess { get; set; }
+
+    [JsonPropertyName("lastAttempt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? LastAttempt { get; set; }
+
+    [JsonPropertyName("failureCount")]
+    public int FailureCount { get; set; }
+
+    [JsonPropertyName("lastError")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LastError { get; set; }
+
+    [JsonPropertyName("transport")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Transport { get; set; }
 }
 
 /// <summary>

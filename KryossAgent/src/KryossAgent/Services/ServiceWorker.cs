@@ -36,7 +36,7 @@ public class ServiceWorker : BackgroundService
             Console.Error.WriteLine($"[SERVICE] Failed to apply staged update: {ex.Message}");
         }
 
-        Console.WriteLine("[SERVICE] Kryoss Agent v2.4.0 started as Windows Service");
+        Console.WriteLine("[SERVICE] Kryoss Agent v2.6.2 started as Windows Service");
 
         var initialConfig = AgentConfig.Load();
         if (initialConfig.EnablePassiveDiscovery)
@@ -98,6 +98,7 @@ public class ServiceWorker : BackgroundService
                 catch (Exception ex)
                 {
                     Console.Error.WriteLine($"[SERVICE] Compliance scan error: {ex.Message}");
+                    _lastComplianceScan = DateTime.UtcNow - complianceInterval + TimeSpan.FromMinutes(30);
                 }
             }
 

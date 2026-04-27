@@ -142,6 +142,12 @@ public static class ScanCycle
             if (!silent) Console.WriteLine(" skipped");
         }
 
+        if (!silent) Console.Write("    Collecting patch status...");
+        PatchStatusInfo? patchStatus = null;
+        try { patchStatus = PatchCollector.Collect(); }
+        catch { }
+        if (!silent) Console.WriteLine($" {patchStatus?.Hotfixes.Count ?? 0} hotfixes, source={patchStatus?.UpdateSource ?? "?"}");
+
         if (!silent) Console.Write("    Enumerating local administrators...");
         List<LocalAdminItem> localAdmins;
         try { localAdmins = PlatformDetector.EnumerateLocalAdmins(); }
@@ -160,6 +166,7 @@ public static class ScanCycle
             Results = allResults,
             NetworkDiag = networkDiag,
             LocalAdmins = localAdmins.Count > 0 ? localAdmins : null,
+            PatchStatus = patchStatus,
         };
 
         return new ComplianceScanResult
@@ -413,10 +420,37 @@ public static class ScanCycle
             await apiClient.SubmitHygieneAsync(payload);
             if (!silent) Console.WriteLine($" done ({findings.Count} findings)");
             else Console.WriteLine($"RESULT: HYGIENE | {Environment.MachineName} | {findings.Count} findings");
+
+            // DC-02+03: Collect DC health (schema/replication/FSMO)
+            await RunDcHealthAsync(apiClient, silent, verbose);
         }
         catch (Exception ex)
         {
             if (verbose) Console.Error.WriteLine($"  [WARN] AD hygiene failed: {ex.Message}");
+            if (!silent) Console.WriteLine(" skipped");
+        }
+    }
+
+    public static async Task RunDcHealthAsync(ApiClient apiClient, bool silent, bool verbose)
+    {
+        if (!silent) Console.Write("  Collecting DC health (schema/replication/FSMO)...");
+        try
+        {
+            var dcPayload = DcHealthCollector.Collect(verbose);
+            if (dcPayload == null)
+            {
+                if (verbose) Console.Error.WriteLine("  [DC-HEALTH] Not a DC or LDAP unavailable, skipping");
+                if (!silent) Console.WriteLine(" skipped (not a DC)");
+                return;
+            }
+
+            await apiClient.SubmitDcHealthAsync(dcPayload);
+            if (!silent)
+                Console.WriteLine($" done (schema v{dcPayload.SchemaVersion}, {dcPayload.ReplPartnerCount} repl partners, {dcPayload.DcCount} DCs)");
+        }
+        catch (Exception ex)
+        {
+            if (verbose) Console.Error.WriteLine($"  [WARN] DC health collection failed: {ex.Message}");
             if (!silent) Console.WriteLine(" skipped");
         }
     }

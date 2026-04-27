@@ -69,6 +69,15 @@ public static class NetworkDiagnostics
         }
         catch { /* non-critical */ }
 
+        // Traceroute to API endpoint
+        try
+        {
+            var apiHost = new Uri(apiBaseUrl).Host;
+            result.TracerouteTarget = apiHost;
+            result.Traceroute = await RunTracerouteAsync(apiHost, ct);
+        }
+        catch { /* non-critical */ }
+
         // Classify adapter counts
         if (result.Adapters != null)
         {
@@ -90,6 +99,18 @@ public static class NetworkDiagnostics
         // Bandwidth utilization snapshot
         try { result.BandwidthSnapshot = GetBandwidthSnapshot(); }
         catch { /* non-critical */ }
+
+        // IA-3: Aggregate jitter + packet loss from link latency probes
+        var allProbes = new List<LatencyResult>();
+        if (result.LinkLatency is { Count: > 0 }) allProbes.AddRange(result.LinkLatency);
+        if (result.InternalLatency is { Count: > 0 }) allProbes.AddRange(result.InternalLatency);
+        var reachable = allProbes.Where(p => p.Reachable && p.TotalSent > 0).ToList();
+        if (reachable.Count > 0)
+        {
+            result.JitterMs = Math.Round(reachable.Average(p => p.JitterMs), 1);
+            result.PacketLossPct = Math.Round(
+                reachable.Average(p => (decimal)p.PacketLoss / p.TotalSent * 100m), 1);
+        }
 
         return result;
     }
@@ -676,5 +697,42 @@ public static class NetworkDiagnostics
         }
         catch { /* non-critical */ }
         return hosts;
+    }
+
+    public static async Task<List<TracerouteHop>> RunTracerouteAsync(
+        string host, CancellationToken ct, int maxHops = 30, int timeoutMs = 1500)
+    {
+        var hops = new List<TracerouteHop>();
+        using var ping = new Ping();
+        var options = new PingOptions(1, true);
+
+        for (int ttl = 1; ttl <= maxHops; ttl++)
+        {
+            if (ct.IsCancellationRequested) break;
+            options.Ttl = ttl;
+            try
+            {
+                var reply = await ping.SendPingAsync(host, timeoutMs, new byte[32], options);
+                if (reply.Status == IPStatus.TtlExpired || reply.Status == IPStatus.Success)
+                {
+                    hops.Add(new TracerouteHop
+                    {
+                        Hop = ttl,
+                        Address = reply.Address?.ToString(),
+                        RttMs = reply.RoundtripTime,
+                    });
+                    if (reply.Status == IPStatus.Success) break;
+                }
+                else
+                {
+                    hops.Add(new TracerouteHop { Hop = ttl, TimedOut = true });
+                }
+            }
+            catch
+            {
+                hops.Add(new TracerouteHop { Hop = ttl, TimedOut = true });
+            }
+        }
+        return hops;
     }
 }

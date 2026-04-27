@@ -237,6 +237,25 @@ public class ApiClient : IDisposable
         }
     }
 
+    public async Task SubmitDcHealthAsync(Models.DcHealthPayload payload)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload, Models.KryossJsonContext.Default.DcHealthPayload);
+        var path = "/v1/dc-health";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await SendWithRetryAsync(request, json);
+        if (!response.IsSuccessStatusCode)
+        {
+            string error;
+            try { error = await response.Content.ReadAsStringAsync(); }
+            catch { error = response.StatusCode.ToString(); }
+            Console.Error.WriteLine($"[WARN] DC health upload failed ({response.StatusCode}): {error}");
+        }
+    }
+
     /// <summary>
     /// Upload port scan results from a network scan to the API.
     /// </summary>

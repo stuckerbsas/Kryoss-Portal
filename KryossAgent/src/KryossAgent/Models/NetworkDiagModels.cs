@@ -99,6 +99,39 @@ public class NetworkDiagResult
 
     [JsonPropertyName("nicTeamingDetected")]
     public bool NicTeamingDetected { get; set; }
+
+    // IA-3: WAN health
+    [JsonPropertyName("jitterMs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? JitterMs { get; set; }
+
+    [JsonPropertyName("packetLossPct")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? PacketLossPct { get; set; }
+
+    [JsonPropertyName("traceroute")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<TracerouteHop>? Traceroute { get; set; }
+
+    [JsonPropertyName("tracerouteTarget")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TracerouteTarget { get; set; }
+}
+
+public class TracerouteHop
+{
+    [JsonPropertyName("hop")]
+    public int Hop { get; set; }
+
+    [JsonPropertyName("address")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Address { get; set; }
+
+    [JsonPropertyName("rttMs")]
+    public long RttMs { get; set; }
+
+    [JsonPropertyName("timedOut")]
+    public bool TimedOut { get; set; }
 }
 
 public class CloudEndpointLatency
