@@ -96,7 +96,7 @@ export function useInfraAssessment(organizationId: string | undefined) {
     queryFn: () =>
       apiFetch<{ scan: InfraAssessmentScan | null }>(
         `/v2/infra-assessment?organizationId=${organizationId}`,
-      ).then((r) => r.scan),
+      ).then((r) => r?.scan ?? null),
     enabled: !!organizationId,
   });
 }

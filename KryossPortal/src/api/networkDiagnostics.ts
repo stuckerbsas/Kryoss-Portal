@@ -60,3 +60,18 @@ export function useNetworkDiagnostics(organizationId: string | undefined) {
     enabled: !!organizationId,
   });
 }
+
+export interface NetworkDiagDetail extends NetworkDiag {
+  vpnAdapters: string | null;
+}
+
+export function useNetworkDiagDetail(machineId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['network-diagnostics-detail', machineId],
+    queryFn: () =>
+      apiFetch<NetworkDiagDetail>(
+        `/v2/network-diagnostics/${machineId}`,
+      ),
+    enabled: !!machineId && enabled,
+  });
+}

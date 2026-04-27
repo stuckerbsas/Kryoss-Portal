@@ -6,19 +6,12 @@ import { ForbiddenPage } from './pages/ForbiddenPage';
 import { OrganizationsPage } from './pages/OrganizationsPage';
 import { OrgDetailPage } from './pages/OrgDetailPage';
 import { OverviewTab } from './components/org-detail/OverviewTab';
-import { FleetTab } from './components/org-detail/FleetTab';
-import { EnrollmentTab } from './components/org-detail/EnrollmentTab';
+import { DevicesTab } from './components/org-detail/DevicesTab';
 import { ReportsTab } from './components/org-detail/ReportsTab';
-import { HygieneTab } from './components/org-detail/HygieneTab';
-import { ThreatsTab } from './components/org-detail/ThreatsTab';
+import { SecurityTab } from './components/org-detail/SecurityTab';
+import { NetworkTab } from './components/org-detail/NetworkTab';
 import { CloudAssessmentTab } from './components/org-detail/CloudAssessmentTab';
 import { InfraAssessmentTab } from './components/org-detail/InfraAssessmentTab';
-import { NetworkTab } from './components/org-detail/NetworkTab';
-import { HardwareInventoryTab } from './components/org-detail/HardwareInventoryTab';
-import { SoftwareInventoryTab } from './components/org-detail/SoftwareInventoryTab';
-import { CveFindingsTab } from './components/org-detail/CveFindingsTab';
-import { PatchComplianceTab } from './components/org-detail/PatchComplianceTab';
-import { DcHealthTab } from './components/org-detail/DcHealthTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { RecycleBinPage } from './pages/RecycleBinPage';
@@ -48,20 +41,24 @@ export const router = createBrowserRouter([
             handle: { crumb: (_: unknown, p: Record<string, string>) => p.orgId },
             children: [
               { index: true, element: <OverviewTab /> },
-              { path: 'fleet', element: <FleetTab /> },
-              { path: 'enrollment', element: <EnrollmentTab /> },
-              { path: 'hardware', element: <HardwareInventoryTab /> },
-              { path: 'software-inventory', element: <SoftwareInventoryTab /> },
+              { path: 'devices', element: <DevicesTab /> },
+              { path: 'enrollment', element: <Navigate to=".." replace /> },
               { path: 'reports', element: <ReportsTab /> },
-              { path: 'hygiene', element: <HygieneTab /> },
-              { path: 'threats', element: <ThreatsTab /> },
-              { path: 'cve', element: <CveFindingsTab /> },
-              { path: 'patches', element: <PatchComplianceTab /> },
-              { path: 'dc-health', element: <DcHealthTab /> },
+              { path: 'security', element: <SecurityTab /> },
               { path: 'network', element: <NetworkTab /> },
-              { path: 'm365', element: <Navigate to="../cloud-assessment" replace /> },
               { path: 'cloud-assessment', element: <CloudAssessmentTab /> },
               { path: 'infra-assessment', element: <InfraAssessmentTab /> },
+              // Legacy redirects
+              { path: 'fleet', element: <Navigate to="../devices" replace /> },
+              { path: 'hardware', element: <Navigate to="../devices?section=hardware" replace /> },
+              { path: 'software-inventory', element: <Navigate to="../devices?section=software" replace /> },
+              { path: 'hygiene', element: <Navigate to="../security?section=active-directory" replace /> },
+              { path: 'active-directory', element: <Navigate to="../security?section=active-directory" replace /> },
+              { path: 'dc-health', element: <Navigate to="../security?section=active-directory" replace /> },
+              { path: 'threats', element: <Navigate to="../security?section=threats" replace /> },
+              { path: 'cve', element: <Navigate to="../security?section=cve" replace /> },
+              { path: 'patches', element: <Navigate to="../security?section=patches" replace /> },
+              { path: 'm365', element: <Navigate to="../cloud-assessment" replace /> },
               { path: 'ports', element: <Navigate to="../network?section=ports" replace /> },
               { path: 'external-scan', element: <Navigate to="../network?section=external-scan" replace /> },
               { path: 'network-diagnostics', element: <Navigate to="../network?section=diagnostics" replace /> },

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useParams, NavLink, Outlet } from 'react-router-dom';
-import { Building2, Download, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Building2, Check, Copy, Download, Key, Loader2, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/api/organizations';
+import { useEnrollmentCodes, useCreateEnrollmentCode } from '@/api/enrollment';
+import { useOrgParam } from '@/hooks/useOrgParam';
 import { API_BASE, loginRequest } from '@/auth/msalConfig';
 import { msalInstance } from '@/auth/msalInstance';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -14,31 +16,47 @@ import { slugify } from '@/lib/slugify';
 
 const tabs = [
   { label: 'Overview', to: '', end: true, permission: 'organizations:read' },
-  { label: 'Fleet', to: 'fleet', end: false, permission: 'machines:read' },
-  {
-    label: 'Enrollment',
-    to: 'enrollment',
-    end: false,
-    permission: 'enrollment:create',
-  },
-  { label: 'Hardware', to: 'hardware', end: false, permission: 'machines:read' },
-  { label: 'Software', to: 'software-inventory', end: false, permission: 'machines:read' },
+  { label: 'Devices', to: 'devices', end: false, permission: 'machines:read' },
   { label: 'Reports', to: 'reports', end: false, permission: 'reports:read' },
-  { label: 'AD Hygiene', to: 'hygiene', end: false, permission: 'assessment:read' },
-  { label: 'Threats', to: 'threats', end: false, permission: 'machines:read' },
-  { label: 'CVE', to: 'cve', end: false, permission: 'machines:read' },
-  { label: 'Patches', to: 'patches', end: false, permission: 'machines:read' },
-  { label: 'DC Health', to: 'dc-health', end: false, permission: 'assessment:read' },
+  { label: 'Security', to: 'security', end: false, permission: 'assessment:read' },
   { label: 'Network', to: 'network', end: false, permission: 'machines:read' },
-  { label: 'Cloud Assessment', to: 'cloud-assessment', end: false, permission: 'assessment:read' },
-  { label: 'Infra Assessment', to: 'infra-assessment', end: false, permission: 'assessment:read' },
+  { label: 'Cloud', to: 'cloud-assessment', end: false, permission: 'assessment:read' },
+  { label: 'Infrastructure', to: 'infra-assessment', end: false, permission: 'assessment:read' },
 ] as const;
 
 export function OrgDetail() {
-  const { orgId: orgSlug } = useParams<{ orgId: string }>();
+  const { orgId, orgSlug } = useOrgParam();
   const { data: org, isLoading } = useOrganization(orgSlug);
   const { has } = usePermissions();
   const [downloading, setDownloading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { data: codes } = useEnrollmentCodes(orgId);
+  const createCode = useCreateEnrollmentCode();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const activeCode = codes?.find((c) => !c.isExpired && !c.isUsed);
+
+  const handleCopyCode = async () => {
+    if (!activeCode) return;
+    await navigator.clipboard.writeText(activeCode.code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRefreshCode = async () => {
+    if (!orgId) return;
+    setRefreshing(true);
+    try {
+      await createCode.mutateAsync({
+        organizationId: orgId,
+        label: 'Agent enrollment',
+        expiryDays: 30,
+        maxUses: 999,
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleDownloadAgent = async () => {
     if (!org) return;
@@ -98,7 +116,33 @@ export function OrgDetail() {
           <h1 className="text-2xl font-bold tracking-tight">{org.name}</h1>
           <StatusBadge status={org.status} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <Can permission="enrollment:create">
+            <div className="flex items-center gap-2 rounded-md border px-3 py-1.5 bg-muted/50">
+              <Key className="h-4 w-4 text-muted-foreground" />
+              {activeCode ? (
+                <>
+                  <code className="font-mono text-sm font-semibold tracking-wider select-all">
+                    {activeCode.code}
+                  </code>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopyCode}>
+                    {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                </>
+              ) : (
+                <span className="text-sm text-muted-foreground">No code</span>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleRefreshCode}
+                disabled={refreshing}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </Can>
           <Can permission="assessment:export">
             <Button
               variant="outline"

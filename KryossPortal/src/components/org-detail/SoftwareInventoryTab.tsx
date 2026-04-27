@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 import {
   Search,
   Package,
@@ -216,9 +216,8 @@ export function SoftwareInventoryTab() {
             const badge = categoryBadge[s.category] ?? categoryBadge.standard;
 
             return (
-              <>
+              <Fragment key={key}>
                 <TableRow
-                  key={key}
                   className="cursor-pointer"
                   onClick={() => setExpandedRow(isExpanded ? null : key)}
                 >
@@ -258,7 +257,7 @@ export function SoftwareInventoryTab() {
                     </TableCell>
                   </TableRow>
                 )}
-              </>
+              </Fragment>
             );
           })}
         </TableBody>

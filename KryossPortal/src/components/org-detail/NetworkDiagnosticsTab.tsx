@@ -11,7 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
-import { useNetworkDiagnostics, type NetworkDiag } from '@/api/networkDiagnostics';
+import { useNetworkDiagnostics, useNetworkDiagDetail, type NetworkDiag } from '@/api/networkDiagnostics';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Badge } from '@/components/ui/badge';
@@ -51,8 +51,11 @@ function fmt(n: number | null | undefined, decimals = 1): string {
 
 function MachineRow({ diag }: { diag: NetworkDiag }) {
   const [expanded, setExpanded] = useState(false);
-  const hasLatency = diag.latencyPeers.length > 0;
-  const hasRoutes = diag.routes.length > 0;
+  const { data: detail } = useNetworkDiagDetail(diag.machineId, expanded);
+  const latencyPeers = detail?.latencyPeers ?? diag.latencyPeers;
+  const routes = detail?.routes ?? diag.routes;
+  const hasLatency = latencyPeers.length > 0;
+  const hasRoutes = routes.length > 0;
 
   return (
     <>
@@ -142,7 +145,7 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
           <TableCell colSpan={10} className="bg-muted/30 p-4">
             <div className="space-y-4">
               <h4 className="text-sm font-semibold flex items-center gap-2">
-                <Network className="h-4 w-4" /> Internal Latency ({diag.latencyPeers.length} peers)
+                <Network className="h-4 w-4" /> Internal Latency ({latencyPeers.length} peers)
               </h4>
               <div className="overflow-x-auto">
                 <Table>
@@ -159,7 +162,7 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {diag.latencyPeers.map((p, i) => (
+                    {latencyPeers.map((p, i) => (
                       <TableRow key={i}>
                         <TableCell className="font-mono text-xs">{p.host}</TableCell>
                         <TableCell className="text-xs">{p.subnet}</TableCell>
@@ -191,7 +194,7 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
               {hasRoutes && (
                 <>
                   <h4 className="text-sm font-semibold flex items-center gap-2 mt-4">
-                    <Route className="h-4 w-4" /> Route Table ({diag.routes.length} entries)
+                    <Route className="h-4 w-4" /> Route Table ({routes.length} entries)
                   </h4>
                   <div className="overflow-x-auto max-h-64 overflow-y-auto">
                     <Table>
@@ -207,7 +210,7 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {diag.routes.map((r, i) => (
+                        {routes.map((r, i) => (
                           <TableRow key={i}>
                             <TableCell className="font-mono text-xs">{r.destination}</TableCell>
                             <TableCell className="font-mono text-xs">{r.mask}</TableCell>

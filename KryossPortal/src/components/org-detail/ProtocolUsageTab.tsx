@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
+  Monitor,
   Shield,
   ShieldOff,
   Users,
@@ -15,6 +16,7 @@ import {
   useOrganization,
   useToggleProtocolAudit,
 } from '@/api/organizations';
+import { useProtocolUsage } from '@/api/protocolUsage';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -261,40 +263,8 @@ export function ProtocolUsageTab() {
         </Card>
       )}
 
-      {/* ── Placeholder for future metrics ── */}
-      {enabled && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                NTLM Usage
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Once agents report AUDIT-001 / NTLM-USE-001..004, this card
-                will show outbound/inbound event counts and top source users.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <XCircle className="h-4 w-4" />
-                SMBv1 Usage
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Once agents report AUDIT-003 / SMB1-USE-001..002, this card
-                will show access attempt counts and top client IPs.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* ── Protocol metrics ── */}
+      {enabled && <ProtocolMetrics orgId={org.id} />}
 
       {/* ── Disabled state: pitch the feature ── */}
       {!enabled && (
@@ -321,5 +291,139 @@ export function ProtocolUsageTab() {
         </Card>
       )}
     </div>
+  );
+}
+
+function ProtocolMetrics({ orgId }: { orgId: string }) {
+  const { data, isLoading } = useProtocolUsage(orgId);
+
+  if (isLoading) return <Skeleton className="h-48" />;
+  if (!data || data.machines === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          <Monitor className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          No protocol audit data yet. Data will appear after agents complete their next scan cycle.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-4">
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <div className="text-2xl font-bold">{data.auditConfigured}</div>
+            <div className="text-xs text-muted-foreground">/ {data.machines} audit configured</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <div className="text-2xl font-bold">{(data.ntlm.outbound + data.ntlm.inbound).toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">NTLM events</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            <div className="text-2xl font-bold">{data.smb1.events.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">SMBv1 events</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 text-center">
+            {data.ntlm.safeToDisable && data.smb1.safeToDisable ? (
+              <>
+                <CheckCircle2 className="h-6 w-6 mx-auto text-green-600" />
+                <div className="text-xs text-green-700 mt-1 font-medium">Safe to disable both</div>
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="h-6 w-6 mx-auto text-amber-500" />
+                <div className="text-xs text-amber-700 mt-1 font-medium">
+                  {!data.ntlm.safeToDisable && 'NTLM in use'}
+                  {!data.ntlm.safeToDisable && !data.smb1.safeToDisable && ' · '}
+                  {!data.smb1.safeToDisable && 'SMBv1 in use'}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Users className="h-4 w-4 text-blue-500" />
+              NTLM Usage
+              {data.ntlm.safeToDisable && (
+                <Badge className="bg-green-100 text-green-800 border-green-300 ml-auto text-[10px]">Safe</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Outbound</span>
+              <span className="font-mono font-medium">{data.ntlm.outbound.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Inbound</span>
+              <span className="font-mono font-medium">{data.ntlm.inbound.toLocaleString()}</span>
+            </div>
+            {data.perMachine.length > 0 && (
+              <div className="pt-2 border-t text-xs space-y-1">
+                <div className="text-muted-foreground font-medium">Per machine:</div>
+                {data.perMachine.slice(0, 5).map((m) => {
+                  const out = m.controls['NTLM-USE-001']?.actualValue ?? '0';
+                  const inp = m.controls['NTLM-USE-002']?.actualValue ?? '0';
+                  const total = parseInt(out) + parseInt(inp);
+                  if (total === 0) return null;
+                  return (
+                    <div key={m.machineId} className="flex justify-between">
+                      <span className="truncate mr-2">{m.hostname}</span>
+                      <span className="font-mono text-muted-foreground">{total.toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <XCircle className="h-4 w-4 text-red-500" />
+              SMBv1 Usage
+              {data.smb1.safeToDisable && (
+                <Badge className="bg-green-100 text-green-800 border-green-300 ml-auto text-[10px]">Safe</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Access events</span>
+              <span className="font-mono font-medium">{data.smb1.events.toLocaleString()}</span>
+            </div>
+            {data.perMachine.length > 0 && (
+              <div className="pt-2 border-t text-xs space-y-1">
+                <div className="text-muted-foreground font-medium">Per machine:</div>
+                {data.perMachine.slice(0, 5).map((m) => {
+                  const count = parseInt(m.controls['SMB1-USE-001']?.actualValue ?? '0');
+                  if (count === 0) return null;
+                  return (
+                    <div key={m.machineId} className="flex justify-between">
+                      <span className="truncate mr-2">{m.hostname}</span>
+                      <span className="font-mono text-muted-foreground">{count.toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </>
   );
 }

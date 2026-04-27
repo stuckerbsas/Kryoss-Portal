@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useMachineParam } from '@/hooks/useMachineParam';
 import {
   LineChart,
@@ -973,7 +974,7 @@ export function MachineDetail() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate(`/organizations/${orgSlug}/fleet`)}>
+          <Button variant="ghost" size="sm" onClick={() => navigate(`/organizations/${orgSlug}/devices`)}>
             <ArrowLeft className="size-4 mr-1" />
             Fleet
           </Button>
@@ -1070,15 +1071,28 @@ export function MachineDetail() {
 }
 
 function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId?: string }) {
+  const [local, setLocal] = useState(config);
   const mutation = useUpdateAgentConfig(machineId);
-  const update = (patch: Partial<AgentConfig>) => mutation.mutate(patch);
+
+  // Sync when server data changes
+  useMemo(() => setLocal(config), [config]);
+
+  const update = (patch: Partial<AgentConfig>) => {
+    setLocal((prev) => ({ ...prev, ...patch }));
+    mutation.mutate(patch, {
+      onError: (err: any) => {
+        setLocal(config);
+        toast.error(`Config update failed: ${err.message}`);
+      },
+    });
+  };
 
   return (
     <SectionCard icon={<Settings className="size-4" />} title="Agent Configuration">
       <div className="space-y-3">
         <div className="flex justify-between items-center py-1">
           <span className="text-sm text-muted-foreground">Compliance scan interval</span>
-          <Select value={String(config.complianceIntervalHours)} onValueChange={(v) => update({ complianceIntervalHours: Number(v) })}>
+          <Select value={String(local.complianceIntervalHours)} onValueChange={(v) => update({ complianceIntervalHours: Number(v) })}>
             <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="6">6h</SelectItem>
@@ -1090,7 +1104,7 @@ function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId
         </div>
         <div className="flex justify-between items-center py-1">
           <span className="text-sm text-muted-foreground">SNMP scan interval</span>
-          <Select value={String(config.snmpIntervalMinutes)} onValueChange={(v) => update({ snmpIntervalMinutes: Number(v) })}>
+          <Select value={String(local.snmpIntervalMinutes)} onValueChange={(v) => update({ snmpIntervalMinutes: Number(v) })}>
             <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="60">1h</SelectItem>
@@ -1103,8 +1117,8 @@ function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId
         <div className="flex justify-between items-center py-1">
           <span className="text-sm text-muted-foreground">Network scan</span>
           <div className="flex items-center gap-2">
-            {config.enableNetworkScan && (
-              <Select value={String(config.networkScanIntervalHours)} onValueChange={(v) => update({ networkScanIntervalHours: Number(v) })}>
+            {local.enableNetworkScan && (
+              <Select value={String(local.networkScanIntervalHours)} onValueChange={(v) => update({ networkScanIntervalHours: Number(v) })}>
                 <SelectTrigger className="w-20 h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="6">6h</SelectItem>
@@ -1113,12 +1127,12 @@ function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId
                 </SelectContent>
               </Select>
             )}
-            <Switch checked={config.enableNetworkScan} onCheckedChange={(v) => update({ enableNetworkScan: v })} />
+            <Switch checked={local.enableNetworkScan} onCheckedChange={(v) => update({ enableNetworkScan: v })} />
           </div>
         </div>
         <div className="flex justify-between items-center py-1">
           <span className="text-sm text-muted-foreground">Passive discovery</span>
-          <Switch checked={config.enablePassiveDiscovery} onCheckedChange={(v) => update({ enablePassiveDiscovery: v })} />
+          <Switch checked={local.enablePassiveDiscovery} onCheckedChange={(v) => update({ enablePassiveDiscovery: v })} />
         </div>
       </div>
       <p className="text-xs text-muted-foreground mt-2">Changes apply on next heartbeat (~15 min)</p>
