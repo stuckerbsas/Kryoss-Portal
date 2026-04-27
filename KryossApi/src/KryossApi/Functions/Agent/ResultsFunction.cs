@@ -96,6 +96,15 @@ public class ResultsFunction
             bodyBytes = ms.ToArray();
         }
 
+        // SH-05: reject oversized payloads (10 MB max — typical payload ~175 KB)
+        const int MaxBodyBytes = 10 * 1024 * 1024;
+        if (bodyBytes.Length > MaxBodyBytes)
+        {
+            var big = req.CreateResponse(HttpStatusCode.RequestEntityTooLarge);
+            await big.WriteAsJsonAsync(new { error = "payload_too_large", maxBytes = MaxBodyBytes });
+            return big;
+        }
+
         // CRIT-04: Detect content type and enforce envelope encryption when the
         // org has a public key configured (meaning the agent has the key too).
         // Plaintext fallback is only allowed for orgs that haven't completed

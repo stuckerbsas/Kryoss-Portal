@@ -99,6 +99,7 @@ public class CloudAssessmentReportService : ICloudAssessmentReportService
 <html lang='{(es ? "es" : "en")}'>
 <head>
 <meta charset='utf-8'>
+<meta http-equiv='Content-Security-Policy' content=""default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; base-uri 'none'; form-action 'none';"">
 <title>{Enc(title)}</title>
 {fontImport}
 <style>

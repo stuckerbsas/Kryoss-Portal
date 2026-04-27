@@ -1,3 +1,5 @@
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using KryossApi.Data;
 using KryossApi.Infrastructure;
 using KryossApi.Middleware;
@@ -106,16 +108,24 @@ builder.Services.AddSingleton<IGeoIpService, IpApiGeoIpService>();
 builder.Services.AddSingleton<IFabricAdminService, FabricAdminService>();
 builder.Services.AddScoped<IPublicIpTracker, PublicIpTracker>();
 builder.Services.AddScoped<ISiteClusterService, SiteClusterService>();
+builder.Services.AddScoped<IWanHealthService, WanHealthService>();
+builder.Services.AddScoped<ICveService, CveService>();
 builder.Services.AddScoped<IScanScheduleService, ScanScheduleService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
 builder.Services.AddSingleton<IKeyRotationService, KeyRotationService>();
 builder.Services.AddHttpClient();
 
 // ── M365 multi-tenant admin consent config ──
+// SH-02: Client secret loaded from Key Vault when available, env var fallback for local dev.
+var m365SecretFromKv = ReadKeyVaultSecret("M365ScannerClientSecret");
+var m365Secret = m365SecretFromKv
+    ?? Environment.GetEnvironmentVariable("M365ScannerClientSecret")
+    ?? "";
+Console.WriteLine($"[KryossApi] M365 secret source: {(m365SecretFromKv is not null ? "key-vault" : string.IsNullOrEmpty(m365Secret) ? "MISSING" : "env-var")}");
 builder.Services.AddSingleton(new M365Config
 {
     ClientId = Environment.GetEnvironmentVariable("M365ScannerClientId") ?? "",
-    ClientSecret = Environment.GetEnvironmentVariable("M365ScannerClientSecret") ?? "",
+    ClientSecret = m365Secret,
     PortalBaseUrl = Environment.GetEnvironmentVariable("PortalBaseUrl")
         ?? "https://zealous-dune-0ac672d10.6.azurestaticapps.net"
 });
@@ -126,3 +136,19 @@ builder.Services
     .ConfigureFunctionsApplicationInsights();
 
 builder.Build().Run();
+
+static string? ReadKeyVaultSecret(string secretName)
+{
+    var vaultUrl = Environment.GetEnvironmentVariable("KeyVaultUrl");
+    if (string.IsNullOrEmpty(vaultUrl)) return null;
+    try
+    {
+        var client = new SecretClient(new Uri(vaultUrl), new DefaultAzureCredential());
+        return client.GetSecret(secretName).Value.Value;
+    }
+    catch
+    {
+        Console.WriteLine($"[KryossApi] WARNING: Key Vault read failed for '{secretName}', falling back to env var");
+        return null;
+    }
+}

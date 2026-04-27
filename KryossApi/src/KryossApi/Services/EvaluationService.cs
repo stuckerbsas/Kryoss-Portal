@@ -18,11 +18,13 @@ public class EvaluationService : IEvaluationService
 {
     private readonly KryossDbContext _db;
     private readonly IPlatformResolver _platformResolver;
+    private readonly ICveService _cve;
 
-    public EvaluationService(KryossDbContext db, IPlatformResolver platformResolver)
+    public EvaluationService(KryossDbContext db, IPlatformResolver platformResolver, ICveService cve)
     {
         _db = db;
         _platformResolver = platformResolver;
+        _cve = cve;
     }
 
     public async Task<AssessmentRun> EvaluateAsync(Guid machineId, Guid organizationId, AgentPayload payload)
@@ -338,6 +340,13 @@ public class EvaluationService : IEvaluationService
                     CloudEndpointCount = nd.CloudEndpointLatency?.Count(e => e.Reachable),
                     CloudEndpointAvgMs = nd.CloudEndpointLatency?.Where(e => e.Reachable).Select(e => e.LatencyMs).DefaultIfEmpty(0).Average(),
                     TriggeredByIpChange = nd.TriggeredByIpChange,
+                    JitterMs = nd.JitterMs,
+                    PacketLossPct = nd.PacketLossPct,
+                    HopCount = nd.Traceroute?.Count(h => !h.TimedOut),
+                    TracerouteTarget = nd.TracerouteTarget,
+                    TracerouteJson = nd.Traceroute is { Count: > 0 }
+                        ? System.Text.Json.JsonSerializer.Serialize(nd.Traceroute)
+                        : null,
                     RawData = System.Text.Json.JsonSerializer.Serialize(nd),
                     ScannedAt = DateTime.UtcNow,
                 };
@@ -400,10 +409,133 @@ public class EvaluationService : IEvaluationService
                 _db.MachineNetworkDiags.Add(diag);
             }
 
+            // Persist patch compliance status
+            if (payload.PatchStatus is { } ps)
+            {
+                var existing = await _db.MachinePatchStatuses
+                    .FirstOrDefaultAsync(p => p.MachineId == machineId);
+
+                var score = ComputePatchComplianceScore(ps);
+
+                if (existing != null)
+                {
+                    existing.UpdateSource = ps.UpdateSource;
+                    existing.WsusServer = ps.WsusServer;
+                    existing.WufbRing = ps.WufbRing;
+                    existing.LastCheckUtc = ps.LastCheckUtc;
+                    existing.LastInstallUtc = ps.LastInstallUtc;
+                    existing.RebootPending = ps.RebootPending;
+                    existing.InstalledCount30d = ps.InstalledCount30d;
+                    existing.InstalledCount90d = ps.InstalledCount90d;
+                    existing.ComplianceScore = score;
+                    existing.NinjaManaged = ps.NinjaManaged;
+                    existing.WuServiceStatus = ps.WuServiceStatus;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _db.MachinePatchStatuses.Add(new Data.Entities.MachinePatchStatus
+                    {
+                        MachineId = machineId,
+                        OrganizationId = organizationId,
+                        UpdateSource = ps.UpdateSource,
+                        WsusServer = ps.WsusServer,
+                        WufbRing = ps.WufbRing,
+                        LastCheckUtc = ps.LastCheckUtc,
+                        LastInstallUtc = ps.LastInstallUtc,
+                        RebootPending = ps.RebootPending,
+                        InstalledCount30d = ps.InstalledCount30d,
+                        InstalledCount90d = ps.InstalledCount90d,
+                        ComplianceScore = score,
+                        NinjaManaged = ps.NinjaManaged,
+                        WuServiceStatus = ps.WuServiceStatus,
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                }
+
+                // Upsert hotfixes
+                if (ps.Hotfixes is { Count: > 0 })
+                {
+                    var existingPatches = await _db.MachinePatches
+                        .Where(p => p.MachineId == machineId)
+                        .ToDictionaryAsync(p => p.HotfixId);
+
+                    foreach (var hf in ps.Hotfixes)
+                    {
+                        if (string.IsNullOrEmpty(hf.HotfixId)) continue;
+                        if (!existingPatches.ContainsKey(hf.HotfixId))
+                        {
+                            _db.MachinePatches.Add(new Data.Entities.MachinePatch
+                            {
+                                MachineId = machineId,
+                                OrganizationId = organizationId,
+                                HotfixId = hf.HotfixId,
+                                Description = hf.Description,
+                                InstalledOn = hf.InstalledOn,
+                                InstalledBy = hf.InstalledBy,
+                                CreatedAt = DateTime.UtcNow,
+                            });
+                        }
+                    }
+                }
+            }
+
             await _db.SaveChangesAsync();
         }
 
+        // A-01: CVE scan (non-fatal)
+        try { await _cve.ScanMachineAsync(machineId, organizationId, run.Id); }
+        catch (Exception ex) { Console.WriteLine($"[EvaluationService] CVE scan failed: {ex.Message}"); }
+
         return run;
+    }
+
+    private static int ComputePatchComplianceScore(PatchStatusDto ps)
+    {
+        int score = 100;
+
+        // WU service not running: -30
+        if (ps.WuServiceStatus is "stopped" or "disabled" or "not-found")
+            score -= 30;
+
+        // Reboot pending: -15
+        if (ps.RebootPending)
+            score -= 15;
+
+        // No managed update source: -10
+        if (ps.UpdateSource is "standalone" or "unknown")
+            score -= 10;
+
+        // Days since last check
+        if (ps.LastCheckUtc.HasValue)
+        {
+            var daysSinceCheck = (DateTime.UtcNow - ps.LastCheckUtc.Value).TotalDays;
+            if (daysSinceCheck > 30) score -= 25;
+            else if (daysSinceCheck > 14) score -= 15;
+            else if (daysSinceCheck > 7) score -= 5;
+        }
+        else
+        {
+            score -= 20; // never checked
+        }
+
+        // Days since last install
+        if (ps.LastInstallUtc.HasValue)
+        {
+            var daysSinceInstall = (DateTime.UtcNow - ps.LastInstallUtc.Value).TotalDays;
+            if (daysSinceInstall > 60) score -= 15;
+            else if (daysSinceInstall > 30) score -= 10;
+        }
+        else
+        {
+            score -= 10;
+        }
+
+        // Low recent patch count
+        if (ps.InstalledCount30d == 0 && ps.InstalledCount90d == 0)
+            score -= 5;
+
+        return Math.Max(0, Math.Min(100, score));
     }
 
     private static (string status, int score, int maxScore, string? finding) Evaluate(
@@ -760,6 +892,7 @@ public class AgentPayload
     public List<AgentCheckResult> Results { get; set; } = [];
     public NetworkDiagDto? NetworkDiag { get; set; }
     public List<LocalAdminDto>? LocalAdmins { get; set; }
+    public PatchStatusDto? PatchStatus { get; set; }
 }
 
 public class NetworkDiagDto
@@ -791,6 +924,18 @@ public class NetworkDiagDto
     public int? ListeningPortCount { get; set; }
     public int? DisconnectedWithIpCount { get; set; }
     public bool? NicTeamingDetected { get; set; }
+    public decimal? JitterMs { get; set; }
+    public decimal? PacketLossPct { get; set; }
+    public List<TracerouteHopDto>? Traceroute { get; set; }
+    public string? TracerouteTarget { get; set; }
+}
+
+public class TracerouteHopDto
+{
+    public int Hop { get; set; }
+    public string? Address { get; set; }
+    public long RttMs { get; set; }
+    public bool TimedOut { get; set; }
 }
 
 public class CloudEndpointLatencyDto
@@ -924,6 +1069,29 @@ public class LocalAdminDto
     public string Name { get; set; } = null!;
     public string Type { get; set; } = null!;
     public string Source { get; set; } = null!;
+}
+
+public class PatchStatusDto
+{
+    public string? UpdateSource { get; set; }
+    public string? WsusServer { get; set; }
+    public string? WufbRing { get; set; }
+    public DateTime? LastCheckUtc { get; set; }
+    public DateTime? LastInstallUtc { get; set; }
+    public bool RebootPending { get; set; }
+    public int InstalledCount30d { get; set; }
+    public int InstalledCount90d { get; set; }
+    public string? WuServiceStatus { get; set; }
+    public bool NinjaManaged { get; set; }
+    public List<HotfixDto>? Hotfixes { get; set; }
+}
+
+public class HotfixDto
+{
+    public string HotfixId { get; set; } = null!;
+    public string? Description { get; set; }
+    public DateTime? InstalledOn { get; set; }
+    public string? InstalledBy { get; set; }
 }
 
 public class AgentCheckResult

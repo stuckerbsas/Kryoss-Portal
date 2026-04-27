@@ -50,5 +50,33 @@ public class NetworkSite
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    // IA-3: WAN health
+    public decimal? MonthlyCost { get; set; }
+    public string? LinkType { get; set; }
+    public bool IsRedundant { get; set; }
+    public decimal? WanScore { get; set; }
+    public decimal? AvgJitterMs { get; set; }
+    public decimal? AvgPacketLossPct { get; set; }
+    public int? HopCount { get; set; }
+    public int UniqueIspCount { get; set; } = 1;
+
     public Organization Organization { get; set; } = null!;
+    public ICollection<WanFinding> WanFindings { get; set; } = [];
+}
+
+public class WanFinding
+{
+    public int Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid? SiteId { get; set; }
+    public string Severity { get; set; } = null!;
+    public string Category { get; set; } = null!;
+    public string Title { get; set; } = null!;
+    public string? Detail { get; set; }
+    public decimal? MetricValue { get; set; }
+    public decimal? MetricThreshold { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public Organization Organization { get; set; } = null!;
+    public NetworkSite? Site { get; set; }
 }

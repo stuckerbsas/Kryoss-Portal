@@ -44,7 +44,12 @@ public class NetworkSitesFunction
                 s.ContractedDownMbps, s.ContractedUpMbps,
                 s.AgentCount, s.DeviceCount, s.IpChanges90d,
                 s.AvgDownMbps, s.AvgUpMbps, s.AvgLatencyMs,
-                s.IsAutoDerived, s.UpdatedAt
+                s.IsAutoDerived, s.UpdatedAt,
+                s.WanScore, s.AvgJitterMs, s.AvgPacketLossPct,
+                s.HopCount, s.UniqueIspCount,
+                s.MonthlyCost, s.LinkType, s.IsRedundant,
+                FindingCount = s.WanFindings.Count,
+                CriticalCount = s.WanFindings.Count(f => f.Severity == "critical"),
             })
             .ToListAsync();
 
@@ -100,6 +105,9 @@ public class NetworkSitesFunction
             if (body.SiteName is not null) site.SiteName = body.SiteName;
             if (body.ContractedDownMbps.HasValue) site.ContractedDownMbps = body.ContractedDownMbps;
             if (body.ContractedUpMbps.HasValue) site.ContractedUpMbps = body.ContractedUpMbps;
+            if (body.MonthlyCost.HasValue) site.MonthlyCost = body.MonthlyCost;
+            if (body.LinkType is not null) site.LinkType = body.LinkType;
+            if (body.IsRedundant.HasValue) site.IsRedundant = body.IsRedundant.Value;
             site.IsAutoDerived = false;
             site.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
@@ -175,6 +183,9 @@ public class NetworkSitesFunction
                 d.InternetLatencyMs,
                 d.DnsResolutionMs,
                 d.CloudEndpointAvgMs,
+                d.JitterMs,
+                d.PacketLossPct,
+                d.HopCount,
                 MachineName = d.Machine.Hostname,
             })
             .Take(500)
@@ -228,11 +239,104 @@ public class NetworkSitesFunction
         return res;
     }
 
+    [Function("NetworkSites_WanHealth")]
+    [RequirePermission("machines:read")]
+    public async Task<HttpResponseData> WanHealth(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/network-sites/wan-health")] HttpRequestData req)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        if (!Guid.TryParse(query["organizationId"], out var orgId))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+            return bad;
+        }
+
+        var sites = await _db.NetworkSites
+            .Where(s => s.OrganizationId == orgId && s.PublicIp != null)
+            .Select(s => new
+            {
+                s.Id, s.SiteName, s.PublicIp,
+                s.GeoCity, s.Isp,
+                s.WanScore, s.AvgJitterMs, s.AvgPacketLossPct, s.HopCount,
+                s.AvgDownMbps, s.AvgUpMbps, s.AvgLatencyMs,
+                s.ContractedDownMbps, s.ContractedUpMbps,
+                s.MonthlyCost, s.LinkType, s.IsRedundant, s.UniqueIspCount,
+                s.AgentCount,
+                Findings = s.WanFindings.Select(f => new
+                {
+                    f.Severity, f.Category, f.Title, f.Detail,
+                    f.MetricValue, f.MetricThreshold,
+                }).ToList(),
+            })
+            .OrderByDescending(s => s.WanScore == null)
+            .ThenBy(s => s.WanScore)
+            .ToListAsync();
+
+        var allFindings = await _db.WanFindings
+            .Where(f => f.OrganizationId == orgId)
+            .GroupBy(f => f.Severity)
+            .Select(g => new { severity = g.Key, count = g.Count() })
+            .ToListAsync();
+
+        var res = req.CreateResponse(HttpStatusCode.OK);
+        await res.WriteAsJsonAsync(new
+        {
+            orgScore = sites.Where(s => s.WanScore.HasValue).Select(s => s.WanScore!.Value).DefaultIfEmpty(0).Average(),
+            summary = allFindings,
+            sites,
+        });
+        return res;
+    }
+
+    [Function("NetworkSites_SiteTraceroute")]
+    [RequirePermission("machines:read")]
+    public async Task<HttpResponseData> SiteTraceroute(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/network-sites/{siteId}/traceroute")] HttpRequestData req,
+        string siteId)
+    {
+        if (!Guid.TryParse(siteId, out var id))
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        var site = await _db.NetworkSites.FindAsync(id);
+        if (site is null)
+            return req.CreateResponse(HttpStatusCode.NotFound);
+
+        var machineIds = await _db.Machines
+            .Where(m => m.OrganizationId == site.OrganizationId && m.LastPublicIp == site.PublicIp)
+            .Select(m => m.Id)
+            .ToListAsync();
+
+        var latest = await _db.MachineNetworkDiags
+            .Where(d => machineIds.Contains(d.MachineId) && d.TracerouteJson != null)
+            .OrderByDescending(d => d.ScannedAt)
+            .Select(d => new
+            {
+                d.MachineId,
+                MachineName = d.Machine.Hostname,
+                d.TracerouteTarget,
+                d.TracerouteJson,
+                d.HopCount,
+                d.JitterMs,
+                d.PacketLossPct,
+                d.ScannedAt,
+            })
+            .Take(5)
+            .ToListAsync();
+
+        var res = req.CreateResponse(HttpStatusCode.OK);
+        await res.WriteAsJsonAsync(latest);
+        return res;
+    }
+
     private class RebuildRequest { public Guid OrganizationId { get; set; } }
     private class SiteUpdateRequest
     {
         public string? SiteName { get; set; }
         public decimal? ContractedDownMbps { get; set; }
         public decimal? ContractedUpMbps { get; set; }
+        public decimal? MonthlyCost { get; set; }
+        public string? LinkType { get; set; }
+        public bool? IsRedundant { get; set; }
     }
 }

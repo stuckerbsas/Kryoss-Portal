@@ -93,6 +93,24 @@ public class HygieneFunction
 
         await _db.SaveChangesAsync();
 
+        // Retain only the last 5 scans per org — delete older ones + their findings
+        var oldScanIds = await _db.AdHygieneScans
+            .Where(s => s.OrganizationId == orgId.Value)
+            .OrderByDescending(s => s.ScannedAt)
+            .Skip(5)
+            .Select(s => s.Id)
+            .ToListAsync();
+
+        if (oldScanIds.Count > 0)
+        {
+            await _db.AdHygieneFindings
+                .Where(f => oldScanIds.Contains(f.ScanId))
+                .ExecuteDeleteAsync();
+            await _db.AdHygieneScans
+                .Where(s => oldScanIds.Contains(s.Id))
+                .ExecuteDeleteAsync();
+        }
+
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { scanId = scan.Id, findings = body.Findings.Count });
         return response;

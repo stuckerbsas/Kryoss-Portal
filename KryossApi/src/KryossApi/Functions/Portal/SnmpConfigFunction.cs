@@ -211,7 +211,7 @@ public class SnmpConfigFunction
                 d.ScannedAt, d.interfaces, d.supplies,
                 lldpNeighbors, cdpNeighbors,
                 vendorData = !string.IsNullOrEmpty(d.VendorData)
-                    ? JsonSerializer.Deserialize<JsonElement>(d.VendorData) : null,
+                    ? (JsonElement?)JsonSerializer.Deserialize<JsonElement>(d.VendorData) : null,
             };
         });
 

@@ -130,13 +130,27 @@ public class KryossDbContext : DbContext
     public DbSet<ServiceCatalogItem> ServiceCatalog => Set<ServiceCatalogItem>();
     public DbSet<FranchiseServiceRate> FranchiseServiceRates => Set<FranchiseServiceRate>();
 
-    // Network Sites + Public IP (IA-11)
+    // Network Sites + Public IP (IA-11) + WAN Health (IA-3)
     public DbSet<MachinePublicIpHistory> MachinePublicIpHistory => Set<MachinePublicIpHistory>();
     public DbSet<NetworkSite> NetworkSites => Set<NetworkSite>();
+    public DbSet<WanFinding> WanFindings => Set<WanFinding>();
 
     // CA-15: Drift Alerts
     public DbSet<CloudAssessmentAlertRule> CloudAssessmentAlertRules => Set<CloudAssessmentAlertRule>();
     public DbSet<CloudAssessmentAlertSent> CloudAssessmentAlertsSent => Set<CloudAssessmentAlertSent>();
+
+    // CVE Scanner (A-01)
+    public DbSet<CveEntry> CveEntries => Set<CveEntry>();
+    public DbSet<MachineCveFinding> MachineCveFindings => Set<MachineCveFinding>();
+    public DbSet<CveSyncLog> CveSyncLogs => Set<CveSyncLog>();
+
+    // Patch Compliance
+    public DbSet<MachinePatchStatus> MachinePatchStatuses => Set<MachinePatchStatus>();
+    public DbSet<MachinePatch> MachinePatches => Set<MachinePatch>();
+
+    // DC Health (DC-02+03)
+    public DbSet<DcHealthSnapshot> DcHealthSnapshots => Set<DcHealthSnapshot>();
+    public DbSet<DcReplicationPartner> DcReplicationPartners => Set<DcReplicationPartner>();
 
     // Remediation
     public DbSet<RemediationAction> RemediationActions => Set<RemediationAction>();
@@ -453,6 +467,66 @@ public class KryossDbContext : DbContext
             e.ToTable("network_sites");
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasMany(x => x.WanFindings).WithOne(x => x.Site).HasForeignKey(x => x.SiteId);
+        });
+        mb.Entity<WanFinding>(e =>
+        {
+            e.ToTable("wan_findings");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+        });
+
+        // ── CVE Scanner (A-01) ──
+        mb.Entity<CveEntry>(e =>
+        {
+            e.ToTable("cve_entries");
+            e.HasKey(x => x.Id);
+        });
+        mb.Entity<MachineCveFinding>(e =>
+        {
+            e.ToTable("machine_cve_findings");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+        });
+        mb.Entity<CveSyncLog>(e =>
+        {
+            e.ToTable("cve_sync_log");
+            e.HasKey(x => x.Id);
+        });
+
+        // ── Patch Compliance ──
+        mb.Entity<MachinePatchStatus>(e =>
+        {
+            e.ToTable("machine_patch_status");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasIndex(x => x.MachineId).IsUnique();
+        });
+        mb.Entity<MachinePatch>(e =>
+        {
+            e.ToTable("machine_patches");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasIndex(x => new { x.MachineId, x.HotfixId }).IsUnique();
+        });
+
+        // ── DC Health (DC-02+03) ──
+        mb.Entity<DcHealthSnapshot>(e =>
+        {
+            e.ToTable("dc_health_snapshots");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasMany(x => x.ReplicationPartners).WithOne(x => x.Snapshot).HasForeignKey(x => x.SnapshotId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.OrganizationId);
+            e.HasIndex(x => x.MachineId);
+        });
+        mb.Entity<DcReplicationPartner>(e =>
+        {
+            e.ToTable("dc_replication_partners");
+            e.HasKey(x => x.Id);
         });
 
         // ── SNMP infrastructure ──

@@ -189,6 +189,7 @@ public class ReportsFunction
 
             var response = req.CreateResponse(HttpStatusCode.OK);
             response.Headers.Add("Content-Type", "text/html; charset=utf-8");
+            response.Headers.Add("Content-Disposition", "attachment; filename=\"report.html\"");
             if (req.Headers.TryGetValues("Origin", out var successOrigins))
             {
                 response.Headers.TryAddWithoutValidation("Access-Control-Allow-Origin", successOrigins.First());

@@ -74,6 +74,14 @@ public class CollectFunction
             bodyBytes = ms.ToArray();
         }
 
+        const int MaxBodyBytes = 10 * 1024 * 1024;
+        if (bodyBytes.Length > MaxBodyBytes)
+        {
+            var big = req.CreateResponse(HttpStatusCode.RequestEntityTooLarge);
+            await big.WriteAsJsonAsync(new { error = "payload_too_large", maxBytes = MaxBodyBytes });
+            return big;
+        }
+
         CollectPayload? envelope;
         try
         {

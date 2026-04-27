@@ -1028,6 +1028,7 @@ public class CloudAssessmentFunction
             var html = await _reports.GenerateAsync(parsedOrgId, type, lang);
             var response = req.CreateResponse(HttpStatusCode.OK);
             response.Headers.Add("Content-Type", "text/html; charset=utf-8");
+            response.Headers.Add("Content-Disposition", "attachment; filename=\"report.html\"");
             await response.WriteStringAsync(html);
             return response;
         }

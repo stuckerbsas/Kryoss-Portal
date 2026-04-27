@@ -236,15 +236,21 @@ public class EnrollmentService : IEnrollmentService
 
     private static string GenerateRandomCode(int length)
     {
-        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0, O, I, 1
-        var bytes = RandomNumberGenerator.GetBytes(length);
+        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0, O, I, 1 (30 chars)
+        const int charCount = 30;
+        const int maxUnbiased = 256 - (256 % charCount); // 240
         var result = new char[length];
         for (int i = 0; i < length; i++)
         {
-            if (i > 0 && i % 5 == 4) // Insert dash every 4 chars
+            if (i > 0 && i % 5 == 4)
+            {
                 result[i] = '-';
-            else
-                result[i] = chars[bytes[i] % chars.Length];
+                continue;
+            }
+            byte b;
+            do { b = RandomNumberGenerator.GetBytes(1)[0]; }
+            while (b >= maxUnbiased);
+            result[i] = chars[b % charCount];
         }
         return new string(result);
     }

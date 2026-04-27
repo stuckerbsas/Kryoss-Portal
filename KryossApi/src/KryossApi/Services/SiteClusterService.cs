@@ -12,8 +12,13 @@ public interface ISiteClusterService
 public class SiteClusterService : ISiteClusterService
 {
     private readonly KryossDbContext _db;
+    private readonly IWanHealthService _wan;
 
-    public SiteClusterService(KryossDbContext db) => _db = db;
+    public SiteClusterService(KryossDbContext db, IWanHealthService wan)
+    {
+        _db = db;
+        _wan = wan;
+    }
 
     public async Task RebuildSitesAsync(Guid organizationId)
     {
@@ -100,6 +105,8 @@ public class SiteClusterService : ISiteClusterService
         }
 
         await _db.SaveChangesAsync();
+
+        await _wan.EvaluateAsync(organizationId);
     }
 
     private static void ApplyGeo(NetworkSite site, MachinePublicIpHistory src)

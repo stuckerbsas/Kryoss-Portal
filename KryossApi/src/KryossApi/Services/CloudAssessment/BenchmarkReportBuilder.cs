@@ -20,6 +20,7 @@ internal static class BenchmarkReportBuilder
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html lang='en'><head><meta charset='utf-8'>");
+        sb.AppendLine("<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none';\">");
         sb.AppendLine($"<title>Benchmark Analysis — {Esc(organizationName)}</title>");
         sb.AppendLine("<style>");
         sb.AppendLine(@"

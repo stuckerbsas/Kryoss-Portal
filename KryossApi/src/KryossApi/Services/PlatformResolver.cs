@@ -67,6 +67,15 @@ public class PlatformResolver : IPlatformResolver
         if (osName.Contains("Server 2016", StringComparison.OrdinalIgnoreCase))
             return isDc ? "DC19" : "MS19";
 
+        // Older servers (2008/2008R2/2012/2012R2) fall back to 2019 baseline.
+        // Most registry/auditpol controls exist since 2008R2; missing ones
+        // return "not found" which evaluates as FAIL — correct for EOL OS.
+        if (osName.Contains("Server 2012", StringComparison.OrdinalIgnoreCase))
+            return isDc ? "DC19" : "MS19";
+
+        if (osName.Contains("Server 2008", StringComparison.OrdinalIgnoreCase))
+            return isDc ? "DC19" : "MS19";
+
         return null;
     }
 

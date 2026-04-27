@@ -31,15 +31,11 @@ public class NetworkDiagnosticsFunction
             return bad;
         }
 
-        // Latest scan per machine only
-        var latestIds = await _db.MachineNetworkDiags
+        // Latest scan per machine — summary only (no child collections)
+        var diags = await _db.MachineNetworkDiags
             .Where(d => d.Machine.OrganizationId == orgGuid)
             .GroupBy(d => d.MachineId)
-            .Select(g => g.OrderByDescending(d => d.ScannedAt).Select(d => d.Id).First())
-            .ToListAsync();
-
-        var diags = await _db.MachineNetworkDiags
-            .Where(d => latestIds.Contains(d.Id))
+            .Select(g => g.OrderByDescending(d => d.ScannedAt).First())
             .OrderBy(d => d.Machine.Hostname)
             .Select(d => new
             {
@@ -65,28 +61,8 @@ public class NetworkDiagnosticsFunction
                 d.CloudEndpointAvgMs,
                 d.TriggeredByIpChange,
                 d.ScannedAt,
-                latencyPeers = d.LatencyPeers.Select(p => new
-                {
-                    p.Host,
-                    p.Subnet,
-                    p.Reachable,
-                    p.AvgMs,
-                    p.MinMs,
-                    p.MaxMs,
-                    p.JitterMs,
-                    p.PacketLoss,
-                    p.TotalSent,
-                }),
-                routes = d.Routes.Select(r => new
-                {
-                    r.Destination,
-                    r.Mask,
-                    r.NextHop,
-                    r.InterfaceIndex,
-                    r.Metric,
-                    r.RouteType,
-                    r.Protocol,
-                }),
+                latencyPeers = Array.Empty<object>(),
+                routes = Array.Empty<object>(),
             })
             .ToListAsync();
 

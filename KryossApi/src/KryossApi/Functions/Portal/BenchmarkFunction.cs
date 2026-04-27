@@ -135,6 +135,7 @@ public class BenchmarkFunction
 
         var resp = req.CreateResponse(HttpStatusCode.OK);
         resp.Headers.Add("Content-Type", "text/html; charset=utf-8");
+        resp.Headers.Add("Content-Disposition", "attachment; filename=\"report.html\"");
         await resp.WriteStringAsync(html);
         return resp;
     }

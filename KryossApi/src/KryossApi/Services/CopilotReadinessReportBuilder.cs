@@ -703,6 +703,7 @@ internal static class CopilotReadinessReportBuilder
         string htmlLang, ReportUserInfo? user, string? detail)
     {
         sb.AppendLine($"<!DOCTYPE html><html lang='{H(htmlLang)}'><head><meta charset='UTF-8'>");
+        sb.AppendLine("<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; base-uri 'none'; form-action 'none';\">");
         sb.AppendLine("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
         sb.AppendLine($"<title>{H(title)}</title>");
         sb.AppendLine("<link href='https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap' rel='stylesheet'>");
