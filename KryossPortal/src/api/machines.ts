@@ -42,8 +42,24 @@ export interface MachineDetail extends Machine {
   // Scan trigger
   scanPending: boolean;
   scanRequestedAt: string | null;
+  // Service mode
+  agentMode: string | null;
+  agentUptimeSeconds: number | null;
+  lastHeartbeatAt: string | null;
+  // Loop status (v2.8.0)
+  loopStatus: Record<string, LoopStatus> | null;
+  lastErrorAt: string | null;
+  lastErrorPhase: string | null;
+  lastErrorMsg: string | null;
   // History
   assessmentHistory: AssessmentRunSummary[];
+}
+
+export interface LoopStatus {
+  lastRunAt: string | null;
+  lastDurationMs: number | null;
+  lastError: string | null;
+  state: 'idle' | 'running' | 'error';
 }
 
 export interface AgentConfig {

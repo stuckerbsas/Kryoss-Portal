@@ -35,10 +35,11 @@ import {
   Play,
   ClipboardList,
   XCircle,
+  Activity,
 } from 'lucide-react';
 import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan } from '@/api/machines';
 import { useMachineTasks, useCancelTask } from '@/api/remediation';
-import type { AgentConfig } from '@/api/machines';
+import type { AgentConfig, LoopStatus } from '@/api/machines';
 import { useMachinePorts } from '@/api/ports';
 import { useMachineThreats } from '@/api/threats';
 import { useTrend } from '@/api/dashboard';
@@ -312,6 +313,18 @@ function OverviewTabContent({ machine, chartData, machineId }: { machine: any; c
 
         {machine.agentConfig && (
           <AgentConfigCard config={machine.agentConfig} machineId={machineId} />
+        )}
+
+        {machine.loopStatus && (
+          <LoopStatusCard
+            loopStatus={machine.loopStatus}
+            lastHeartbeatAt={machine.lastHeartbeatAt}
+            agentMode={machine.agentMode}
+            uptimeSeconds={machine.agentUptimeSeconds}
+            lastErrorAt={machine.lastErrorAt}
+            lastErrorPhase={machine.lastErrorPhase}
+            lastErrorMsg={machine.lastErrorMsg}
+          />
         )}
       </div>
 
@@ -1136,6 +1149,107 @@ function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId
         </div>
       </div>
       <p className="text-xs text-muted-foreground mt-2">Changes apply on next heartbeat (~15 min)</p>
+    </SectionCard>
+  );
+}
+
+const LOOP_LABELS: Record<string, string> = {
+  update: 'Self-Update',
+  heartbeat: 'Heartbeat',
+  compliance: 'Compliance',
+  snmp: 'SNMP',
+  network: 'Network Scan',
+};
+
+function LoopStatusCard({
+  loopStatus,
+  lastHeartbeatAt,
+  agentMode,
+  uptimeSeconds,
+  lastErrorAt,
+  lastErrorPhase,
+  lastErrorMsg,
+}: {
+  loopStatus: Record<string, LoopStatus>;
+  lastHeartbeatAt: string | null;
+  agentMode: string | null;
+  uptimeSeconds: number | null;
+  lastErrorAt: string | null;
+  lastErrorPhase: string | null;
+  lastErrorMsg: string | null;
+}) {
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  };
+
+  const formatUptime = (s: number) => {
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    if (d > 0) return `${d}d ${h}h`;
+    const m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const stateColor = (state: string) => {
+    if (state === 'running') return 'bg-blue-500';
+    if (state === 'error') return 'bg-red-500';
+    return 'bg-green-500';
+  };
+
+  return (
+    <SectionCard icon={<Activity className="size-4" />} title="Agent Loop Status">
+      <div className="space-y-1 mb-3">
+        {agentMode && (
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">Mode</span>
+            <Badge variant="outline" className="text-xs">{agentMode}</Badge>
+          </div>
+        )}
+        {uptimeSeconds != null && (
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">Uptime</span>
+            <span>{formatUptime(uptimeSeconds)}</span>
+          </div>
+        )}
+        {lastHeartbeatAt && (
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">Last Heartbeat</span>
+            <span>{formatTimeAgo(lastHeartbeatAt)}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {Object.entries(loopStatus).map(([key, loop]) => (
+          <div key={key} className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className={`size-2 rounded-full ${stateColor(loop.state)}`} />
+              <span className="font-medium">{LOOP_LABELS[key] ?? key}</span>
+            </div>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              {loop.lastDurationMs != null && (
+                <span>{formatDuration(loop.lastDurationMs)}</span>
+              )}
+              {loop.lastRunAt && (
+                <span>{formatTimeAgo(loop.lastRunAt)}</span>
+              )}
+              {loop.lastError && (
+                <Badge variant="destructive" className="text-[10px] px-1">{loop.lastError.slice(0, 30)}</Badge>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {lastErrorAt && lastErrorMsg && (
+        <div className="mt-3 p-2 bg-destructive/10 rounded text-xs">
+          <span className="font-medium text-destructive">[{lastErrorPhase}]</span>{' '}
+          <span className="text-muted-foreground">{lastErrorMsg.slice(0, 100)}</span>
+          <div className="text-[10px] text-muted-foreground mt-1">{formatTimeAgo(lastErrorAt)}</div>
+        </div>
+      )}
     </SectionCard>
   );
 }
