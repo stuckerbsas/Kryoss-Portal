@@ -36,9 +36,13 @@ import {
   ClipboardList,
   XCircle,
   Activity,
+  Cog,
+  ScrollText,
 } from 'lucide-react';
 import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan } from '@/api/machines';
 import { useMachineTasks, useCancelTask } from '@/api/remediation';
+import { ServicesTab } from './ServicesTab';
+import { ActivityTab } from './ActivityTab';
 import type { AgentConfig, LoopStatus } from '@/api/machines';
 import { useMachinePorts } from '@/api/ports';
 import { useMachineThreats } from '@/api/threats';
@@ -1045,6 +1049,12 @@ export function MachineDetail() {
           <TabsTrigger value="history" className="gap-1.5">
             <History className="size-3.5" /> History
           </TabsTrigger>
+          <TabsTrigger value="services" className="gap-1.5">
+            <Cog className="size-3.5" /> Services
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="gap-1.5">
+            <ScrollText className="size-3.5" /> Activity
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -1077,6 +1087,13 @@ export function MachineDetail() {
 
         <TabsContent value="history">
           <HistoryTabContent machine={machine} orgSlug={orgSlug} machineSlug={machineSlug} />
+        </TabsContent>
+
+        <TabsContent value="services">
+          <ServicesTab machineId={machine?.id} hostname={machine?.hostname ?? ''} />
+        </TabsContent>
+        <TabsContent value="activity">
+          <ActivityTab machineId={machine?.id} />
         </TabsContent>
       </Tabs>
     </div>
