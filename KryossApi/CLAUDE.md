@@ -117,6 +117,31 @@
 | GET | `/v2/network-sites/ip-history?organizationId=X` | `NetworkSitesFunction.IpHistory` | Public IP change timeline |
 | GET | `/v2/network-sites/{siteId}/speed-history` | `NetworkSitesFunction.SpeedHistory` | 90d speed/latency/DNS timeseries for site |
 | GET | `/v2/network-sites/{siteId}/machines` | `NetworkSitesFunction.SiteMachines` | Machines at site with latest diag |
+| GET | `/v2/network-sites/wan-health?organizationId=X` | `NetworkSitesFunction.WanHealth` | Org WAN score + per-site scores + findings |
+| GET | `/v2/network-sites/{siteId}/traceroute` | `NetworkSitesFunction.SiteTraceroute` | Latest traceroute data per machine at site |
+
+### Portal API (v2) — CVE Findings (A-01)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/cve-findings?organizationId=X&severity=` | `CveFindingsFunction.List` | CVE findings with summary + severity filter |
+| POST | `/v2/cve-findings/rescan?organizationId=X` | `CveFindingsFunction.Rescan` | Re-scan all machines for CVEs |
+| PATCH | `/v2/cve-findings/{id}/dismiss` | `CveFindingsFunction.Dismiss` | Dismiss a CVE finding |
+| GET | `/v2/cve-findings/stats?organizationId=X` | `CveFindingsFunction.Stats` | Top CVEs by CVSS + top vulnerable software |
+
+### Portal API (v2) — Patch Compliance (A-02)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/patch-compliance?organizationId=X` | `PatchComplianceFunction.Summary` | Org patch compliance summary + per-machine status |
+| GET | `/v2/patch-compliance/{machineId}/patches` | `PatchComplianceFunction.MachinePatches` | Installed hotfixes for machine |
+
+### Agent + Portal API — DC Health (DC-02+03)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| POST | `/v1/dc-health` | `DcHealthFunction.Submit` | Agent submits DC health snapshot (schema/FSMO/replication/sites) |
+| GET | `/v2/dc-health?organizationId=X` | `DcHealthFunction.Get` | Latest DC health snapshot + history (last 20) |
 
 ### Portal API (v2) — Infrastructure Assessment
 
@@ -177,6 +202,8 @@ src/KryossApi/
 │       ├── OrganizationsFunction.cs
 │       ├── ExternalExposureFunction.cs <- POST/GET /v2/external-scan (consent-gated port scan)
 │       ├── RemediationFunction.cs     <- /v2/remediation/* (create task, list, rollback, history, catalog)
+│       ├── PatchComplianceFunction.cs <- /v2/patch-compliance (org summary + machine patches)
+│       ├── DcHealthFunction.cs        <- POST /v1/dc-health (agent) + GET /v2/dc-health (portal)
 │       ├── MeFunction.cs
 │       └── RecycleBinFunction.cs
 ├── Middleware/
@@ -215,6 +242,8 @@ src/KryossApi/
 │   │   ├── InfraAssessmentService.cs  <- Stub orchestrator (creates scan row)
 │   │   └── Pipelines/                 <- Future: site discovery, device audit, etc.
 │   ├── ExternalScanner.cs            <- Server-side TCP port scan of public IPs (53 ports, banner grab, findings engine)
+│   ├── WanHealthService.cs           <- IA-3: WAN health scoring (0-100) + 11 finding rules per site
+│   ├── CveService.cs                 <- A-01: CVE matching engine (LIKE patterns + semantic version comparison)
 │   └── AuditInterceptor.cs          <- EF Core CreatedBy/UpdatedBy interceptor
 ├── Data/
 │   ├── KryossDbContext.cs           <- All DbSets
@@ -233,6 +262,10 @@ src/KryossApi/
 │       ├── InfraAssessment.cs       <- 6 entities: Scan, Site, Device, Connectivity, Capacity, Finding
 │       ├── ExternalScan.cs          <- ExternalScan + ExternalScanResult + ExternalScanFinding
 │       ├── Remediation.cs           <- RemediationAction + RemediationTask + OrgAutoRemediate
+│       ├── CveEntry.cs              <- CveEntry + MachineCveFinding + CveSyncLog (A-01)
+│       ├── PatchStatus.cs           <- MachinePatchStatus + MachinePatch (A-02)
+│       ├── DcHealthSnapshot.cs      <- DcHealthSnapshot + DcReplicationPartner (DC-02+03)
+│       ├── WanFinding.cs            <- WanFinding entity (IA-3, linked to NetworkSite)
 │       ├── Organization.cs
 │       └── Auth.cs
 └── Models/                          <- (empty — DTOs inline in functions)
@@ -285,6 +318,10 @@ src/KryossApi/
 | Infra Assessment | `infra_assessment_scans`, `_sites`, `_devices`, `_connectivity`, `_capacity`, `_findings` (IA-0 scaffold) |
 | External Exposure | `external_scans`, `external_scan_results`, `external_scan_findings` (server-side port scan with consent) |
 | Remediation | `remediation_actions` (whitelist catalog ~50 controls), `remediation_tasks` (per-machine work items), `org_auto_remediate` (per-org auto-fix opt-in) |
+| CVE | `cve_entries` (product patterns + severity + CVSS), `machine_cve_findings` (per-machine findings), `cve_sync_log` (sync tracking) |
+| Patch Compliance | `machine_patch_status` (per-machine WU status + compliance score), `machine_patches` (installed hotfixes) |
+| DC Health | `dc_health_snapshots` (schema/FSMO/sites/replication summary), `dc_replication_partners` (per-partner status, CASCADE delete) |
+| WAN Health | `wan_findings` (per-site WAN issues from `WanHealthService`), WAN fields on `network_sites` + `machine_network_diag` |
 
 **Schema files to read when DB-adjacent changes are needed:**
 - `sql/004_assessment.sql` — core catalog + assessment tables

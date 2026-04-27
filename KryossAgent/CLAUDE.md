@@ -1,4 +1,4 @@
-# KryossAgent v2.2.0 — Windows Assessment Agent (.NET 8)
+# KryossAgent v2.6.0 — Windows Assessment Agent (.NET 8)
 
 **Read `../CLAUDE.md` first.** This file is the detailed map of the agent only.
 
@@ -70,6 +70,8 @@ KryossAgent/
     │   ├── SnmpScanner.cs            <- SNMP device discovery (IF-MIB, ENTITY-MIB, etc.)
     │   ├── SoftwareInventory.cs      <- Uninstall registry keys (HKLM 64+32 bit)
     │   ├── ThreatDetector.cs         <- Endpoint threat detection
+    │   ├── PatchCollector.cs          <- A-02: WMI Win32_QuickFixEngineering + registry (WSUS/WUfB/reboot) + ServiceController
+    │   ├── DcHealthCollector.cs      <- DC-02+03: LDAP schema/FSMO/sites + WMI MSAD_ReplNeighbor replication
     │   ├── TargetDiscovery.cs        <- AD/ARP/subnet/explicit target discovery + AD hygiene
     │   ├── WmiProbe.cs               <- WMI remote probe for unenrolled Windows machines
     │   ├── PassiveListener.cs        <- UDP listeners (NetBIOS/mDNS/SSDP) for passive discovery

@@ -2,7 +2,7 @@
 
 > **Role of this file:** Single source of truth for what's done, what's queued, what's backlog. Use as orchestrator entry-point at start of every session. Update status inline as phases ship.
 >
-> **Last updated:** 2026-04-26 (session: security remediation Sprints 1-4 complete)
+> **Last updated:** 2026-04-26 (session: Active Queue v2 replanned — 10 items, security-first)
 > **Owner:** Federico
 > **Orchestrator:** Claude (caveman mode default)
 
@@ -75,7 +75,7 @@
 
 | Pillar | Metric | Count |
 |--------|--------|-------|
-| **API** | Version | 1.22.8 |
+| **API** | Version | 1.22.9 |
 | | HTTP endpoints | 163 |
 | | Entity classes | 28 |
 | | Services | 50+ |
@@ -123,7 +123,28 @@ Execute in order. Each ships independently. Prompts ready below.
 | 9 | ~~**A-NET** Agent v2.1.0: Full Network Pipeline + Remediation~~ | ✅ shipped 2026-04-25 | 1 session | 9 blocks: service, trial, banners, DNS+ping, WMI, passive, self-update, external exposure, remediation |
 | 10 | ~~**RP-EXPANSION** Report Block Library Finalization~~ | ✅ shipped 2026-04-26 | 3.25 sessions | 35 blocks, 16 recipes, 3 SVG chart helpers, test fixture. DeltaBlock removed (orphaned). |
 
-**Active queue complete.** Replan from Backlog — next candidates: CA-16 (PSA), IA-3 (WAN health), CA-17 (auto-remediation).
+**Queue v1 complete (2026-04-26).** All 10 items shipped.
+
+---
+
+## Active Queue v2 — Next 10 Phases
+
+Replanned 2026-04-26. Execute in order. Security-first, then customer deliverables, then MSP workflow.
+
+| # | Phase | Status | Est | Why now |
+|---|-------|--------|-----|---------|
+| 1 | ~~**SH-02** M365 client secret → Key Vault~~ | ✅ shipped 2026-04-26 | 0.5 session | Code reads from Key Vault via SecretClient, env var fallback for dev. API 1.22.9 |
+| 2 | ~~**SH-BATCH** Security hardening batch (SH-04+05+06+11)~~ | ✅ shipped 2026-04-26 | 0.5 session | CSP meta in all 4 report builders, 10MB body limit on /v1/results+collect, CSPRNG rejection sampling (no modulo bias), Content-Disposition:attachment on all report endpoints |
+| 3 | **IA-3** WAN & Site Connectivity Health | ⚪ | 2 sessions | P1: Customer asked "conectividad entre sitios". Active probes, link classification, SLA, cost flags |
+| 4 | **A-01** CVE Scanner (standalone, beyond Defender) | ⚪ | 1 session | P1: Core security differentiator. NVD/CVE matching against installed software |
+| 5 | **A-02** Patch Compliance (WSUS/WUfB/Ninja) | ⚪ | 1 session | P1: Pairs with A-01 CVE scanner. Pending update inventory + compliance status |
+| 6 | **DC-02+03** AD Schema/Replication Health + FSMO Audit | ⚪ | 1.5 sessions | P1: Completes DC engine value. Replication queue, FSMO placement, schema version |
+| 7 | **CA-16A** ConnectWise Manage PSA Integration | ⚪ | 2 sessions | P1: Biggest MSP workflow gap. Auto-ticket on findings/alerts |
+| 8 | **CA-17** Auto-remediation first 3 handlers | ⚪ | 1 session | P1: MFA enable + disable legacy auth + Customer Lockbox. Preview/apply/rollback |
+| 9 | **IA-10** Infrastructure Assessment Report | ⚪ | 1 session | P2: Customer deliverable. Uses IA-3 WAN data + IA-1 hypervisor + topology |
+| 10 | **SH-HARDEN** Security hardening final (SH-07+10) | ⚪ | 1 session | P1-P2: SPKI enforce + anomaly scoring (SH-11 already shipped in SH-BATCH) |
+
+**Estimated total:** ~12 sessions. Dependencies: IA-10 needs IA-3 data. A-02 pairs naturally with A-01.
 
 ---
 
@@ -574,16 +595,16 @@ No new consent. No new tables. Pure code reuse.
 | # | Task | Tier | Effort | Notes |
 |---|------|------|--------|-------|
 | SH-01 | ✅ Rate limiting (enrollment brute-force + per-org) | P0 | — | **SHIPPED 2026-04-25** — SH-KEY: 5/15min per IP on enrollment, 200/min per org |
-| SH-02 | M365 client secret → Key Vault | P0 | 0.5 session | Currently in env var (`M365ScannerClientSecret`) |
+| SH-02 | ✅ M365 client secret → Key Vault | P0 | — | **SHIPPED 2026-04-26** — `ReadKeyVaultSecret` in Program.cs via SecretClient + DefaultAzureCredential. Env var fallback for local dev. API 1.22.9 |
 | SH-03 | ✅ Per-machine key rotation + session keys | P0 | — | **SHIPPED 2026-04-25** — SH-KEY: Kerberos-inspired 3-layer auth (machine_secret + session_key 48h + rotation via heartbeat). Supersedes org-level API key expiration. |
-| SH-04 | Report HTML CSP meta tag | P1 | 0.5 session | Defense-in-depth against XSS if report HTML rendered in browser |
-| SH-05 | Request size limits on `POST /v1/results` | P1 | 0.5 session | No max body size — potential abuse vector |
-| SH-06 | Enrollment code cryptographic randomness audit | P1 | 0.5 session | Verify codes use CSPRNG, not `Random` |
+| SH-04 | ✅ Report HTML CSP meta tag | P1 | — | **SHIPPED 2026-04-26** — CSP meta in all 4 report builders (ReportHelpers, CopilotReadiness, CloudAssessment, Benchmark). Blocks script/object/frame. |
+| SH-05 | ✅ Request size limits on `POST /v1/results` + `/v1/collect` | P1 | — | **SHIPPED 2026-04-26** — 10 MB max body, returns 413 |
+| SH-06 | ✅ Enrollment code CSPRNG audit | P1 | — | **SHIPPED 2026-04-26** — Already used `RandomNumberGenerator`. Fixed modulo bias via rejection sampling (reject bytes ≥ 240 for 30-char alphabet) |
 | SH-07 | SPKI pinning activation (agent: log-only → enforce) | P1 | 0.5 session | Agent has it log-only until `SpkiPins` registry populated |
 | SH-08 | `dotnet list package --vulnerable` dependency audit | P2 | 0.5 session | No automated vuln check in CI today |
 | SH-09 | ✅ Per-machine key rotation (automated via heartbeat) | P2 | — | **SHIPPED 2026-04-25** — SH-KEY: session_key auto-rotates every 24h via heartbeat, machine_secret long-term, backward compat with org ApiSecret |
 | SH-10 | Anomaly scoring on agent payloads (server-side) | P2 | 1 session | Crafted but crypto-valid payloads = weakest link per security-baseline.md |
-| SH-11 | `Content-Disposition: attachment` on report HTML responses | P2 | 0.5 session | Prevents report HTML from executing in browser context |
+| SH-11 | ✅ `Content-Disposition: attachment` on report HTML responses | P2 | — | **SHIPPED 2026-04-26** — All 4 report endpoints: ReportsFunction, CloudAssessment, Benchmark, ReportDownload |
 
 ### Cross-Platform Agent
 
@@ -660,9 +681,10 @@ Discovered during 2026-04-20 code audit. Not features, but needed for accuracy.
 
 | Tier | Meaning | Items |
 |------|---------|-------|
-| **P0** | ~~Immediate~~ | ✅ All shipped (IA-0, IA-11, CA-13, CA-14, IA-1, SH-01, SH-03). **Pre-prod:** SH-02 |
-| **P1** | Month 1 | IA-2, IA-3, CA-16 A, CA-17 MFA, DC-02..03, AT-01..03, A-01..02, R-01..02, R-04, SH-04..07 |
-| **P2** | Month 2-3 | RP-06, IA-4/5/10/12, CA-18, AC-04/05/06/08, RP-01, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01, SH-08..11 |
+| **P0** | ~~Immediate~~ | ✅ All shipped (IA-0, IA-11, CA-13, CA-14, IA-1, SH-01, SH-02, SH-03, security Sprints 1-4) |
+| **P1** | Active Queue v2 | SH-02, SH-04/05/06, IA-3, A-01, A-02, DC-02/03, CA-16A, CA-17, SH-07/10/11 |
+| **P1 backlog** | After queue v2 | IA-2 Phase 2, AT-01..03, R-01..02, R-04, CA-17 remaining handlers |
+| **P2** | Month 2-3 | IA-4/5/10/12, CA-18, AC-04/05/06/08, SE-01..04, A-03..06, A-10, A-11, DC-04..07, CM-02, PL-02/04, UX-01, SH-08 |
 | **P3** | Month 3+ | IA-6..9, CA-19/20, A-07/08, AC-07, SE-05/08/09, CM-01/03..05, PL-01/03/05..10, RP-02..04, AT-04/05 |
 | **Icebox** | Needs demand signal | SE-06/07, RP-05, PL-11/12, UX-02..04, XP-01 (Linux agent MVP), XP-02 (Mac agent MVP) |
 

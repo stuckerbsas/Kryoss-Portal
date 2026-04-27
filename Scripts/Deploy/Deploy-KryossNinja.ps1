@@ -316,7 +316,7 @@ try { $agentId = Get-ItemPropertyValue -Path $REG_PATH -Name "AgentId" -ErrorAct
 
 if (-not $agentId -or $ForceReenroll) {
     Write-Log "Enrolling device..."
-    $enrollArgs = @("--silent", "--alone", "--code", $EnrollmentCode)
+    $enrollArgs = @("--silent", "--enroll-only", "--code", $EnrollmentCode)
     if ($ForceReenroll) { $enrollArgs += "--reenroll" }
 
     $ErrorActionPreference = "Continue"
