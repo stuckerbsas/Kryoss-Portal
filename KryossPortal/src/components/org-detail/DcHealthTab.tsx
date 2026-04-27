@@ -47,7 +47,7 @@ export function DcHealthTab() {
 
   if (isLoading) return <div className="space-y-4 p-4">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>;
   if (!data?.latest)
-    return <EmptyState icon={Server} title="No DC Health Data" description="DC health data will appear after a Domain Controller runs a compliance scan." />;
+    return <EmptyState icon={<Server className="h-12 w-12" />} title="No DC Health Data" description="DC health data will appear after a Domain Controller runs a compliance scan." />;
 
   const s = data.latest;
 

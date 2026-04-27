@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { Building2, Check, Copy, Download, Key, Loader2, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/api/organizations';
