@@ -2,7 +2,7 @@ import { useCloudAssessmentDetail, type FeatureInventoryEntry } from '@/api/clou
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CheckCircle2, XCircle, Minus, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, Minus, Loader2, Shield } from 'lucide-react';
 
 const AREA_LABELS: Record<string, string> = {
   connections: 'Connections',
@@ -21,6 +21,19 @@ function StatusIcon({ value }: { value: boolean }) {
   return value
     ? <CheckCircle2 className="h-4 w-4 text-green-600" />
     : <XCircle className="h-4 w-4 text-red-400" />;
+}
+
+const TIER_STYLES: Record<string, { label: string; className: string }> = {
+  premium: { label: 'Premium', className: 'bg-purple-50 text-purple-700 border-purple-200' },
+  standard: { label: 'Standard', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  none: { label: 'Not Licensed', className: 'bg-gray-50 text-gray-500 border-gray-200' },
+};
+
+function TierBadge({ tier }: { tier: string | null }) {
+  if (!tier) return null;
+  const style = TIER_STYLES[tier];
+  if (!style) return <span className="text-xs text-muted-foreground">{tier}</span>;
+  return <Badge variant="outline" className={`text-xs ${style.className}`}>{style.label}</Badge>;
 }
 
 function AdoptionCell({ pct }: { pct: number | null }) {
@@ -60,6 +73,7 @@ function AreaGroup({ area, entries }: { area: string; entries: FeatureInventoryE
           <TableHeader>
             <TableRow>
               <TableHead className="w-[200px]">Feature</TableHead>
+              <TableHead className="w-[90px] text-center">Tier</TableHead>
               <TableHead className="w-[80px] text-center">Licensed</TableHead>
               <TableHead className="w-[80px] text-center">Active</TableHead>
               <TableHead className="w-[180px]">Adoption</TableHead>
@@ -71,6 +85,7 @@ function AreaGroup({ area, entries }: { area: string; entries: FeatureInventoryE
             {entries.map((e) => (
               <TableRow key={e.feature} className={!e.licensed ? 'opacity-50' : undefined}>
                 <TableCell className="font-medium text-sm">{e.feature}</TableCell>
+                <TableCell className="text-center"><TierBadge tier={e.licenseTier} /></TableCell>
                 <TableCell className="text-center"><StatusIcon value={e.licensed} /></TableCell>
                 <TableCell className="text-center"><StatusIcon value={e.implemented} /></TableCell>
                 <TableCell><AdoptionCell pct={e.adoptionPct} /></TableCell>

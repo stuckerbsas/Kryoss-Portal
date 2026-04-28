@@ -88,6 +88,7 @@ export interface FeatureInventoryEntry {
   adoptionPct: number | null;
   detail: string | null;
   licenseRequired: string | null;
+  licenseTier: string | null;
 }
 
 export interface CloudAssessmentScan {
