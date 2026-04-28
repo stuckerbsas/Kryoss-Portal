@@ -26,6 +26,8 @@ public class HeartbeatFunction
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/heartbeat")] HttpRequestData req)
     {
+        try
+        {
         var agentIdHeader = req.Headers.TryGetValues("X-Agent-Id", out var vals)
             ? vals.FirstOrDefault() : null;
         if (!Guid.TryParse(agentIdHeader, out var agentId))
@@ -122,7 +124,7 @@ public class HeartbeatFunction
         // Persist agent errors to actlog
         if (body?.Errors is { Count: > 0 })
         {
-            var actlogService = req.FunctionContext.InstanceServices.GetRequiredService<ActlogService>();
+            var actlogService = req.FunctionContext.InstanceServices.GetRequiredService<IActlogService>();
             foreach (var err in body.Errors)
             {
                 await actlogService.LogAsync(
@@ -213,7 +215,7 @@ public class HeartbeatFunction
                         "dispatched", t.ActionType, t.ControlDefId, paramsJson: t.Params,
                         signatureHash: signature);
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to log dispatch for task {TaskId}", t.Id); }
             }
         }
         else if (pendingTasks.Count > 0)
@@ -236,7 +238,7 @@ public class HeartbeatFunction
                         "service_heal", "heal_service", serviceName: err.Target,
                         errorMessage: err.Message);
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to log service_heal for {Target}", err.Target); }
             }
         }
 
@@ -265,6 +267,26 @@ public class HeartbeatFunction
             config, forceScan,
         });
         return ok;
+
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Heartbeat FAILED for agent {AgentId}: {Type}: {Msg}\n{Stack}",
+                req.Headers.TryGetValues("X-Agent-Id", out var av) ? av.FirstOrDefault() : "?",
+                ex.GetType().FullName, ex.Message, ex.StackTrace);
+
+            try
+            {
+                var actlog = req.FunctionContext.InstanceServices.GetRequiredService<IActlogService>();
+                await actlog.LogAsync(severity: "CRIT", module: "heartbeat", action: "unhandled_crash",
+                    message: $"{ex.GetType().Name}: {ex.Message} | {ex.InnerException?.Message} | {ex.StackTrace?[..Math.Min(ex.StackTrace?.Length ?? 0, 800)]}");
+            }
+            catch { }
+
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteAsJsonAsync(new { error = "heartbeat_crash", type = ex.GetType().Name, message = ex.Message, inner = ex.InnerException?.Message });
+            return err;
+        }
     }
 }
 

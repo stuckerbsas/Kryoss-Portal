@@ -399,6 +399,8 @@ public class ApiClient : IDisposable
             var response = await _http.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                AgentLogger.Log("HEARTBEAT", $"HTTP {(int)response.StatusCode} from /v1/heartbeat — {errorBody}");
                 LogAuthFailure((int)response.StatusCode, "/v1/heartbeat");
                 return null;
             }
@@ -425,13 +427,34 @@ public class ApiClient : IDisposable
                 _config.Save();
             return hbResponse;
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            AgentLogger.Log("HEARTBEAT", $"exception: {ex.Message}");
+            return null;
+        }
     }
 
     public async Task<bool> ReportTaskResultAsync(TaskResultPayload result)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(result, KryossJsonContext.Default.TaskResultPayload);
         var path = "/v1/task-result";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        try
+        {
+            var response = await _http.SendAsync(request);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    public async Task<bool> SubmitServiceInventoryAsync(List<ServiceInfo> services)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(services, KryossJsonContext.Default.ListServiceInfo);
+        var path = "/v1/services";
         var request = CreateSignedRequest(HttpMethod.Post, path, json);
         request.Content = new ByteArrayContent(json);
         request.Content.Headers.ContentType =

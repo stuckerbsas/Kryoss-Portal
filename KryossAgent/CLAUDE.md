@@ -1,4 +1,4 @@
-# KryossAgent v2.6.0 — Windows Assessment Agent (.NET 8)
+# KryossAgent v2.9.0 — Windows Assessment Agent (.NET 8)
 
 **Read `../CLAUDE.md` first.** This file is the detailed map of the agent only.
 
@@ -57,7 +57,7 @@ KryossAgent/
     │   ├── ServiceWorker.cs          <- BackgroundService for Windows Service mode
     │   ├── ServiceInstaller.cs       <- P/Invoke service install/uninstall (zero Process.Start)
     │   ├── ApiClient.cs              <- HTTP client, HMAC signing
-    │   ├── CryptoService.cs          <- RSA-OAEP + AES-GCM envelope (dormant)
+    │   ├── SecurityService.cs        <- RSA-OAEP + AES-GCM envelope (active, wired in ApiClient.SubmitResultsAsync)
     │   ├── HardwareFingerprint.cs    <- registry-based SHA-256 hardware ID
     │   ├── NetworkScanner.cs         <- orchestrates remote scan: discover + deploy + collect
     │   ├── NetworkDiagnostics.cs     <- speed test, latency sweep, route table, VPN detection, adapters
@@ -76,7 +76,9 @@ KryossAgent/
     │   ├── WmiProbe.cs               <- WMI remote probe for unenrolled Windows machines
     │   ├── PassiveListener.cs        <- UDP listeners (NetBIOS/mDNS/SSDP) for passive discovery
     │   ├── SelfUpdater.cs            <- Auto-update from blob storage (version check + download + service restart)
-    │   └── RemediationExecutor.cs    <- Executes whitelisted remediation tasks (registry/service/audit), reports results
+    │   ├── RemediationExecutor.cs    <- Executes whitelisted remediation tasks (registry/service/audit), HMAC sig validation, protected services block
+    │   ├── ServiceHealer.cs          <- Auto-heals protected + priority services (3 retries, 5s delay)
+    │   └── ServiceInventory.cs       <- Collects Windows services via ServiceController, hash-based change detection
     └── Helpers/                      <- (empty)
 ```
 
@@ -103,12 +105,17 @@ KryossAgent/
 10. Server responds with score/grade → printed to console
 11. Write `lastrun.txt`, run network scan (unless `--alone`/`--silent`), wipe registry
 
-**Service mode (ServiceWorker loop):**
-1. Load config, check enrollment
-2. Every `ComplianceIntervalHours` (default 24h): run full compliance scan via `ScanCycle`
-3. Every `ScanIntervalMinutes` (default 240 = 4h): run SNMP scan
-4. Every 15 min: send heartbeat (`POST /v1/heartbeat`)
-5. Sleep until next task, graceful shutdown on stop
+**Service mode (ServiceWorker v3 — 5 parallel loops):**
+1. Apply staged update, initialize `AgentLogger`, start passive discovery
+2. `Task.WhenAll` launches 5 independent loops (staggered startup: 0/5/30/60/90s):
+   - **SelfUpdateLoop** (6h interval, 5min timeout): check blob storage for newer version
+   - **HeartbeatLoop** (15min interval, 30s timeout): POST /v1/heartbeat, drain error queue (max 20), process config/forceScan/pendingTasks
+   - **ComplianceLoop** (configurable, default 24h, 30min timeout): full compliance scan via `ScanCycle`
+   - **SnmpLoop** (configurable, default 4h, 15min timeout): NetworkDiagnostics + SNMP scan + passive IPs
+   - **NetworkScanLoop** (configurable, default disabled, 20min timeout): discovery + ports + AD hygiene
+3. Each loop: own `ApiClient`, reloads `AgentConfig`, linked `CancellationTokenSource` for timeout, errors to shared `ConcurrentQueue<AgentError>` (cap 100)
+4. `AgentLogger` writes to `C:\ProgramData\Kryoss\Logs\agent-YYYY-MM-DD.log` (7d retention, 10MB rotation)
+5. Heartbeat includes `LoopStatus` snapshot + drained errors — server persists to actlog + `machines.loop_status_json`
 
 ---
 
@@ -272,6 +279,27 @@ Exit codes: `0` = success, `1` = fatal error, `2` = warning/upload-deferred, `99
 11. ✅ **Binary patching** — EmbeddedConfig sentinels for server-side org-specific .exe generation
 12. ✅ **Multi-disk detection** — per-drive inventory (letter, size, free, type)
 13. ✅ **CLI flags** — `--help`, `--alone`, `--scan`, `--verbose`, `--credential`, `--threads`, discovery flags, `--offline`, `--share`, `--collect`
-14. 🟡 **`CryptoService` dormant** — defined but not used by `ApiClient`. Decide: wire it up or remove it
+14. ✅ **Envelope encryption active** — `SecurityService` (was CryptoService) wired in `ApiClient.SubmitResultsAsync`. RSA-OAEP + AES-GCM when `PublicKeyPem` available, plaintext fallback during rollout window
 15. 🟡 **`publish.ps1` overrides `PublishAot=true`** — binary is 68 MB single-file-with-runtime instead of ~15 MB AOT native
 16. 🟡 **`raw_*` blocks** — `raw_users`, `raw_network`, `raw_security_posture` still not populated as structured raw blocks in payload (data available via dedicated endpoints instead)
+
+---
+
+## Changelog
+
+### [2.11.1] - 2026-04-28
+- **Fixed:** Heartbeat error response body now logged — on HTTP 500, agent reads and logs full response body for server-side error diagnosis.
+- **Files:** `ApiClient.cs`
+
+### [2.11.0] - 2026-04-28
+- **Fixed:** Patched binary startup wipe — unconditionally wiped registry on EVERY execution, destroying service credentials after NinjaOne deploy. Now only wipes on explicit `--reenroll`. Already-enrolled machines keep their credentials.
+- **Fixed:** Heartbeat error logging — `SendHeartbeatAsync` silently swallowed all errors, logging "sent — ack=" even on 401/500. Now logs actual HTTP status code and exception messages. ServiceWorker distinguishes success from failure.
+- **Files:** `Program.cs`, `ApiClient.cs`, `ServiceWorker.cs`
+
+### [2.10.3] - 2026-04-28
+- **Fixed:** One-shot wipe destroying service credentials — wipe ran BEFORE auto-install, so service started with empty registry. Reordered: auto-install first, then wipe only if no service installed.
+- **Files:** `Program.cs`
+
+### [2.10.1] - 2026-04-28
+- **Fixed:** Serial number reading `SystemSKU` instead of `SystemSerialNumber` from BIOS registry key.
+- **Files:** `PlatformDetector.cs`

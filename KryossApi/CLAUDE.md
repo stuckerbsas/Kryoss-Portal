@@ -429,6 +429,53 @@ requests. All actual auth is handled by custom middleware:
 
 ## Changelog
 
+### [1.34.10] - 2026-04-28
+- **Fixed:** RemediationLog table name mismatch — EF convention mapped to `remediation_logs` (plural) but SQL table created as `remediation_log` (singular). Added explicit `ToTable("remediation_log")` mapping.
+- **Fixed:** HeartbeatFunction crash diagnostic — wrapped entire function in try-catch that logs exception to actlog (CRIT severity) and returns error details in response body for agent-side debugging.
+- **Files:** `HeartbeatFunction.cs`, `KryossDbContext.cs`
+
+### [1.34.9] - 2026-04-28
+- **Fixed:** HeartbeatFunction DI crash — `GetRequiredService<ActlogService>()` resolved concrete class instead of `IActlogService` interface, causing HTTP 500 on every heartbeat with errors. Root cause of all machines showing `agent_mode=NULL`.
+- **Fixed:** 21 empty `catch { }` blocks replaced with `ILogger.LogWarning` for App Insights visibility across all API functions and services.
+- **Files:** `HeartbeatFunction.cs`, `TaskResultFunction.cs`, `RemediationFunction.cs`, `ServiceManagementFunction.cs`, `HypervisorConfigFunction.cs`, `ControlDefsFunction.cs`, `SnmpConfigFunction.cs`, `ReportsFunction.cs`, `AzurePipeline.cs`, `HypervisorPipeline.cs`, `ReportDataLoader.cs`
+
+### [1.34.8] - 2026-04-28
+- **Fixed:** Re-enrollment credential desync — `GenerateInitialKeys()` ran on every re-enrollment, generating new MachineSecret/SessionKey. If `SaveChangesAsync` failed, agent had new creds, DB had old ones → permanent auth failure. Now preserves existing credentials on re-enrollment.
+- **Files:** `EnrollmentService.cs`
+
+### [1.34.7] - 2026-04-28
+- **Fixed:** Re-enrollment AgentId desync — generating new `Guid.NewGuid()` on re-enrollment meant if `SaveChangesAsync` failed, the agent had a different AgentId than the DB, breaking heartbeat forever. Now reuses existing AgentId on re-enrollment.
+- **Files:** `EnrollmentService.cs`
+
+### [1.34.6] - 2026-04-28
+- **Fixed:** PBI radar showing score 5 when not configured — probe failure returned `"partial"` instead of `"skipped"`, so radar included PBI with a near-perfect default score. Now returns `"skipped"` when API is inaccessible.
+- **Files:** `PowerBiPipeline.cs`
+
+### [1.34.5] - 2026-04-28
+- **Fixed:** License tier column empty — ProductivityPipeline wasn't setting `Insights` on PipelineResult, so `SkuPlans` was null and `ResolveLicenseTiers` never ran.
+- **Files:** `ProductivityPipeline.cs`
+
+### [1.34.4] - 2026-04-28
+- **Added:** Power BI Service `Tenant.Read.All` to programmatic consent (OptionalApis). Automates step 1 of PBI setup — tenant admin portal setting (step 2) remains manual.
+- **Files:** `UnifiedCloudConnectFunction.cs`
+
+### [1.34.3] - 2026-04-28
+- **Added:** License tier detection per feature — reads `subscribedSkus` service plans (already collected by ProductivityPipeline), maps 22 features to `none`/`standard`/`premium` tier. New `licenseTier` field on Feature Inventory entries. Covers Entra P1/P2, Intune P1/P2, Purview basic/advanced, Defender for O365 Plan 1/2, Defender for Endpoint, Copilot.
+- **Files:** `FeatureInventoryBuilder.cs`, `CloudAssessmentService.cs`
+
+### [1.34.2] - 2026-04-28
+- **Added:** Exchange Online REST API integration — 3 checks via InvokeCommand pattern: Unified Audit Logs (`Get-AdminAuditLogConfig`), Safe Attachments (`Get-SafeAttachmentPolicy`), EOP/MDO Standard Protection (`Get-EOPProtectionPolicyRule`). Exchange.ManageAsApp + Exchange Admin role granted via programmatic consent. PBI `TryVerifyPowerBi` re-enabled in consent callback. Feature Inventory now ~42 entries.
+- **Files:** `MailFlowPipeline.cs`, `MailFlowInsights.cs`, `MailFlowRecommendations.cs`, `CloudAssessmentService.cs`, `UnifiedCloudConnectFunction.cs`, `FeatureInventoryBuilder.cs`
+
+### [1.34.1] - 2026-04-28
+- **Added:** 3 more Lighthouse checks — Entra device join config (`/beta/policies/deviceRegistrationPolicy`), Endpoint Analytics (`/beta/deviceManagement/userExperienceAnalyticsOverview`), Defender auto-onboard via Intune MTD connectors. Feature Inventory now ~39 entries.
+- **Files:** `IdentityInsights.cs`, `EndpointInsights.cs`, `IdentityPipeline.cs`, `EndpointPipeline.cs`, `FeatureInventoryBuilder.cs`
+
+### [1.34.0] - 2026-04-28
+- **Added:** Lighthouse baseline gap checks — 12 new checks across Identity and Endpoint pipelines: SSPR enablement/registration, break-glass account detection, Defender AV/Firewall/ASR policy presence, Edge profile, OneDrive policy, Windows Update policy, noncompliant device notification templates (via Settings Catalog + beta configurationPolicies + windowsFeatureUpdateProfiles). Feature Inventory expanded from ~25 to ~36 entries.
+- **Fixed:** Adoption percentage now nulled when feature is not implemented (prevents misleading 100% on default-compliant states)
+- **Files:** `IdentityInsights.cs`, `EndpointInsights.cs`, `IdentityPipeline.cs`, `EndpointPipeline.cs`, `FeatureInventoryBuilder.cs`
+
 ### [1.33.5] - 2026-04-28
 - **Added:** Feature Inventory — per-scan license/implementation/adoption matrix (~25 features across 7 areas). Built from pipeline insights post-scan, persisted as JSON on `cloud_assessment_scans.feature_inventory`, exposed in `GetLatestScan` and `GetScanDetail` responses.
 - **Files:** `FeatureInventoryBuilder.cs` (new), `CloudAssessmentService.cs`, `CloudAssessment.cs`, `KryossDbContext.cs`, `sql/084_feature_inventory.sql`

@@ -1524,6 +1524,12 @@ public class KryossDbContext : DbContext
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
         });
 
+        mb.Entity<RemediationLog>(e =>
+        {
+            e.ToTable("remediation_log");
+            e.HasKey(x => x.Id);
+        });
+
         mb.Entity<MachineTracerouteHop>(e =>
         {
             e.ToTable("machine_traceroute_hops");
