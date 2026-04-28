@@ -21,7 +21,6 @@ const tabs = [
   { label: 'Security', to: 'security', end: false, permission: 'assessment:read' },
   { label: 'Network', to: 'network', end: false, permission: 'machines:read' },
   { label: 'Cloud', to: 'cloud-assessment', end: false, permission: 'assessment:read' },
-  { label: 'Infrastructure', to: 'infra-assessment', end: false, permission: 'assessment:read' },
 ] as const;
 
 export function OrgDetail() {

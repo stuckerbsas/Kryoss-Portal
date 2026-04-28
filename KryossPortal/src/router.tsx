@@ -11,7 +11,6 @@ import { ReportsTab } from './components/org-detail/ReportsTab';
 import { SecurityTab } from './components/org-detail/SecurityTab';
 import { NetworkTab } from './components/org-detail/NetworkTab';
 import { CloudAssessmentTab } from './components/org-detail/CloudAssessmentTab';
-import { InfraAssessmentTab } from './components/org-detail/InfraAssessmentTab';
 import { MachineDetailPage } from './pages/MachineDetailPage';
 import { RunDetailPage } from './pages/RunDetailPage';
 import { RecycleBinPage } from './pages/RecycleBinPage';
@@ -47,7 +46,6 @@ export const router = createBrowserRouter([
               { path: 'security', element: <SecurityTab /> },
               { path: 'network', element: <NetworkTab /> },
               { path: 'cloud-assessment', element: <CloudAssessmentTab /> },
-              { path: 'infra-assessment', element: <InfraAssessmentTab /> },
               // Legacy redirects
               { path: 'fleet', element: <Navigate to="../devices" replace /> },
               { path: 'hardware', element: <Navigate to="../devices?section=hardware" replace /> },
