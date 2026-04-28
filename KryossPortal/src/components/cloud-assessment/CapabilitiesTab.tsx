@@ -2,7 +2,7 @@ import { useCloudAssessmentDetail, type FeatureInventoryEntry } from '@/api/clou
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CheckCircle2, XCircle, Minus, Loader2, Shield } from 'lucide-react';
+import { CheckCircle2, XCircle, Minus, Loader2 } from 'lucide-react';
 
 const AREA_LABELS: Record<string, string> = {
   connections: 'Connections',
