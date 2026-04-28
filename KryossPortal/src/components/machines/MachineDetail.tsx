@@ -750,11 +750,6 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
     return <Badge variant="secondary" className={cls[status] ?? 'bg-gray-100 text-gray-500'}>{status}</Badge>;
   }
 
-  function formatScheduled(iso: string | null) {
-    if (!iso) return <span className="text-muted-foreground text-xs">Immediate</span>;
-    return <span className="text-sm">{formatDate(iso)}</span>;
-  }
-
   function openEditDialog(taskId: number, currentScheduled: string | null) {
     setEditTaskId(taskId);
     setEditDate(currentScheduled ? currentScheduled.slice(0, 16) : '');
