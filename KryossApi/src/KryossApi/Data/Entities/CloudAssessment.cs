@@ -11,6 +11,7 @@ public class CloudAssessmentScan
     public string? AreaScores { get; set; }
     public string? Verdict { get; set; }
     public string? PipelineStatus { get; set; }
+    public string? FeatureInventory { get; set; }
     public DateTime StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -163,11 +164,11 @@ public class CloudAssessmentAzureResource
     public string? Name { get; set; }
     public string? Location { get; set; }
     public string? Kind { get; set; }
-    public string? PropertiesJson { get; set; }
-    public string? RiskFlags { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public CloudAssessmentScan Scan { get; set; } = null!;
+    public ICollection<CloudFindingProperty> Properties { get; set; } = [];
+    public ICollection<CloudResourceRiskFlag> RiskFlags { get; set; } = [];
 }
 
 public class CloudAssessmentSuggestion
@@ -299,11 +300,9 @@ public class CloudAssessmentMailDomain
     public bool? SpfValid { get; set; }
     public string? SpfMechanism { get; set; }
     public int? SpfLookupCount { get; set; }
-    public string? SpfWarnings { get; set; }
     // DKIM
     public bool? DkimS1Present { get; set; }
     public bool? DkimS2Present { get; set; }
-    public string? DkimSelectors { get; set; }
     // DMARC
     public string? DmarcRecord { get; set; }
     public bool? DmarcValid { get; set; }
@@ -356,8 +355,6 @@ public class CloudAssessmentSharedMailbox
     public string MailboxUpn { get; set; } = null!;
     public string? DisplayName { get; set; }
     public int? DelegatesCount { get; set; }
-    public string? FullAccessUsers { get; set; }
-    public string? SendAsUsers { get; set; }
     public bool? HasPasswordEnabled { get; set; }
     public DateTime? LastActivity { get; set; }
     public DateTime CreatedAt { get; set; }

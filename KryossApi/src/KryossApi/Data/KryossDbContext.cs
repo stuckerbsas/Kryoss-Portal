@@ -156,6 +156,25 @@ public class KryossDbContext : DbContext
     public DbSet<RemediationAction> RemediationActions => Set<RemediationAction>();
     public DbSet<RemediationTask> RemediationTasks => Set<RemediationTask>();
     public DbSet<OrgAutoRemediate> OrgAutoRemediates => Set<OrgAutoRemediate>();
+    public DbSet<RemediationLog> RemediationLogs => Set<RemediationLog>();
+    public DbSet<MachineService> MachineServices => Set<MachineService>();
+
+    // DB-NORM: Normalized child tables (replace JSON columns)
+    public DbSet<ControlCheckParam> ControlCheckParams => Set<ControlCheckParam>();
+    public DbSet<MachineLocalAdmin> MachineLocalAdmins => Set<MachineLocalAdmin>();
+    public DbSet<MachineLoopStatus> MachineLoopStatuses => Set<MachineLoopStatus>();
+    public DbSet<OrgPriorityService> OrgPriorityServices => Set<OrgPriorityService>();
+    public DbSet<MachineTracerouteHop> MachineTracerouteHops => Set<MachineTracerouteHop>();
+    public DbSet<CloudFindingProperty> CloudFindingProperties => Set<CloudFindingProperty>();
+    public DbSet<CloudResourceRiskFlag> CloudResourceRiskFlags => Set<CloudResourceRiskFlag>();
+    public DbSet<MailDomainSpfWarning> MailDomainSpfWarnings => Set<MailDomainSpfWarning>();
+    public DbSet<MailDomainDkimSelector> MailDomainDkimSelectors => Set<MailDomainDkimSelector>();
+    public DbSet<SharedMailboxDelegate> SharedMailboxDelegates => Set<SharedMailboxDelegate>();
+    public DbSet<AlertPayloadField> AlertPayloadFields => Set<AlertPayloadField>();
+    public DbSet<RemediationActionParam> RemediationActionParams => Set<RemediationActionParam>();
+    public DbSet<CveProductMap> CveProductMaps => Set<CveProductMap>();
+    public DbSet<Software> Software => Set<Software>();
+    public DbSet<MachineSoftware> MachineSoftware => Set<MachineSoftware>();
 
     // Infrastructure Assessment (IA-0)
     public DbSet<InfraAssessmentScan> InfraAssessmentScans => Set<InfraAssessmentScan>();
@@ -229,6 +248,10 @@ public class KryossDbContext : DbContext
             e.ToTable("actlog");
             e.HasKey(x => x.Id);
             e.Property(x => x.Timestamp).HasColumnName("timestamp");
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => x.MachineId);
+            e.HasIndex(x => x.UserId);
         });
 
         // ── Core ──
@@ -275,7 +298,6 @@ public class KryossDbContext : DbContext
             e.Property(x => x.PrevKeyExpiresAt).HasColumnName("prev_key_expires_at");
             e.Property(x => x.KeyRotatedAt).HasColumnName("key_rotated_at");
             e.Property(x => x.AuthVersion).HasColumnName("auth_version");
-            e.Property(x => x.LocalAdminsJson).HasColumnName("local_admins_json");
             e.Property(x => x.ConfigComplianceIntervalHours).HasColumnName("config_compliance_interval_hours");
             e.Property(x => x.ConfigSnmpIntervalMinutes).HasColumnName("config_snmp_interval_minutes");
             e.Property(x => x.ConfigEnableNetworkScan).HasColumnName("config_enable_network_scan");
@@ -708,6 +730,7 @@ public class KryossDbContext : DbContext
             e.Property(x => x.OverallScore).HasColumnName("overall_score");
             e.Property(x => x.AreaScores).HasColumnName("area_scores");
             e.Property(x => x.PipelineStatus).HasColumnName("pipeline_status");
+            e.Property(x => x.FeatureInventory).HasColumnName("feature_inventory");
             e.Property(x => x.StartedAt).HasColumnName("started_at");
             e.Property(x => x.CompletedAt).HasColumnName("completed_at");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
@@ -818,8 +841,6 @@ public class KryossDbContext : DbContext
             e.Property(x => x.Name).HasColumnName("name");
             e.Property(x => x.Location).HasColumnName("location");
             e.Property(x => x.Kind).HasColumnName("kind");
-            e.Property(x => x.PropertiesJson).HasColumnName("properties_json");
-            e.Property(x => x.RiskFlags).HasColumnName("risk_flags");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasOne(x => x.Scan).WithMany(s => s.AzureResources).HasForeignKey(x => x.ScanId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.ScanId, x.ResourceType }).HasDatabaseName("ix_car_scan");
@@ -1057,10 +1078,8 @@ public class KryossDbContext : DbContext
             e.Property(x => x.SpfValid).HasColumnName("spf_valid");
             e.Property(x => x.SpfMechanism).HasColumnName("spf_mechanism").HasMaxLength(20);
             e.Property(x => x.SpfLookupCount).HasColumnName("spf_lookup_count");
-            e.Property(x => x.SpfWarnings).HasColumnName("spf_warnings");
             e.Property(x => x.DkimS1Present).HasColumnName("dkim_s1_present");
             e.Property(x => x.DkimS2Present).HasColumnName("dkim_s2_present");
-            e.Property(x => x.DkimSelectors).HasColumnName("dkim_selectors");
             e.Property(x => x.DmarcRecord).HasColumnName("dmarc_record");
             e.Property(x => x.DmarcValid).HasColumnName("dmarc_valid");
             e.Property(x => x.DmarcPolicy).HasColumnName("dmarc_policy").HasMaxLength(20);
@@ -1103,8 +1122,6 @@ public class KryossDbContext : DbContext
             e.Property(x => x.MailboxUpn).HasColumnName("mailbox_upn").HasMaxLength(500).IsRequired();
             e.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(500);
             e.Property(x => x.DelegatesCount).HasColumnName("delegates_count");
-            e.Property(x => x.FullAccessUsers).HasColumnName("full_access_users");
-            e.Property(x => x.SendAsUsers).HasColumnName("send_as_users");
             e.Property(x => x.HasPasswordEnabled).HasColumnName("has_password_enabled");
             e.Property(x => x.LastActivity).HasColumnName("last_activity");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
@@ -1231,7 +1248,6 @@ public class KryossDbContext : DbContext
             e.Property(x => x.Severity).HasColumnName("severity").HasMaxLength(20);
             e.Property(x => x.RuleType).HasColumnName("rule_type").HasMaxLength(60);
             e.Property(x => x.Summary).HasColumnName("summary").HasMaxLength(500);
-            e.Property(x => x.PayloadJson).HasColumnName("payload_json");
             e.Property(x => x.DeliveryStatus).HasColumnName("delivery_status").HasMaxLength(20);
             e.Property(x => x.DeliveredAt).HasColumnName("delivered_at");
             e.Property(x => x.ErrorMessage).HasColumnName("error_message").HasMaxLength(500);
@@ -1251,7 +1267,6 @@ public class KryossDbContext : DbContext
             e.Property(x => x.Id).UseIdentityColumn();
             e.Property(x => x.ControlDefId).HasColumnName("control_def_id");
             e.Property(x => x.ActionType).HasColumnName("action_type").HasMaxLength(30);
-            e.Property(x => x.ParamsTemplate).HasColumnName("params_template");
             e.Property(x => x.RiskLevel).HasColumnName("risk_level").HasMaxLength(10);
             e.Property(x => x.Description).HasColumnName("description").HasMaxLength(500);
             e.Property(x => x.IsActive).HasColumnName("is_active");
@@ -1279,6 +1294,7 @@ public class KryossDbContext : DbContext
             e.Property(x => x.ApprovedAt).HasColumnName("approved_at");
             e.Property(x => x.ExecutedAt).HasColumnName("executed_at");
             e.Property(x => x.CompletedAt).HasColumnName("completed_at");
+            e.Property(x => x.ScheduledFor).HasColumnName("scheduled_for");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
@@ -1477,6 +1493,114 @@ public class KryossDbContext : DbContext
             e.Property(x => x.IsIdle).HasColumnName("is_idle");
             e.Property(x => x.Notes).HasColumnName("notes").HasMaxLength(500);
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        // ── DB-NORM: Normalized child tables ──
+        mb.Entity<ControlCheckParam>(e =>
+        {
+            e.ToTable("control_check_params");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.ControlDef).WithMany(x => x.CheckParams).HasForeignKey(x => x.ControlDefId);
+        });
+
+        mb.Entity<MachineLocalAdmin>(e =>
+        {
+            e.ToTable("machine_local_admins");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+        });
+
+        mb.Entity<MachineLoopStatus>(e =>
+        {
+            e.ToTable("machine_loop_status");
+            e.HasKey(x => new { x.MachineId, x.LoopName });
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+        });
+
+        mb.Entity<OrgPriorityService>(e =>
+        {
+            e.ToTable("org_priority_services");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+        });
+
+        mb.Entity<MachineTracerouteHop>(e =>
+        {
+            e.ToTable("machine_traceroute_hops");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Diag).WithMany(x => x.TracerouteHops).HasForeignKey(x => x.DiagId);
+        });
+
+        mb.Entity<CloudFindingProperty>(e =>
+        {
+            e.ToTable("cloud_finding_properties");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.AzureResource).WithMany(x => x.Properties).HasForeignKey(x => x.AzureResourceId);
+        });
+
+        mb.Entity<CloudResourceRiskFlag>(e =>
+        {
+            e.ToTable("cloud_resource_risk_flags");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.AzureResource).WithMany(x => x.RiskFlags).HasForeignKey(x => x.AzureResourceId);
+        });
+
+        mb.Entity<MailDomainSpfWarning>(e =>
+        {
+            e.ToTable("mail_domain_spf_warnings");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.MailDomain).WithMany().HasForeignKey(x => x.MailDomainId);
+        });
+
+        mb.Entity<MailDomainDkimSelector>(e =>
+        {
+            e.ToTable("mail_domain_dkim_selectors");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.MailDomain).WithMany().HasForeignKey(x => x.MailDomainId);
+        });
+
+        mb.Entity<SharedMailboxDelegate>(e =>
+        {
+            e.ToTable("shared_mailbox_delegates");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Mailbox).WithMany().HasForeignKey(x => x.MailboxId);
+        });
+
+        mb.Entity<AlertPayloadField>(e =>
+        {
+            e.ToTable("alert_payload_fields");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Alert).WithMany().HasForeignKey(x => x.AlertId);
+        });
+
+        mb.Entity<RemediationActionParam>(e =>
+        {
+            e.ToTable("remediation_action_params");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.RemediationAction).WithMany().HasForeignKey(x => x.RemediationActionId);
+        });
+
+        mb.Entity<CveProductMap>(e =>
+        {
+            e.ToTable("cve_product_map");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.CveEntry).WithMany().HasForeignKey(x => x.CveEntryId);
+            e.HasOne(x => x.Software).WithMany().HasForeignKey(x => x.SoftwareId);
+        });
+
+        mb.Entity<Software>(e =>
+        {
+            e.ToTable("software");
+            e.HasKey(x => x.Id);
+            e.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        mb.Entity<MachineSoftware>(e =>
+        {
+            e.ToTable("machine_software");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasOne(x => x.Software).WithMany().HasForeignKey(x => x.SoftwareId);
         });
     }
 }

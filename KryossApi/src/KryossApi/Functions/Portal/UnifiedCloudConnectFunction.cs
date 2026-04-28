@@ -97,7 +97,7 @@ public class UnifiedCloudConnectFunction
             $"&response_type=code" +
             $"&redirect_uri={redirectUri}" +
             $"&scope={scope}" +
-            $"&prompt=consent" +
+            $"&prompt=select_account" +
             $"&state={Uri.EscapeDataString($"graph|{orgId}")}";
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -236,6 +236,11 @@ public class UnifiedCloudConnectFunction
             Message = $"Unified connect phase 1: Graph consent for tenant {tenantId}"
         });
         await _db.SaveChangesAsync();
+
+        // Programmatic consent for optional APIs (Defender, etc.)
+        // Graph is already consented; try to provision service principals for non-Graph APIs
+        // so client_credentials can access them during the scan.
+        await TryGrantOptionalApiPermissions(tenantId, orgId);
 
         // Redirect to /authorize for ARM delegated token
         var armRedirectUri = Uri.EscapeDataString(
@@ -640,6 +645,94 @@ public class UnifiedCloudConnectFunction
         {
             _log.LogInformation("SPN resolve failed for tenant {TenantId}: {Error}", customerTenantId, ex.Message);
             return null;
+        }
+    }
+
+    // ── Helper: TryGrantOptionalApiPermissions ──
+    // After Graph consent, try to programmatically grant app permissions for
+    // optional APIs (Defender, etc.) using the Graph API. If the target API
+    // doesn't exist in the tenant (no license), this silently skips.
+
+    private static readonly (string AppId, string[] RoleIds, string Name)[] OptionalApis = new[]
+    {
+        // Microsoft Threat Protection (Defender for Endpoint)
+        // App roles: AdvancedHunting.Read.All, Machine.Read.All, Vulnerability.Read.All,
+        //            SecurityRecommendation.Read.All, Software.Read.All, Score.Read.All
+        ("8ee8fdad-f234-4243-8f3b-15c294843740", new[]
+        {
+            "dd98c7f5-2d42-42d3-a0e4-633161547251", // AdvancedHunting.Read.All
+            "ea8291d3-4b9a-44b5-bc3a-6cea3026dc79", // Machine.Read.All
+            "41269fc5-d04d-4bfd-80a5-f8fee4f3e55e", // Vulnerability.Read.All
+            "6443965c-7b2c-4150-a6d4-e52a03704da6", // SecurityRecommendation.Read.All
+            "37a27590-87eb-4bb5-8a10-85e0ff394ef9", // Software.Read.All
+            "02a4a1f0-20e0-4e25-be0e-55568da41a31", // Score.Read.All
+        }, "Microsoft Threat Protection"),
+    };
+
+    private async Task TryGrantOptionalApiPermissions(string tenantId, Guid orgId)
+    {
+        try
+        {
+            var credential = new ClientSecretCredential(tenantId, _m365Config.ClientId, _m365Config.ClientSecret);
+            using var http = new HttpClient();
+            var token = await credential.GetTokenAsync(
+                new TokenRequestContext(new[] { "https://graph.microsoft.com/.default" }));
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+            http.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
+
+            // Resolve our app's service principal in the target tenant
+            var ourSpnResp = await http.GetAsync(
+                $"servicePrincipals?$filter=appId eq '{_m365Config.ClientId}'&$select=id");
+            if (!ourSpnResp.IsSuccessStatusCode) return;
+            using var ourSpnDoc = await JsonDocument.ParseAsync(await ourSpnResp.Content.ReadAsStreamAsync());
+            var ourSpnId = ourSpnDoc.RootElement.GetProperty("value").EnumerateArray()
+                .FirstOrDefault().TryGetProperty("id", out var spId) ? spId.GetString() : null;
+            if (ourSpnId is null) return;
+
+            foreach (var (apiAppId, roleIds, apiName) in OptionalApis)
+            {
+                try
+                {
+                    // Check if the API's service principal exists in the tenant
+                    var apiSpnResp = await http.GetAsync(
+                        $"servicePrincipals?$filter=appId eq '{apiAppId}'&$select=id");
+                    if (!apiSpnResp.IsSuccessStatusCode) continue;
+                    using var apiSpnDoc = await JsonDocument.ParseAsync(await apiSpnResp.Content.ReadAsStreamAsync());
+                    var apiSpnArray = apiSpnDoc.RootElement.GetProperty("value");
+                    if (apiSpnArray.GetArrayLength() == 0)
+                    {
+                        _log.LogInformation("Optional API {Api} not found in tenant {Tenant} — skipping", apiName, tenantId);
+                        continue;
+                    }
+                    var apiSpnId = apiSpnArray[0].GetProperty("id").GetString()!;
+
+                    // Grant each app role
+                    foreach (var roleId in roleIds)
+                    {
+                        var body = JsonSerializer.Serialize(new
+                        {
+                            principalId = ourSpnId,
+                            resourceId = apiSpnId,
+                            appRoleId = roleId
+                        });
+                        var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+                        var resp = await http.PostAsync($"servicePrincipals/{ourSpnId}/appRoleAssignments", content);
+                        // 409 = already assigned, that's fine
+                    }
+
+                    _log.LogInformation("Granted {Api} permissions in tenant {Tenant}", apiName, tenantId);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogInformation("Optional API {Api} grant failed for tenant {Tenant}: {Error}",
+                        apiName, tenantId, ex.Message);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogInformation("TryGrantOptionalApiPermissions failed for tenant {Tenant}: {Error}",
+                tenantId, ex.Message);
         }
     }
 

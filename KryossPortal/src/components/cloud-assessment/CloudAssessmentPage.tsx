@@ -42,6 +42,7 @@ import { CopilotReadinessTab } from './CopilotReadinessTab';
 import { ConnectProgressModal } from './ConnectProgressModal';
 import { ConnectCloudWizard } from './ConnectCloudWizard';
 import { DataTab } from './DataTab';
+import { CapabilitiesTab } from './CapabilitiesTab';
 
 function statusBadge(status: string) {
   const key = status.toLowerCase();
@@ -528,6 +529,7 @@ export function CloudAssessmentPage() {
         <TabsTrigger value="azure">Azure</TabsTrigger>
         <TabsTrigger value="powerbi">Power BI</TabsTrigger>
         <TabsTrigger value="copilot">Copilot Readiness</TabsTrigger>
+        <TabsTrigger value="capabilities">Capabilities</TabsTrigger>
         <TabsTrigger value="compliance">Compliance</TabsTrigger>
         <TabsTrigger value="remediation">Remediation</TabsTrigger>
       </TabsList>
@@ -545,6 +547,7 @@ export function CloudAssessmentPage() {
       </TabsContent>
       <TabsContent value="powerbi"><PowerBiTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="copilot"><CopilotReadinessTab orgId={orgId} scanId={latestScanId} /></TabsContent>
+      <TabsContent value="capabilities"><CapabilitiesTab scanId={latestScanId} /></TabsContent>
       <TabsContent value="compliance"><ComplianceTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="remediation"><RemediationTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       </Tabs>

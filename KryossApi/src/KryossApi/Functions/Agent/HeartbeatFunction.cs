@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using KryossApi.Data;
 using KryossApi.Services;
@@ -118,10 +119,64 @@ public class HeartbeatFunction
             machine.ForceScanRequestedBy = null;
         }
 
+        // Persist agent errors to actlog
+        if (body?.Errors is { Count: > 0 })
+        {
+            var actlogService = req.FunctionContext.InstanceServices.GetRequiredService<ActlogService>();
+            foreach (var err in body.Errors)
+            {
+                await actlogService.LogAsync(
+                    severity: err.IsTimeout ? "WARN" : "ERROR",
+                    module: "agent",
+                    action: err.Phase,
+                    entityType: "machine",
+                    entityId: machine.Id.ToString(),
+                    message: err.Message);
+            }
+
+            var latest = body.Errors.OrderByDescending(e => e.Timestamp).First();
+            machine.LastErrorAt = latest.Timestamp;
+            machine.LastErrorPhase = latest.Phase;
+            machine.LastErrorMsg = latest.Message.Length > 500 ? latest.Message[..500] : latest.Message;
+        }
+
+        // Save loop status → normalized table
+        if (body?.LoopStatus is { Count: > 0 })
+        {
+            var existing = await _db.MachineLoopStatuses
+                .Where(ls => ls.MachineId == machine.Id)
+                .ToDictionaryAsync(ls => ls.LoopName);
+
+            foreach (var ls in body.LoopStatus)
+            {
+                if (existing.TryGetValue(ls.Key, out var row))
+                {
+                    row.State = ls.Value.State ?? "idle";
+                    row.LastRunAt = ls.Value.LastRunAt;
+                    row.DurationMs = ls.Value.LastDurationMs;
+                    row.LastError = ls.Value.LastError;
+                }
+                else
+                {
+                    _db.MachineLoopStatuses.Add(new Data.Entities.MachineLoopStatus
+                    {
+                        MachineId = machine.Id,
+                        LoopName = ls.Key,
+                        State = ls.Value.State ?? "idle",
+                        LastRunAt = ls.Value.LastRunAt,
+                        DurationMs = ls.Value.LastDurationMs,
+                        LastError = ls.Value.LastError,
+                    });
+                }
+            }
+        }
+
         await _db.SaveChangesAsync();
 
+        var now = DateTime.UtcNow;
         var pendingTasks = await _db.RemediationTasks
-            .Where(t => t.MachineId == machine.Id && t.Status == "approved")
+            .Where(t => t.MachineId == machine.Id && t.Status == "approved"
+                && (t.ScheduledFor == null || t.ScheduledFor <= now))
             .Select(t => new
             {
                 t.Id,
@@ -129,8 +184,67 @@ public class HeartbeatFunction
                 t.Params,
                 t.ControlDefId,
                 controlId = t.ControlDef.ControlId,
+                t.ApprovedAt,
             })
             .ToListAsync();
+
+        List<object>? signedTasks = null;
+        if (pendingTasks.Count > 0 && !string.IsNullOrEmpty(machine.MachineSecret))
+        {
+            var remLogService = req.FunctionContext.InstanceServices.GetRequiredService<IRemediationLogService>();
+            signedTasks = new List<object>();
+            foreach (var t in pendingTasks)
+            {
+                var signingString = $"{t.Id}|{t.ActionType}|{t.Params}|{t.ApprovedAt:O}";
+                var keyBytes = Encoding.UTF8.GetBytes(machine.MachineSecret);
+                var signature = Convert.ToHexString(
+                    System.Security.Cryptography.HMACSHA256.HashData(keyBytes, Encoding.UTF8.GetBytes(signingString))
+                ).ToLowerInvariant();
+
+                signedTasks.Add(new
+                {
+                    t.Id, t.ActionType, t.Params, t.ControlDefId, t.controlId,
+                    approvedAt = t.ApprovedAt, signature,
+                });
+
+                try
+                {
+                    await remLogService.LogAsync(t.Id, machine.Id, machine.OrganizationId,
+                        "dispatched", t.ActionType, t.ControlDefId, paramsJson: t.Params,
+                        signatureHash: signature);
+                }
+                catch { }
+            }
+        }
+        else if (pendingTasks.Count > 0)
+        {
+            signedTasks = pendingTasks.Select(t => (object)new
+            {
+                t.Id, t.ActionType, t.Params, t.ControlDefId, t.controlId,
+            }).ToList();
+        }
+
+        // Persist service_heal events from agent error queue to remediation_log
+        if (body?.Errors is { Count: > 0 })
+        {
+            var remLogService = req.FunctionContext.InstanceServices.GetRequiredService<IRemediationLogService>();
+            foreach (var err in body.Errors.Where(e => e.Phase == "service_heal"))
+            {
+                try
+                {
+                    await remLogService.LogAsync(0, machine.Id, machine.OrganizationId,
+                        "service_heal", "heal_service", serviceName: err.Target,
+                        errorMessage: err.Message);
+                }
+                catch { }
+            }
+        }
+
+        var priorityServices = await _db.OrgPriorityServices
+            .Where(ps => ps.OrganizationId == machine.OrganizationId)
+            .Select(ps => ps.ServiceName)
+            .ToListAsync();
+        List<string>? prioritySvcList = priorityServices.Count > 0 ? priorityServices : null;
 
         var ok = req.CreateResponse(HttpStatusCode.OK);
         var config = new
@@ -140,9 +254,16 @@ public class HeartbeatFunction
             enableNetworkScan = machine.ConfigEnableNetworkScan,
             networkScanIntervalHours = machine.ConfigNetworkScanIntervalHours,
             enablePassiveDiscovery = machine.ConfigEnablePassiveDiscovery,
+            priorityServices = prioritySvcList,
         };
 
-        await ok.WriteAsJsonAsync(new { ack = true, pendingTasks, newMachineSecret, newSessionKey, newSessionKeyExpiresAt, config, forceScan });
+        await ok.WriteAsJsonAsync(new
+        {
+            ack = true,
+            pendingTasks = signedTasks,
+            newMachineSecret, newSessionKey, newSessionKeyExpiresAt,
+            config, forceScan,
+        });
         return ok;
     }
 }
@@ -163,4 +284,43 @@ public class HeartbeatRequest
 
     [System.Text.Json.Serialization.JsonPropertyName("mode")]
     public string? Mode { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("errors")]
+    public List<AgentErrorEntry>? Errors { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("loopStatus")]
+    public Dictionary<string, LoopStatusEntry>? LoopStatus { get; set; }
+}
+
+public class AgentErrorEntry
+{
+    [System.Text.Json.Serialization.JsonPropertyName("phase")]
+    public string Phase { get; set; } = null!;
+
+    [System.Text.Json.Serialization.JsonPropertyName("message")]
+    public string Message { get; set; } = null!;
+
+    [System.Text.Json.Serialization.JsonPropertyName("timestamp")]
+    public DateTime Timestamp { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("target")]
+    public string? Target { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("isTimeout")]
+    public bool IsTimeout { get; set; }
+}
+
+public class LoopStatusEntry
+{
+    [System.Text.Json.Serialization.JsonPropertyName("lastRunAt")]
+    public DateTime? LastRunAt { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("lastDurationMs")]
+    public int? LastDurationMs { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("lastError")]
+    public string? LastError { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("state")]
+    public string State { get; set; } = "idle";
 }

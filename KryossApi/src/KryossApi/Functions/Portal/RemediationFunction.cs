@@ -24,12 +24,14 @@ public class RemediationFunction
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
     private readonly IActlogService _actlog;
+    private readonly IRemediationLogService _remLog;
 
-    public RemediationFunction(KryossDbContext db, ICurrentUserService user, IActlogService actlog)
+    public RemediationFunction(KryossDbContext db, ICurrentUserService user, IActlogService actlog, IRemediationLogService remLog)
     {
         _db = db;
         _actlog = actlog;
         _user = user;
+        _remLog = remLog;
     }
 
     [Function("Remediation_CreateTask")]
@@ -53,9 +55,20 @@ public class RemediationFunction
             return notFound;
         }
 
+        // Reconstruct params template from normalized table
+        string? actionParamsJson = null;
+        if (body.Params is null)
+        {
+            var actionParams = await _db.RemediationActionParams
+                .Where(p => p.RemediationActionId == action.Id)
+                .ToListAsync();
+            if (actionParams.Count > 0)
+                actionParamsJson = JsonSerializer.Serialize(actionParams.ToDictionary(p => p.ParamName, p => p.ParamValue));
+        }
+
         if (action.ActionType.Equals("set_registry", StringComparison.OrdinalIgnoreCase))
         {
-            var paramsJson = body.Params ?? action.ParamsTemplate;
+            var paramsJson = body.Params ?? actionParamsJson;
             if (!string.IsNullOrEmpty(paramsJson))
             {
                 try
@@ -84,6 +97,54 @@ public class RemediationFunction
         if (machine is null)
             return req.CreateResponse(HttpStatusCode.NotFound);
 
+        if (action.ActionType is "enable_service" or "disable_service" or "restart_service"
+            or "stop_service" or "set_service_startup")
+        {
+            var svcParams = body.Params ?? actionParamsJson;
+            string? serviceName = null;
+            if (!string.IsNullOrEmpty(svcParams))
+            {
+                try
+                {
+                    var svcJson = JsonSerializer.Deserialize<JsonElement>(svcParams);
+                    if (svcJson.TryGetProperty("serviceName", out var sn) || svcJson.TryGetProperty("ServiceName", out sn))
+                        serviceName = sn.GetString();
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrEmpty(serviceName))
+            {
+                var protectedServices = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "RpcSs", "RpcEptMapper", "DcomLaunch", "LSM",
+                    "SamSs", "lsass", "services", "wininit",
+                    "CryptSvc", "TrustedInstaller", "WinDefend",
+                    "EventLog", "Winmgmt", "BFE", "mpssvc",
+                    "KryossAgent"
+                };
+
+                if (protectedServices.Contains(serviceName))
+                {
+                    var forbidden = req.CreateResponse(HttpStatusCode.BadRequest);
+                    await forbidden.WriteAsJsonAsync(new { error = $"Service '{serviceName}' is protected and cannot be modified" });
+                    return forbidden;
+                }
+
+                if (action.ActionType == "disable_service")
+                {
+                    var isPriority = await _db.OrgPriorityServices
+                        .AnyAsync(ps => ps.OrganizationId == machine.OrganizationId && ps.ServiceName == serviceName);
+                    if (isPriority)
+                    {
+                        var forbidden = req.CreateResponse(HttpStatusCode.BadRequest);
+                        await forbidden.WriteAsJsonAsync(new { error = $"Service '{serviceName}' is a priority service and cannot be disabled" });
+                        return forbidden;
+                    }
+                }
+            }
+        }
+
         var task = new RemediationTask
         {
             OrganizationId = machine.OrganizationId,
@@ -91,8 +152,9 @@ public class RemediationFunction
             ControlDefId = body.ControlDefId,
             ActionId = action.Id,
             ActionType = action.ActionType,
-            Params = body.Params ?? action.ParamsTemplate,
+            Params = body.Params ?? actionParamsJson,
             Status = "approved",
+            ScheduledFor = body.ScheduledFor,
             CreatedBy = _user.UserId,
             ApprovedBy = _user.UserId,
             ApprovedAt = DateTime.UtcNow,
@@ -100,6 +162,14 @@ public class RemediationFunction
         };
         _db.RemediationTasks.Add(task);
         await _db.SaveChangesAsync();
+
+        try
+        {
+            await _remLog.LogAsync(task.Id, task.MachineId, task.OrganizationId,
+                "created", task.ActionType, task.ControlDefId,
+                paramsJson: task.Params, actorId: _user.UserId, ipAddress: _user.IpAddress);
+        }
+        catch { }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new
@@ -110,6 +180,7 @@ public class RemediationFunction
             task.ActionType,
             task.Params,
             task.Status,
+            task.ScheduledFor,
             riskLevel = action.RiskLevel,
             description = action.Description,
         });
@@ -151,6 +222,7 @@ public class RemediationFunction
                 t.PreviousValue,
                 t.NewValue,
                 t.ErrorMessage,
+                t.ScheduledFor,
                 t.ApprovedAt,
                 t.ExecutedAt,
                 t.CompletedAt,
@@ -199,6 +271,17 @@ public class RemediationFunction
 
         original.Status = "rolled_back";
         await _db.SaveChangesAsync();
+
+        try
+        {
+            await _remLog.LogAsync(rollbackTask.Id, rollbackTask.MachineId, rollbackTask.OrganizationId,
+                "created", rollbackTask.ActionType, rollbackTask.ControlDefId,
+                paramsJson: rollbackTask.Params, actorId: _user.UserId, ipAddress: _user.IpAddress);
+            await _remLog.LogAsync(original.Id, original.MachineId, original.OrganizationId,
+                "rolled_back", original.ActionType, original.ControlDefId,
+                actorId: _user.UserId, ipAddress: _user.IpAddress);
+        }
+        catch { }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { rollbackTaskId = rollbackTask.Id, originalTaskId = taskId });
@@ -256,6 +339,7 @@ public class RemediationFunction
                 t.Status,
                 t.CreatedBy,
                 t.ApprovedBy,
+                t.ScheduledFor,
                 t.ApprovedAt,
                 t.ExecutedAt,
                 t.CompletedAt,
@@ -266,6 +350,40 @@ public class RemediationFunction
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { history });
+        return response;
+    }
+
+    [Function("Remediation_Reschedule")]
+    [RequirePermission("machines:write")]
+    public async Task<HttpResponseData> Reschedule(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "v2/remediation/tasks/{taskId}/reschedule")] HttpRequestData req,
+        long taskId)
+    {
+        var task = await _db.RemediationTasks.FirstOrDefaultAsync(t => t.Id == taskId);
+        if (task is null)
+            return req.CreateResponse(HttpStatusCode.NotFound);
+
+        if (task.Status is not ("approved" or "pending"))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Only pending/approved tasks can be rescheduled" });
+            return bad;
+        }
+
+        var body = await req.ReadFromJsonAsync<RescheduleRequest>();
+        task.ScheduledFor = body?.ScheduledFor;
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _remLog.LogAsync(task.Id, task.MachineId, task.OrganizationId,
+                "rescheduled", task.ActionType, task.ControlDefId,
+                actorId: _user.UserId, ipAddress: _user.IpAddress);
+        }
+        catch { }
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { task.Id, task.ScheduledFor, task.Status });
         return response;
     }
 
@@ -299,4 +417,10 @@ internal class CreateRemediationTaskRequest
     public Guid MachineId { get; set; }
     public int ControlDefId { get; set; }
     public string? Params { get; set; }
+    public DateTime? ScheduledFor { get; set; }
+}
+
+internal class RescheduleRequest
+{
+    public DateTime? ScheduledFor { get; set; }
 }

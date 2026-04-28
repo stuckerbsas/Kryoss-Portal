@@ -97,8 +97,31 @@
 | POST | `/v2/remediation/tasks` | `RemediationFunction.CreateTask` | Create remediation task for machine (admin:write) |
 | GET | `/v2/remediation/tasks` | `RemediationFunction.ListTasks` | List tasks by machine or org |
 | POST | `/v2/remediation/tasks/{id}/rollback` | `RemediationFunction.Rollback` | Rollback completed task |
+| POST | `/v2/remediation/tasks/{id}/rollback` | `RemediationFunction.Rollback` | Rollback completed task |
+| PATCH | `/v2/remediation/tasks/{id}/cancel` | `RemediationFunction.CancelTask` | Cancel pending/approved task |
+| PATCH | `/v2/remediation/tasks/{id}/reschedule` | `RemediationFunction.Reschedule` | Reschedule pending/approved task |
 | GET | `/v2/remediation/history` | `RemediationFunction.History` | Remediation audit trail by org |
 | GET | `/v2/remediation/catalog` | `RemediationFunction.GetCatalog` | List available remediation actions |
+
+### Agent API (v1) — Service Inventory
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| POST | `/v1/services` | `ServiceInventoryFunction.Run` | Agent submits service inventory (upsert/remove stale) |
+
+### Portal API (v2) — Service Management
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/machines/{machineId}/services` | `ServiceManagementFunction.ListServices` | List services with isProtected/isPriority flags |
+| POST | `/v2/machines/{machineId}/services/{serviceName}/action` | `ServiceManagementFunction.ServiceAction` | Queue start/stop/restart via remediation task |
+| PATCH | `/v2/machines/{machineId}/priority-services` | `ServiceManagementFunction.TogglePriority` | Toggle org priority service |
+
+### Portal API (v2) — Machine Activity
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/machines/{id}/activity` | `MachinesFunction.Activity` | Unified timeline (actlog + remediation_log) |
 
 ### Portal API (v2) — Network diagnostics
 
@@ -317,7 +340,8 @@ src/KryossApi/
 | SNMP/Topology | `snmp_configs`, `snmp_devices`, `snmp_device_interfaces`, `snmp_device_supplies`, `snmp_device_neighbors` (IA-2), `snmp_device_profiles`, `snmp_profile_oids` |
 | Infra Assessment | `infra_assessment_scans`, `_sites`, `_devices`, `_connectivity`, `_capacity`, `_findings` (IA-0 scaffold) |
 | External Exposure | `external_scans`, `external_scan_results`, `external_scan_findings` (server-side port scan with consent) |
-| Remediation | `remediation_actions` (whitelist catalog ~50 controls), `remediation_tasks` (per-machine work items), `org_auto_remediate` (per-org auto-fix opt-in) |
+| Remediation | `remediation_actions` (whitelist catalog ~50 controls), `remediation_tasks` (per-machine work items + `signature_hash`), `remediation_log` (INSERT-only audit trail), `org_auto_remediate` (per-org auto-fix opt-in) |
+| Service Mgmt | `machine_services` (per-machine service inventory: name, status, startupType) |
 | CVE | `cve_entries` (product patterns + severity + CVSS), `machine_cve_findings` (per-machine findings), `cve_sync_log` (sync tracking) |
 | Patch Compliance | `machine_patch_status` (per-machine WU status + compliance score), `machine_patches` (installed hotfixes) |
 | DC Health | `dc_health_snapshots` (schema/FSMO/sites/replication summary), `dc_replication_partners` (per-partner status, CASCADE delete) |
@@ -400,3 +424,31 @@ requests. All actual auth is handled by custom middleware:
 ## Utility SQL scripts
 
 - `sql/cleanup_all_scan_data.sql` — disables triggers, wipes all scan data (assessment_runs, control_results, run_framework_scores, machine_snapshots). For dev/test reset only.
+
+---
+
+## Changelog
+
+### [1.33.5] - 2026-04-28
+- **Added:** Feature Inventory — per-scan license/implementation/adoption matrix (~25 features across 7 areas). Built from pipeline insights post-scan, persisted as JSON on `cloud_assessment_scans.feature_inventory`, exposed in `GetLatestScan` and `GetScanDetail` responses.
+- **Files:** `FeatureInventoryBuilder.cs` (new), `CloudAssessmentService.cs`, `CloudAssessment.cs`, `KryossDbContext.cs`, `sql/084_feature_inventory.sql`
+
+### [1.33.4] - 2026-04-28
+- **Added:** Programmatic consent for optional APIs (Defender) after Graph consent. Uses Graph API to find service principal + assign app roles. Silently skips if API not in tenant. Requires removing Threat Protection from app registration.
+- **Files:** `UnifiedCloudConnectFunction.cs`
+
+### [1.33.3] - 2026-04-28
+- **Fixed:** Cloud connect consent fails for tenants without Defender (AADSTS650052). Changed `prompt=consent` → `prompt=select_account` so Microsoft only evaluates requested Graph scope, not all app registration permissions
+- **Files:** `UnifiedCloudConnectFunction.cs`, `AutoConsentFunction.cs`
+
+### [1.33.2] - 2026-04-28
+- **Fixed:** Suppress GSA (Global Secure Access) permission_required findings when NetworkAccessPolicy.Read.All not granted — SMBs don't use GSA, showing "grant permission" was noise
+- **Files:** `IdentityRecommendations.cs`, `EntraRecommendations.cs`
+
+### [1.33.1] - 2026-04-28
+- **Added:** Remediation task scheduling — `scheduled_for` column, `PATCH /v2/remediation/tasks/{id}/reschedule` endpoint, heartbeat gate (only dispatches when `ScheduledFor <= UtcNow`)
+- **Files:** `RemediationFunction.cs`, `HeartbeatFunction.cs`, `Remediation.cs`, `KryossDbContext.cs`, `sql/083_remediation_scheduled_for.sql`
+
+### [1.33.0] - 2026-04-28
+- **Added:** Blob-based speed test via SAS tokens (`GET /v1/speedtest/sas`), auto-seeds 100MB test file
+- **Files:** `SpeedTestFunction.cs`

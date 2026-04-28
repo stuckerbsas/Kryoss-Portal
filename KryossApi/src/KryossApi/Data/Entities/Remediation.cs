@@ -5,7 +5,6 @@ public class RemediationAction
     public int Id { get; set; }
     public int ControlDefId { get; set; }
     public string ActionType { get; set; } = null!;
-    public string? ParamsTemplate { get; set; }
     public string RiskLevel { get; set; } = "low";
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
@@ -32,6 +31,8 @@ public class RemediationTask
     public DateTime? ApprovedAt { get; set; }
     public DateTime? ExecutedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public string? SignatureHash { get; set; }
+    public DateTime? ScheduledFor { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public Organization Organization { get; set; } = null!;

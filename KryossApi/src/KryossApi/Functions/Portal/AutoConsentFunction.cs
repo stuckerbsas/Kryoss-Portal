@@ -63,7 +63,7 @@ public class AutoConsentFunction
             $"&response_type=code" +
             $"&redirect_uri={redirectUri}" +
             $"&scope={scope}" +
-            $"&prompt=consent" +
+            $"&prompt=select_account" +
             $"&state={Uri.EscapeDataString($"pbi|{orgId}")}";
 
         var res = req.CreateResponse(HttpStatusCode.OK);

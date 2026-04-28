@@ -393,6 +393,23 @@ public class CloudAssessmentService : ICloudAssessmentService
                 log.LogWarning(ex, "Failed to compute Copilot Readiness scores for scan {ScanId}", scanId);
             }
 
+            // Feature Inventory: license/implementation/adoption matrix per feature.
+            try
+            {
+                var inventory = FeatureInventoryBuilder.Build(
+                    identityResult, endpointResult, dataResult, productivityResult,
+                    azureResult, powerbiResult, mailFlowResult,
+                    graphConnected: true,
+                    azureConnected: hasAzure,
+                    pbiConnected: hasPowerBi);
+                scan.FeatureInventory = JsonSerializer.Serialize(inventory,
+                    new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to build feature inventory for scan {ScanId}", scanId);
+            }
+
             // Persist findings — CloudAssessmentFinding has an Area column; tag per-pipeline.
             var now = DateTime.UtcNow;
 
@@ -658,6 +675,7 @@ public class CloudAssessmentService : ICloudAssessmentService
             scan.CompletedAt,
             scan.CreatedAt,
             scan.TenantId,
+            FeatureInventory = ParseFeatureInventory(scan.FeatureInventory),
             FindingsSummary = findingsSummary,
             CopilotReadiness = scan.CopilotOverall is not null ? new
             {
@@ -762,8 +780,10 @@ public class CloudAssessmentService : ICloudAssessmentService
             .Select(d => new
             {
                 d.Domain, d.IsDefault, d.IsVerified,
-                d.SpfRecord, d.SpfValid, d.SpfMechanism, d.SpfLookupCount, d.SpfWarnings,
-                d.DkimS1Present, d.DkimS2Present, d.DkimSelectors,
+                d.SpfRecord, d.SpfValid, d.SpfMechanism, d.SpfLookupCount,
+                spfWarnings = _db.MailDomainSpfWarnings.Where(w => w.MailDomainId == d.Id).Select(w => w.WarningText).ToList(),
+                d.DkimS1Present, d.DkimS2Present,
+                dkimSelectors = _db.MailDomainDkimSelectors.Where(s => s.MailDomainId == d.Id).Select(s => s.Selector).ToList(),
                 d.DmarcRecord, d.DmarcValid, d.DmarcPolicy, d.DmarcSubdomainPolicy,
                 d.DmarcPct, d.DmarcRua, d.DmarcRuf,
                 d.MtaStsRecord, d.MtaStsPolicy,
@@ -787,7 +807,8 @@ public class CloudAssessmentService : ICloudAssessmentService
             .Select(s => new
             {
                 s.MailboxUpn, s.DisplayName, s.DelegatesCount,
-                s.FullAccessUsers, s.SendAsUsers,
+                fullAccessUsers = _db.SharedMailboxDelegates.Where(d => d.MailboxId == s.Id && d.PermissionType == "full_access").Select(d => d.UserEmail).ToList(),
+                sendAsUsers = _db.SharedMailboxDelegates.Where(d => d.MailboxId == s.Id && d.PermissionType == "send_as").Select(d => d.UserEmail).ToList(),
                 s.HasPasswordEnabled, s.LastActivity
             })
             .ToListAsync();
@@ -799,6 +820,7 @@ public class CloudAssessmentService : ICloudAssessmentService
             AreaScores = ParseJsonDict(scan.AreaScores),
             scan.Verdict,
             PipelineStatus = ParsePipelineStatus(scan.PipelineStatus),
+            FeatureInventory = ParseFeatureInventory(scan.FeatureInventory),
             scan.StartedAt, scan.CompletedAt, scan.CreatedAt,
             Findings = findings,
             Metrics = metrics,
@@ -1410,6 +1432,19 @@ public class CloudAssessmentService : ICloudAssessmentService
         try
         {
             return JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static List<object>? ParseFeatureInventory(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<List<object>>(json);
         }
         catch
         {

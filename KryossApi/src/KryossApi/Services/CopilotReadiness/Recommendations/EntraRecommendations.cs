@@ -700,11 +700,6 @@ public static class EntraRecommendations
         }
         if (ins.GsaStatus == "PermissionDenied")
         {
-            list.Add(RecommendationResult.PermissionRequired(Svc, feature,
-                observation: "NetworkAccessPolicy.Read.All permission is not granted to the service principal",
-                recommendation: "Grant the NetworkAccessPolicy.Read.All API permission to enable Global Secure Access monitoring.",
-                linkText: "NetworkAccessPolicy Permission Reference",
-                linkUrl: "https://learn.microsoft.com/graph/permissions-reference#networkaccesspolicyreadall"));
             return list;
         }
         if (ins.GsaStatus == "Error" || ins.GsaStatus is null)
@@ -814,11 +809,6 @@ public static class EntraRecommendations
         }
         if (ins.PrivateAccessStatus == "PermissionDenied")
         {
-            list.Add(RecommendationResult.PermissionRequired(Svc, feature,
-                observation: "NetworkAccessPolicy.Read.All permission is not granted to the service principal",
-                recommendation: "Grant the NetworkAccessPolicy.Read.All API permission to enable Private Access monitoring.",
-                linkText: "NetworkAccessPolicy Permission Reference",
-                linkUrl: "https://learn.microsoft.com/graph/permissions-reference#networkaccesspolicyreadall"));
             return list;
         }
         if (ins.PrivateAccessStatus != "Success")
