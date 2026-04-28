@@ -38,9 +38,12 @@ import {
   Activity,
   Cog,
   ScrollText,
+  Pencil,
+  CalendarClock,
 } from 'lucide-react';
 import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan } from '@/api/machines';
-import { useMachineTasks, useCancelTask } from '@/api/remediation';
+import { useMachineTasks, useCancelTask, useRescheduleTask } from '@/api/remediation';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ServicesTab } from './ServicesTab';
 import { ActivityTab } from './ActivityTab';
 import type { AgentConfig, LoopStatus } from '@/api/machines';
@@ -721,6 +724,9 @@ function ThreatsTabContent({ machineId }: { machineId: string | undefined }) {
 function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineId: string | undefined; scanPending?: boolean; scanRequestedAt?: string | null }) {
   const { data, isLoading } = useMachineTasks(machineId);
   const cancel = useCancelTask(machineId);
+  const reschedule = useRescheduleTask(machineId);
+  const [editTaskId, setEditTaskId] = useState<number | null>(null);
+  const [editDate, setEditDate] = useState('');
 
   if (isLoading) return <TabSkeleton rows={4} />;
 
@@ -744,6 +750,27 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
     return <Badge variant="secondary" className={cls[status] ?? 'bg-gray-100 text-gray-500'}>{status}</Badge>;
   }
 
+  function formatScheduled(iso: string | null) {
+    if (!iso) return <span className="text-muted-foreground text-xs">Immediate</span>;
+    return <span className="text-sm">{formatDate(iso)}</span>;
+  }
+
+  function openEditDialog(taskId: number, currentScheduled: string | null) {
+    setEditTaskId(taskId);
+    setEditDate(currentScheduled ? currentScheduled.slice(0, 16) : '');
+  }
+
+  function handleSaveSchedule() {
+    if (editTaskId === null) return;
+    reschedule.mutate(
+      { taskId: editTaskId, scheduledFor: editDate ? new Date(editDate).toISOString() : null },
+      {
+        onSuccess: () => { setEditTaskId(null); toast.success('Schedule updated'); },
+        onError: () => toast.error('Failed to reschedule'),
+      }
+    );
+  }
+
   const pendingCount = pending.length + (scanPending ? 1 : 0);
 
   return (
@@ -758,8 +785,9 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
                   <TableHead>Control</TableHead>
                   <TableHead>Action</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Scheduled</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead className="w-20"></TableHead>
+                  <TableHead className="w-32"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -771,6 +799,7 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
                     </TableCell>
                     <TableCell className="text-sm">scan</TableCell>
                     <TableCell><Badge variant="secondary" className="bg-blue-100 text-blue-800">waiting</Badge></TableCell>
+                    <TableCell className="text-muted-foreground text-xs">--</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{scanRequestedAt ? formatDate(scanRequestedAt) : '--'}</TableCell>
                     <TableCell></TableCell>
                   </TableRow>
@@ -783,18 +812,41 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
                     </TableCell>
                     <TableCell className="text-sm">{t.actionType}</TableCell>
                     <TableCell>{taskStatusBadge(t.status)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {t.scheduledFor ? (
+                          <span className="inline-flex items-center gap-1 text-sm">
+                            <CalendarClock className="size-3.5 text-muted-foreground" />
+                            {formatDate(t.scheduledFor)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Immediate</span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatDate(t.createdAt)}</TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        disabled={cancel.isPending}
-                        onClick={() => cancel.mutate(t.id)}
-                      >
-                        <XCircle className="size-3.5 mr-1" />
-                        Cancel
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => openEditDialog(t.id, t.scheduledFor)}
+                        >
+                          <Pencil className="size-3.5 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          disabled={cancel.isPending}
+                          onClick={() => cancel.mutate(t.id)}
+                        >
+                          <XCircle className="size-3.5 mr-1" />
+                          Cancel
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -836,6 +888,28 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
           </div>
         </>
       )}
+
+      <Dialog open={editTaskId !== null} onOpenChange={(open) => { if (!open) setEditTaskId(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reschedule Task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <label className="text-sm font-medium">Apply at</label>
+            <input
+              type="datetime-local"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={editDate}
+              onChange={(e) => setEditDate(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Leave empty for immediate execution on next heartbeat.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTaskId(null)}>Cancel</Button>
+            <Button onClick={handleSaveSchedule} disabled={reschedule.isPending}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

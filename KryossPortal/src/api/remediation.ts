@@ -12,6 +12,7 @@ export interface RemediationTask {
   previousValue: string | null;
   newValue: string | null;
   errorMessage: string | null;
+  scheduledFor: string | null;
   approvedAt: string | null;
   executedAt: string | null;
   completedAt: string | null;
@@ -28,6 +29,18 @@ export function useMachineTasks(machineId: string | undefined) {
     queryFn: () => apiFetch<TaskListResponse>(`/v2/remediation/tasks?machineId=${machineId}`),
     enabled: !!machineId,
     refetchInterval: 30_000,
+  });
+}
+
+export function useRescheduleTask(machineId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, scheduledFor }: { taskId: number; scheduledFor: string | null }) =>
+      apiFetch<{ id: number; scheduledFor: string | null; status: string }>(
+        `/v2/remediation/tasks/${taskId}/reschedule`,
+        { method: 'PATCH', body: JSON.stringify({ scheduledFor }) }
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['remediation-tasks', machineId] }),
   });
 }
 
