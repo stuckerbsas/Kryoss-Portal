@@ -80,6 +80,16 @@ export interface SharedMailboxData {
   lastActivity: string | null;
 }
 
+export interface FeatureInventoryEntry {
+  area: string;
+  feature: string;
+  licensed: boolean;
+  implemented: boolean;
+  adoptionPct: number | null;
+  detail: string | null;
+  licenseRequired: string | null;
+}
+
 export interface CloudAssessmentScan {
   id: string;
   status: 'running' | 'completed' | 'partial' | 'failed';
@@ -87,6 +97,7 @@ export interface CloudAssessmentScan {
   areaScores: Record<string, number> | null;
   verdict: string | null;
   pipelineStatus: Record<string, string> | null;
+  featureInventory: FeatureInventoryEntry[] | null;
   tenantId: string | null;
   startedAt: string;
   completedAt: string | null;
