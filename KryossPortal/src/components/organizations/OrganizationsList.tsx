@@ -23,17 +23,23 @@ import { Can } from '@/components/auth/Can';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { GradeBadge } from '@/components/shared/GradeBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { FranchiseDashboard } from '@/components/franchise/FranchiseDashboard';
 import { OrganizationForm } from './OrganizationForm';
 import { DeleteOrgDialog } from './DeleteOrgDialog';
 import { useOrganizations } from '@/api/organizations';
+import { useMe } from '@/api/me';
 import { slugify } from '@/lib/slugify';
 import { scoreToGrade } from '@/lib/grading';
 import { timeAgo } from '@/lib/dates';
 import type { Organization } from '@/types';
 
+const FRANCHISE_ROLES = ['franchise_admin', 'franchise_tech'];
+
 
 export function OrganizationsList() {
   const navigate = useNavigate();
+  const { data: me } = useMe();
+  const isFranchise = FRANCHISE_ROLES.includes(me?.role?.code ?? '');
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -65,7 +71,10 @@ export function OrganizationsList() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Franchise dashboard */}
+      {isFranchise && <FranchiseDashboard />}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Organizations</h1>

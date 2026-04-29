@@ -16,6 +16,7 @@ import { RunDetailPage } from './pages/RunDetailPage';
 import { RecycleBinPage } from './pages/RecycleBinPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
 import { UsersPage } from './pages/UsersPage';
+import { ProfilePage } from './pages/ProfilePage';
 
 export const router = createBrowserRouter([
   {
@@ -105,6 +106,11 @@ export const router = createBrowserRouter([
             <RecycleBinPage />
           </RequirePermission>
         ),
+      },
+      {
+        path: 'profile',
+        handle: { crumb: () => 'Profile' },
+        element: <ProfilePage />,
       },
       { path: 'forbidden', element: <ForbiddenPage /> },
       { path: '*', element: <SmartRedirect /> },

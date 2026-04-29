@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, qs } from './client';
-import type { FleetDashboard } from '../types';
+import type { FleetDashboard, OrgComparison } from '../types';
 
 export function useFleetDashboard(organizationId?: string) {
   return useQuery({
@@ -8,6 +8,14 @@ export function useFleetDashboard(organizationId?: string) {
     queryFn: () => apiFetch<FleetDashboard>(`/v2/dashboard/fleet${qs({ organizationId })}`),
     enabled: !!organizationId,
     refetchInterval: 60_000,
+  });
+}
+
+export function useOrgComparison() {
+  return useQuery({
+    queryKey: ['dashboard', 'org-comparison'],
+    queryFn: () => apiFetch<OrgComparison[]>('/v2/dashboard/org-comparison'),
+    refetchInterval: 120_000,
   });
 }
 

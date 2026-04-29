@@ -8,14 +8,17 @@ import { useOrgParam } from '@/hooks/useOrgParam';
 import { API_BASE, loginRequest } from '@/auth/msalConfig';
 import { msalInstance } from '@/auth/msalInstance';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useMe } from '@/api/me';
 import { Can } from '@/components/auth/Can';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { slugify } from '@/lib/slugify';
 
+const CLIENT_ROLES = ['client_admin', 'client_viewer'];
+
 const tabs = [
-  { label: 'Overview', to: '', end: true, permission: 'organizations:read' },
+  { label: 'Overview', to: '', end: true, permission: 'assessment:read' },
   { label: 'Devices', to: 'devices', end: false, permission: 'machines:read' },
   { label: 'Reports', to: 'reports', end: false, permission: 'reports:read' },
   { label: 'Security', to: 'security', end: false, permission: 'assessment:read' },
@@ -27,6 +30,8 @@ export function OrgDetail() {
   const { orgId, orgSlug } = useOrgParam();
   const { data: org, isLoading } = useOrganization(orgSlug);
   const { has } = usePermissions();
+  const { data: me } = useMe();
+  const isClient = CLIENT_ROLES.includes(me?.role?.code ?? '');
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const { data: codes } = useEnrollmentCodes(orgId);
@@ -115,86 +120,90 @@ export function OrgDetail() {
           <h1 className="text-2xl font-bold tracking-tight">{org.name}</h1>
           <StatusBadge status={org.status} />
         </div>
-        <div className="flex items-center gap-3">
-          <Can permission="enrollment:create">
-            <div className="flex items-center gap-2 rounded-md border px-3 py-1.5 bg-muted/50">
-              <Key className="h-4 w-4 text-muted-foreground" />
-              {activeCode ? (
-                <>
-                  <code className="font-mono text-sm font-semibold tracking-wider select-all">
-                    {activeCode.code}
-                  </code>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopyCode}>
-                    {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-                  </Button>
-                </>
-              ) : (
-                <span className="text-sm text-muted-foreground">No code</span>
-              )}
+        {!isClient && (
+          <div className="flex items-center gap-3">
+            <Can permission="enrollment:create">
+              <div className="flex items-center gap-2 rounded-md border px-3 py-1.5 bg-muted/50">
+                <Key className="h-4 w-4 text-muted-foreground" />
+                {activeCode ? (
+                  <>
+                    <code className="font-mono text-sm font-semibold tracking-wider select-all">
+                      {activeCode.code}
+                    </code>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopyCode}>
+                      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-sm text-muted-foreground">No code</span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleRefreshCode}
+                  disabled={refreshing}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+            </Can>
+            <Can permission="assessment:export">
               <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleRefreshCode}
-                disabled={refreshing}
+                variant="outline"
+                size="sm"
+                disabled={downloading}
+                onClick={handleDownloadAgent}
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                {downloading ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-1.5 h-4 w-4" />
+                )}
+                Download Agent
               </Button>
-            </div>
-          </Can>
-          <Can permission="assessment:export">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={downloading}
-              onClick={handleDownloadAgent}
-            >
-              {downloading ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="mr-1.5 h-4 w-4" />
-              )}
-              Download Agent
-            </Button>
-          </Can>
-          <Can permission="organizations:update">
-            <Button variant="outline" size="sm">
-              <Pencil className="mr-1.5 h-4 w-4" />
-              Edit
-            </Button>
-          </Can>
-          <Can permission="organizations:delete">
-            <Button variant="outline" size="sm" className="text-destructive">
-              <Trash2 className="mr-1.5 h-4 w-4" />
-              Delete
-            </Button>
-          </Can>
-        </div>
+            </Can>
+            <Can permission="organizations:update">
+              <Button variant="outline" size="sm">
+                <Pencil className="mr-1.5 h-4 w-4" />
+                Edit
+              </Button>
+            </Can>
+            <Can permission="organizations:delete">
+              <Button variant="outline" size="sm" className="text-destructive">
+                <Trash2 className="mr-1.5 h-4 w-4" />
+                Delete
+              </Button>
+            </Can>
+          </div>
+        )}
       </div>
 
-      {/* Tab navigation */}
-      <nav className="flex border-b">
-        {tabs.map(
-          (tab) =>
-            has(tab.permission) && (
-              <NavLink
-                key={tab.to}
-                to={tab.to}
-                end={tab.end}
-                className={({ isActive }) =>
-                  [
-                    'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-                    isActive
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/40',
-                  ].join(' ')
-                }
-              >
-                {tab.label}
-              </NavLink>
-            ),
-        )}
-      </nav>
+      {/* Tab navigation — hidden for client roles (they use sidebar) */}
+      {!isClient && (
+        <nav className="flex border-b">
+          {tabs.map(
+            (tab) =>
+              has(tab.permission) && (
+                <NavLink
+                  key={tab.to}
+                  to={tab.to}
+                  end={tab.end}
+                  className={({ isActive }) =>
+                    [
+                      'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                      isActive
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/40',
+                    ].join(' ')
+                  }
+                >
+                  {tab.label}
+                </NavLink>
+              ),
+          )}
+        </nav>
+      )}
 
       {/* Tab content */}
       <Outlet />

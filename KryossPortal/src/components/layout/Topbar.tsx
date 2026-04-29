@@ -1,13 +1,15 @@
+import { useNavigate } from 'react-router-dom';
 import { useMe } from '@/api/me';
 import { msalInstance } from '@/auth/msalInstance';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { LogOut, ChevronDown, Shield } from 'lucide-react';
+import { LogOut, ChevronDown, Shield, UserCircle } from 'lucide-react';
 
 export function Topbar() {
   const { data: me } = useMe();
+  const navigate = useNavigate();
 
   return (
     <header className="h-14 border-b bg-white flex items-center justify-between px-6 shadow-sm">
@@ -40,6 +42,10 @@ export function Topbar() {
             <p className="text-xs text-muted-foreground">{me?.email}</p>
           </div>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => navigate('/profile')} className="text-xs">
+            <UserCircle className="h-3 w-3 mr-2" />
+            Profile
+          </DropdownMenuItem>
           <DropdownMenuItem disabled className="text-xs">
             <Shield className="h-3 w-3 mr-2" />
             {me?.role?.name}

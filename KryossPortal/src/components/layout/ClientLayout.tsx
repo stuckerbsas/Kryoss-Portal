@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { useMe } from '@/api/me';
 import { Topbar } from './Topbar';
 import { Breadcrumbs } from './Breadcrumbs';
+import { ClientSidebar } from './ClientSidebar';
 
 export function ClientLayout() {
   const { data: me } = useMe();
@@ -25,10 +26,13 @@ export function ClientLayout() {
   return (
     <div className="h-screen flex flex-col">
       <Topbar />
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <Breadcrumbs />
-        <Outlet />
-      </main>
+      <div className="flex flex-1 overflow-hidden">
+        <ClientSidebar />
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <Breadcrumbs />
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

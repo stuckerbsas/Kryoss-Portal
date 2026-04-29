@@ -2,6 +2,8 @@ export interface MeResponse {
   id: string;
   email: string;
   displayName: string;
+  phone: string | null;
+  jobTitle: string | null;
   authSource: string;
   lastLoginAt: string | null;
   role: {
@@ -148,6 +150,15 @@ export interface FleetDashboard {
     failCount: number;
   }[];
   frameworkScores: FleetFrameworkScore[];
+}
+
+export interface OrgComparison {
+  id: string;
+  name: string;
+  machineCount: number;
+  assessedMachines: number;
+  avgScore: number;
+  lastAssessment: string | null;
 }
 
 export interface RecycleBinItem {
