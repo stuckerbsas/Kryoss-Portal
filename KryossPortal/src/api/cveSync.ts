@@ -52,9 +52,8 @@ export function useCveSyncManual() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (full: boolean) =>
-      apiFetch('/v2/cve-sync', {
+      apiFetch(`/v2/cve-sync${full ? '?full=true' : ''}`, {
         method: 'POST',
-        body: full ? undefined : undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cve-sync-status'] });
