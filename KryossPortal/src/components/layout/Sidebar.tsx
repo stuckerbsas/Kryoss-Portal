@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { usePermissions } from '@/hooks/usePermissions';
-import { Building2, Trash2, Shield, Cloud, ScrollText, Users } from 'lucide-react';
+import { Building2, Trash2, Shield, Cloud, ScrollText, Users, Bug } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type NavItem =
@@ -12,6 +12,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Cloud Assessment', path: '/organizations?view=cloud-assessment', perm: 'assessment:read', icon: Cloud },
   { label: 'Users', path: '/users', perm: 'admin:read', icon: Users },
   { label: 'Activity Log', path: '/activity-log', perm: 'admin:read', icon: ScrollText },
+  { label: 'CVE Database', path: '/cve-database', perm: 'admin:read', icon: Bug },
   { type: 'separator' },
   { label: 'Recycle Bin', path: '/recycle-bin', perm: 'recycle_bin:read', icon: Trash2 },
 ];

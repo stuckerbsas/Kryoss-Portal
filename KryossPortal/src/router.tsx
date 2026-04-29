@@ -17,6 +17,7 @@ import { RecycleBinPage } from './pages/RecycleBinPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
 import { UsersPage } from './pages/UsersPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { CveDatabasePage } from './pages/CveDatabasePage';
 
 export const router = createBrowserRouter([
   {
@@ -95,6 +96,15 @@ export const router = createBrowserRouter([
         element: (
           <RequirePermission slug="admin:read">
             <ActivityLogPage />
+          </RequirePermission>
+        ),
+      },
+      {
+        path: 'cve-database',
+        handle: { crumb: () => 'CVE Database' },
+        element: (
+          <RequirePermission slug="admin:read">
+            <CveDatabasePage />
           </RequirePermission>
         ),
       },
