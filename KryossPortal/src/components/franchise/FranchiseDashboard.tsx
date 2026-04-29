@@ -4,8 +4,6 @@ import {
   Monitor,
   ScanSearch,
   BarChart3,
-  TrendingUp,
-  TrendingDown,
   AlertTriangle,
 } from 'lucide-react';
 import { useOrgComparison } from '@/api/dashboard';
