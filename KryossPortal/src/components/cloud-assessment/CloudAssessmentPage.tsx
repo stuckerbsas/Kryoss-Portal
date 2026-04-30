@@ -38,7 +38,7 @@ import { AzureInfrastructureView } from './AzureInfrastructureView';
 import { RemediationTab } from './RemediationTab';
 import { ComplianceTab } from './ComplianceTab';
 import { PowerBiTab } from './PowerBiTab';
-import { CopilotReadinessTab } from './CopilotReadinessTab';
+
 import { ConnectProgressModal } from './ConnectProgressModal';
 import { ConnectCloudWizard } from './ConnectCloudWizard';
 import { DataTab } from './DataTab';
@@ -359,7 +359,6 @@ function DisconnectDialog({
         </DialogHeader>
         <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1 ml-2">
           <li>All Cloud Assessment scans and findings</li>
-          <li>All Copilot Readiness scans (legacy)</li>
           <li>Azure subscription connections</li>
           <li>Power BI connections</li>
           <li>M365 tenant connection</li>
@@ -528,7 +527,6 @@ export function CloudAssessmentPage() {
         <TabsTrigger value="productivity">Productivity</TabsTrigger>
         <TabsTrigger value="azure">Azure</TabsTrigger>
         <TabsTrigger value="powerbi">Power BI</TabsTrigger>
-        <TabsTrigger value="copilot">Copilot Readiness</TabsTrigger>
         <TabsTrigger value="capabilities">Capabilities</TabsTrigger>
         <TabsTrigger value="compliance">Compliance</TabsTrigger>
         <TabsTrigger value="remediation">Remediation</TabsTrigger>
@@ -546,7 +544,6 @@ export function CloudAssessmentPage() {
         />
       </TabsContent>
       <TabsContent value="powerbi"><PowerBiTab orgId={orgId} scanId={latestScanId} /></TabsContent>
-      <TabsContent value="copilot"><CopilotReadinessTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="capabilities"><CapabilitiesTab scanId={latestScanId} /></TabsContent>
       <TabsContent value="compliance"><ComplianceTab orgId={orgId} scanId={latestScanId} /></TabsContent>
       <TabsContent value="remediation"><RemediationTab orgId={orgId} scanId={latestScanId} /></TabsContent>

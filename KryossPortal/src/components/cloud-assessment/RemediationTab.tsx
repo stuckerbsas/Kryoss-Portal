@@ -320,17 +320,9 @@ function FixModal({ open, finding, onClose }: FixModalProps) {
             </p>
           </div>
         )}
-        <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          Fix preview coming in a future release. This will show the exact commands or API calls
-          that will be executed.
-        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled title="Coming soon">
-            <Wrench className="mr-1.5 h-4 w-4" />
-            Apply Fix
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>
