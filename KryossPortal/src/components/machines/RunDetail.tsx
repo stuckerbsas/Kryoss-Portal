@@ -90,6 +90,7 @@ export function RunDetail() {
   const { data: catalog } = useCatalogControls();
 
   const [framework, setFramework] = useState('All');
+  const [category, setCategory] = useState('All');
   const [severity, setSeverity] = useState('All');
   const [status, setStatus] = useState('All');
   const [searchText, setSearchText] = useState('');
@@ -126,6 +127,12 @@ export function RunDetail() {
       }
     }
 
+    if (category !== 'All') {
+      items = items.filter(
+        (r) => (r.categoryName || 'Uncategorized') === category,
+      );
+    }
+
     if (severity !== 'All') {
       items = items.filter(
         (r) => r.severity.toLowerCase() === severity.toLowerCase(),
@@ -148,7 +155,13 @@ export function RunDetail() {
     }
 
     return items;
-  }, [run, framework, severity, status, searchText, frameworkControlIds]);
+  }, [run, framework, category, severity, status, searchText, frameworkControlIds]);
+
+  const categories = useMemo(() => {
+    if (!run) return ['All'];
+    const cats = new Set(run.results.map(r => r.categoryName || 'Uncategorized'));
+    return ['All', ...Array.from(cats).sort()];
+  }, [run]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -286,13 +299,32 @@ export function RunDetail() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Framework" />
           </SelectTrigger>
           <SelectContent>
             {FRAMEWORKS.map((fw) => (
               <SelectItem key={fw} value={fw}>
                 {fw}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={category}
+          onValueChange={(v) => {
+            setCategory(v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            {categories.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c === 'All' ? 'All Categories' : c}
               </SelectItem>
             ))}
           </SelectContent>
@@ -378,7 +410,9 @@ export function RunDetail() {
                   <TableCell className="font-mono text-xs">
                     {r.controlId}
                   </TableCell>
-                  <TableCell className="max-w-md truncate">{r.name}</TableCell>
+                  <TableCell className="max-w-lg" title={r.name}>
+                    <span className="line-clamp-2">{r.name}</span>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {r.categoryName}
                   </TableCell>

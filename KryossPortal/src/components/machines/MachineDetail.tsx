@@ -40,6 +40,15 @@ import {
   ScrollText,
   Pencil,
   CalendarClock,
+  RefreshCw,
+  HeartPulse,
+  ScanSearch,
+  Radio,
+  Globe,
+  Wrench,
+  Loader2,
+  CircleAlert,
+  CircleCheck,
 } from 'lucide-react';
 import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan } from '@/api/machines';
 import { useMachineTasks, useCancelTask, useRescheduleTask } from '@/api/remediation';
@@ -1239,12 +1248,13 @@ function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId
   );
 }
 
-const LOOP_LABELS: Record<string, string> = {
-  update: 'Self-Update',
-  heartbeat: 'Heartbeat',
-  compliance: 'Compliance',
-  snmp: 'SNMP',
-  network: 'Network Scan',
+const LOOP_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  update: { label: 'Self-Update', icon: <RefreshCw className="size-3.5" /> },
+  heartbeat: { label: 'Heartbeat', icon: <HeartPulse className="size-3.5" /> },
+  compliance: { label: 'Compliance Scan', icon: <ScanSearch className="size-3.5" /> },
+  snmp: { label: 'SNMP Discovery', icon: <Radio className="size-3.5" /> },
+  network: { label: 'Network Scan', icon: <Globe className="size-3.5" /> },
+  remediation: { label: 'Remediation', icon: <Wrench className="size-3.5" /> },
 };
 
 function LoopStatusCard({
@@ -1278,10 +1288,10 @@ function LoopStatusCard({
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
-  const stateColor = (state: string) => {
-    if (state === 'running') return 'bg-blue-500';
-    if (state === 'error') return 'bg-red-500';
-    return 'bg-green-500';
+  const stateIcon = (state: string) => {
+    if (state === 'running') return <Loader2 className="size-3.5 text-blue-500 animate-spin" />;
+    if (state === 'error') return <CircleAlert className="size-3.5 text-red-500" />;
+    return <CircleCheck className="size-3.5 text-green-500" />;
   };
 
   return (
@@ -1308,11 +1318,14 @@ function LoopStatusCard({
       </div>
 
       <div className="space-y-2">
-        {Object.entries(loopStatus).map(([key, loop]) => (
+        {Object.entries(loopStatus).map(([key, loop]) => {
+          const meta = LOOP_META[key];
+          return (
           <div key={key} className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
-              <span className={`size-2 rounded-full ${stateColor(loop.state)}`} />
-              <span className="font-medium">{LOOP_LABELS[key] ?? key}</span>
+              <span className="text-muted-foreground">{meta?.icon ?? <Activity className="size-3.5" />}</span>
+              <span className="font-medium">{meta?.label ?? key}</span>
+              {stateIcon(loop.state)}
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               {loop.lastDurationMs != null && (
@@ -1326,7 +1339,8 @@ function LoopStatusCard({
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {lastErrorAt && lastErrorMsg && (

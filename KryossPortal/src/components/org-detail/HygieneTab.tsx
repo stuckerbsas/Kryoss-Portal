@@ -1,4 +1,4 @@
-import { Monitor, UserX, KeyRound, AlertTriangle, Clock, ShieldAlert, Shield, Server, Settings } from 'lucide-react';
+import { Monitor, UserX, KeyRound, AlertTriangle, Clock, ShieldAlert, Shield, Server, Settings, Info } from 'lucide-react';
 import { useHygiene, type HygieneFinding } from '@/api/hygiene';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -46,7 +46,7 @@ function statusBadge(status: string) {
   return <Badge variant="secondary" className={c.className}>{c.label}</Badge>;
 }
 
-function FindingsTable({ findings, title, icon }: { findings: HygieneFinding[]; title: string; icon: React.ReactNode }) {
+function FindingsTable({ findings, title, icon, tooltip }: { findings: HygieneFinding[]; title: string; icon: React.ReactNode; tooltip?: string }) {
   if (findings.length === 0) return null;
   return (
     <Card>
@@ -54,6 +54,11 @@ function FindingsTable({ findings, title, icon }: { findings: HygieneFinding[]; 
         <CardTitle className="flex items-center gap-2 text-base">
           {icon}
           {title} ({findings.length})
+          {tooltip && (
+            <span title={tooltip} className="cursor-help">
+              <Info className="h-3.5 w-3.5 text-muted-foreground" />
+            </span>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -296,13 +301,15 @@ export function HygieneTab() {
       />
       <FindingsTable
         findings={unconstrainedDeleg}
-        title="Unconstrained Delegation (high risk)"
+        title="Unconstrained Delegation"
         icon={<ShieldAlert className="h-4 w-4 text-red-500" />}
+        tooltip="These computers can impersonate any user to any service in the domain. If an attacker compromises one, they can access anything. Restrict to Constrained Delegation or Resource-Based Constrained Delegation."
       />
       <FindingsTable
         findings={adminResidue}
-        title="AdminCount Residual (orphaned admin permissions)"
+        title="AdminCount Residual"
         icon={<Shield className="h-4 w-4 text-amber-500" />}
+        tooltip="These accounts were once in a privileged group (Domain/Enterprise/Schema Admins). AD set the adminCount flag but never cleared it after removal, leaving stale elevated ACL permissions on the object. Clean up with 'AdminSDHolder' reset."
       />
       <FindingsTable
         findings={noLaps}

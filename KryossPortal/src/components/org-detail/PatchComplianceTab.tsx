@@ -98,7 +98,15 @@ export function PatchComplianceTab() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold">Patch Compliance</h2>
+      <div>
+        <h2 className="text-lg font-semibold">Patch Compliance</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          {data.reportingMachines} of {data.totalMachines} machines reporting.
+          {data.rebootPending > 0 && ` ${data.rebootPending} pending reboot.`}
+          {data.wuStopped > 0 && ` ${data.wuStopped} with Windows Update stopped.`}
+          {' '}Score based on patch age, reboot state, and update source health.
+        </p>
+      </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -112,6 +120,9 @@ export function PatchComplianceTab() {
             <span className={`text-2xl font-bold ${scoreColor(data.avgComplianceScore)}`}>
               {data.avgComplianceScore}%
             </span>
+            <p className="text-xs text-muted-foreground mt-1">
+              {data.avgComplianceScore >= 80 ? 'Healthy' : data.avgComplianceScore >= 60 ? 'Needs attention' : 'Critical — patches overdue'}
+            </p>
           </CardContent>
         </Card>
         <Card>

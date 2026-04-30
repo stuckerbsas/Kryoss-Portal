@@ -41,6 +41,24 @@ function replStatusBadge(partner: DcReplPartner) {
   return <Badge className="bg-gray-100 text-gray-500">Unknown</Badge>;
 }
 
+const SCHEMA_VERSION_MAP: Record<number, string> = {
+  30: 'Windows Server 2003',
+  31: 'Windows Server 2003 R2',
+  44: 'Windows Server 2008',
+  47: 'Windows Server 2008 R2',
+  56: 'Windows Server 2012',
+  69: 'Windows Server 2012 R2',
+  87: 'Windows Server 2016',
+  88: 'Windows Server 2019',
+  89: 'Windows Server 2022',
+  90: 'Windows Server 2025',
+};
+
+function schemaLabel(version: number | null): string {
+  if (version === null) return 'Unknown';
+  return SCHEMA_VERSION_MAP[version] ?? `Schema ${version}`;
+}
+
 export function DcHealthTab() {
   const { orgId } = useOrgParam();
   const { data, isLoading } = useDcHealth(orgId);
@@ -61,8 +79,8 @@ export function DcHealthTab() {
             <Globe className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">v{s.schemaVersion ?? '?'}</div>
-            <p className="text-xs text-muted-foreground">{s.schemaVersionLabel ?? 'Unknown'}</p>
+            <div className="text-2xl font-bold">{schemaLabel(s.schemaVersion)}</div>
+            <p className="text-xs text-muted-foreground">Schema v{s.schemaVersion ?? '?'}</p>
           </CardContent>
         </Card>
 

@@ -165,3 +165,25 @@ export function useTriggerScan(machineId: string | undefined) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['machine', machineId] }),
   });
 }
+
+export interface LocalAdminEntry {
+  name: string;
+  type: string;
+  source: string;
+  machineCount: number;
+  machines: { machineId: string; hostname: string }[];
+}
+
+interface LocalAdminsResponse {
+  totalAccounts: number;
+  totalEntries: number;
+  admins: LocalAdminEntry[];
+}
+
+export function useOrgLocalAdmins(orgId: string | undefined) {
+  return useQuery({
+    queryKey: ['local-admins', orgId],
+    queryFn: () => apiFetch<LocalAdminsResponse>(`/v2/local-admins?organizationId=${orgId}`),
+    enabled: !!orgId,
+  });
+}

@@ -214,8 +214,16 @@ export function OverviewTab({ orgId }: OverviewTabProps) {
     return <CloudConnectCard orgId={orgId} />;
   }
 
-  // Radar data.
-  const radarData = AREAS.map(a => ({
+  // Filter out areas with no data (Azure/PBI not connected)
+  const activeAreas = AREAS.filter(a => {
+    const pipelineStatus = scan?.pipelineStatus?.[a.key];
+    if (pipelineStatus === 'skipped' || pipelineStatus === 'disabled') return false;
+    const score = scan?.areaScores?.[a.key];
+    if ((a.key === 'azure' || a.key === 'powerbi') && (score === null || score === undefined || score === 0) && !pipelineStatus) return false;
+    return true;
+  });
+
+  const radarData = activeAreas.map(a => ({
     area: a.label,
     score: scan?.areaScores?.[a.key] ?? 0,
     fullMark: 5,
@@ -402,8 +410,8 @@ export function OverviewTab({ orgId }: OverviewTabProps) {
           </Card>
 
           {/* Area cards */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            {AREAS.map(({ key, label, icon: Icon }) => {
+          <div className="grid gap-3 sm:grid-cols-2" style={{ gridTemplateColumns: `repeat(${Math.min(activeAreas.length, 6)}, minmax(0, 1fr))` }}>
+            {activeAreas.map(({ key, label, icon: Icon }) => {
               const score = scan.areaScores?.[key] ?? null;
               return (
                 <Card key={key} className={`border-2 ${scoreBorderClass(score)}`}>
