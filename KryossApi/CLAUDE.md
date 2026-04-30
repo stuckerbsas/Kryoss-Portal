@@ -440,6 +440,18 @@ requests. All actual auth is handled by custom middleware:
 
 ## Changelog
 
+### [1.38.6] - 2026-04-30
+- **Added:** Azure AD tenant ID enrichment (DAT-01) — `aad_tenant_id` column on `machines` (migration 097). Agent extracts TenantId from `CloudDomainJoin\JoinInfo` registry. API persists + returns in machine detail. Portal shows friendly domain status labels + Tenant ID row.
+- **Files:** `Machine.cs`, `EvaluationService.cs`, `MachinesFunction.cs`, `sql/097_machine_aad_tenant_id.sql`
+
+### [1.38.5] - 2026-04-30
+- **Added:** SNMP device hostname enrichment — `GET /v2/snmp-devices` now returns `machineName` (from linked Machine) so portal can show hostname for IP-matched SNMP devices instead of blank sysName (DAT-04).
+- **Files:** `SnmpInfrastructure.cs`, `KryossDbContext.cs`, `SnmpConfigFunction.cs`
+
+### [1.38.4] - 2026-04-30
+- **Fixed:** Network Diagnostics empty — `GroupBy(MachineId).Select(g => g.OrderByDescending().First())` followed by navigation property access (`d.Machine.Hostname`) fails EF Core 8 SQL translation. Replaced with correlated subquery pattern (DAT-05).
+- **Files:** `NetworkDiagnosticsFunction.cs`
+
 ### [1.38.3] - 2026-04-30
 - **Fixed:** CVE product matching — `MatchesCpe` did exact product comparison so CPE slugs ("edge_chromium") never matched CVE display names ("Microsoft Edge (Chromium-based)"). Added `ProductMatches` with normalized bidirectional containment: splits underscores to spaces, strips noise words ("and"/"for"/"the"), checks substring both ways. Fixes Edge, Adobe Reader, VLC, Docker Desktop, AnyConnect, Veeam, Office, FileZilla — all now match their CVE entries. Chrome/Firefox unaffected (already exact match).
 - **Files:** `CveSyncService.cs`

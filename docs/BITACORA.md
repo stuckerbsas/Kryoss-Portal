@@ -2,7 +2,7 @@
 
 > **Purpose:** Historical record of decisions and shipped sessions. Read when you need context on WHY something was built a certain way. Not needed every session.
 >
-> **Last updated:** 2026-04-28
+> **Last updated:** 2026-04-30
 
 ---
 
@@ -185,3 +185,22 @@
 - **CA-TIER:** License tier detection — reads subscribedSkus service plans, resolves 22 features to none/standard/premium. Covers Entra P1/P2, Intune P1/P2, Purview basic/advanced, Defender O365 P1/P2, MDE, Copilot
 - **PBI consent re-enabled** in UnifiedCloudConnectFunction
 - API 1.34.0 → 1.34.3 (4 patches this session)
+
+### 2026-04-30 — NinjaOne Critical Data Scanner
+- **Scripts/Find-CriticalData.ps1:** NinjaOne script that scans all fixed drives for documents, photos, databases, and sensitive files outside standard Windows folders (Windows, Users, ProgramData, Program Files, etc.)
+- ~180 bilingual keywords (EN/ES) covering: credentials, financial, legal, PII, medical, HR, classification, backups
+- Extension matching: docs, photos, databases, crypto keys, archives
+- Output: `criticalDataFound` checkbox + `criticalDataDetails` WYSIWYG HTML table grouped by folder
+- Keyword-matched folders highlighted, sorted first; max 200 rows with truncation
+- Performance: HashSet for extensions, single compiled regex for all keywords, scans only non-system root dirs
+
+### 2026-04-30 — Platform Gaps Phase 2 Complete
+- **DAT-05:** Network diagnostics 500 fix — EF Core `GroupBy+First()+navigation` replaced with correlated subquery
+- **DAT-06:** Network sites empty state improved — heartbeat-based messaging, disabled Rebuild when no IP data
+- **DAT-07:** CVE empty state split into 3 cases (error/no-machines/clean-scan)
+- **DAT-04:** SNMP device hostname enrichment — Machine nav property + IP-based fallback + unidentified consolidation
+- **AGT-03:** Per-machine software category badges (Licensed/Remote Access/Suspicious/Standard) — reuses 553-entry detection list
+- **DAT-01:** Azure AD TenantId extraction from CloudDomainJoin registry, friendly badge labels, new `aad_tenant_id` column (migration 097)
+- **DAT-02:** Privileged accounts split into Domain Admins / Enterprise Admins / Schema Admins (data already in `detail` field)
+- **DAT-03:** Warning badges when Enterprise/Schema Admins > 1
+- API 1.38.5 → 1.38.6, Portal 1.23.5 → 1.23.8, Agent 2.14.2 → 2.14.3

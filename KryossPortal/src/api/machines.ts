@@ -30,6 +30,7 @@ export interface MachineDetail extends Machine {
   macAddress: string | null;
   // Identity
   domainName: string | null;
+  aadTenantId: string | null;
   // Lifecycle
   systemAgeDays: number | null;
   lastBootAt: string | null;
@@ -127,6 +128,7 @@ export interface SoftwareItem {
   name: string;
   version: string | null;
   publisher: string | null;
+  category: string;
 }
 
 interface SoftwareListResponse {

@@ -225,7 +225,10 @@ foreach ($entry in $enrichments.GetEnumerator()) {
         }
         $updateCmd.Parameters["@id"].Value = $entry.Key
         $updateCmd.Parameters["@score"].Value = [decimal]$entry.Value.Score
-        $updateCmd.Parameters["@sev"].Value = if ($entry.Value.Severity) { $entry.Value.Severity.ToLower() } else { [DBNull]::Value }
+        $updateCmd.Parameters["@sev"].Value = if ($entry.Value.Severity) { $entry.Value.Severity.ToLower() } else {
+                $s = [decimal]$entry.Value.Score
+                if ($s -ge 9.0) { 'critical' } elseif ($s -ge 7.0) { 'high' } elseif ($s -ge 4.0) { 'medium' } else { 'low' }
+            }
         $updateCmd.ExecuteNonQuery() | Out-Null
         $updated++
 
@@ -240,7 +243,10 @@ foreach ($entry in $enrichments.GetEnumerator()) {
                 $updateCmd = New-UpdateCommand
                 $updateCmd.Parameters["@id"].Value = $entry.Key
                 $updateCmd.Parameters["@score"].Value = [decimal]$entry.Value.Score
-                $updateCmd.Parameters["@sev"].Value = if ($entry.Value.Severity) { $entry.Value.Severity.ToLower() } else { [DBNull]::Value }
+                $updateCmd.Parameters["@sev"].Value = if ($entry.Value.Severity) { $entry.Value.Severity.ToLower() } else {
+                $s = [decimal]$entry.Value.Score
+                if ($s -ge 9.0) { 'critical' } elseif ($s -ge 7.0) { 'high' } elseif ($s -ge 4.0) { 'medium' } else { 'low' }
+            }
                 $updateCmd.ExecuteNonQuery() | Out-Null
                 $updated++
             }

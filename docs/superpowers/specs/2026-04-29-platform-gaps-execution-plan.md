@@ -139,12 +139,12 @@ Before planning, cross-referenced each issue against the codebase:
 
 ---
 
-## Phase 2: Data Enrichment & Backend Fixes
+## Phase 2: Data Enrichment & Backend Fixes ✅ COMPLETE (2026-04-30)
 
 **Objective:** Fix data pipeline gaps so portal has correct data to display.
 **Why second:** Phase 1 covers cosmetics; Phase 2 ensures correct underlying data.
 
-### DAT-01 — Azure AD Join Detection
+### DAT-01 — Azure AD Join Detection ✅
 - **Area:** Machine Detail
 - **Problem:** `DomainStatus` is a raw string from agent (e.g., "Workgroup", "DomainJoined"). Doesn't distinguish Azure AD joined from workgroup
 - **Expected:** Agent detects join state via **native APIs only** (no `dsregcmd.exe`):
@@ -157,7 +157,7 @@ Before planning, cross-referenced each issue against the codebase:
 - **Risk:** Medium (agent update required fleet-wide)
 - **Validation:** Azure AD-joined machine shows "Azure AD Joined" in portal. Domain machine shows "Domain Joined". Hybrid shows "Hybrid Joined"
 
-### DAT-02 — Privileged Accounts Group Breakdown
+### DAT-02 — Privileged Accounts Group Breakdown ✅
 - **Area:** Security → Active Directory
 - **Problem:** All privileged accounts lumped under `Status = "PrivilegedAccount"`. No distinction between Domain Admins / Enterprise Admins / Schema Admins
 - **Expected:** Agent's AD hygiene scan reports group membership per privileged user. `AdHygieneFinding.Detail` or new field stores group name(s). Portal splits into 3 sections: Domain Admins, Enterprise Admins, Schema Admins
@@ -165,7 +165,7 @@ Before planning, cross-referenced each issue against the codebase:
 - **Risk:** Medium (agent + API + portal change)
 - **Validation:** AD org shows 3 separate groups with correct member counts
 
-### DAT-03 — Privileged Account Count Alerts
+### DAT-03 — Privileged Account Count Alerts ✅
 - **Area:** Security → Active Directory
 - **Problem:** No alerting when Enterprise Admins > 1 or Schema Admins > 1
 - **Expected:** Warning badge on AD tab when:
@@ -176,7 +176,7 @@ Before planning, cross-referenced each issue against the codebase:
 - **Risk:** Low (once DAT-02 is done)
 - **Validation:** Org with 3 Enterprise Admins → warning badge visible
 
-### DAT-04 — SNMP Unknown Device Consolidation
+### DAT-04 — SNMP Unknown Device Consolidation ✅
 - **Area:** Network → SNMP
 - **Problem:** Known computers appearing as "Unknown" SNMP devices. Multiple "Unknown" groups cluttering view
 - **Expected:**
@@ -187,7 +187,7 @@ Before planning, cross-referenced each issue against the codebase:
 - **Risk:** Low
 - **Validation:** Known machine IPs show hostname. Unknowns consolidated into one group
 
-### DAT-05 — Network Diagnostics Display Fix
+### DAT-05 — Network Diagnostics Display Fix ✅
 - **Area:** Network → Diagnostics
 - **Problem:** "No data shown" despite 1081 rows in `machine_network_diag`
 - **Expected:** Diagnostics tab displays data. Need to investigate: is it a query filter issue? org_id mismatch? portal not calling endpoint?
@@ -195,7 +195,7 @@ Before planning, cross-referenced each issue against the codebase:
 - **Risk:** Low (likely query/filter bug)
 - **Validation:** Network Diagnostics tab shows latency, speed, routes for machines with data
 
-### DAT-06 — Network Sites Auto-Population
+### DAT-06 — Network Sites Auto-Population ✅
 - **Area:** Network → Sites
 - **Problem:** Empty because `machine_public_ip_history` had no data (no public IPs tracked)
 - **Expected:** After WAN fix (v1.37.2) deploys: heartbeats populate IPs → `SiteClusterService` auto-creates sites → sites show in portal. May need manual "Rebuild Sites" trigger initially
@@ -203,7 +203,7 @@ Before planning, cross-referenced each issue against the codebase:
 - **Risk:** Low
 - **Validation:** After 24h post-deploy: `network_sites` populated, Sites tab shows data
 
-### DAT-07 — CVE Scan Empty State
+### DAT-07 — CVE Scan Empty State ✅
 - **Area:** Security → CVE
 - **Problem:** Shows "Scan now" with no results for orgs that haven't triggered a scan
 - **Expected:** Auto-scan on first software inventory. If no software data yet, show "Waiting for agent to report software inventory" instead of "Scan now". After vendor filter fix (v1.37.1), CVE matching should work
@@ -244,7 +244,7 @@ Before planning, cross-referenced each issue against the codebase:
 - **Risk:** **High** (silent uninstall can break machines if wrong software targeted)
 - **Validation:** Uninstall known test app. Verify removal. Verify protected list blocks OS components
 
-### AGT-03 — Software Licensed/Paid Indicator
+### AGT-03 — Software Licensed/Paid Indicator ✅
 - **Area:** Machine Detail → Software
 - **Problem:** No way to know if software is licensed/paid vs. freeware
 - **Expected:**

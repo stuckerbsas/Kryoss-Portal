@@ -566,6 +566,7 @@ public class KryossDbContext : DbContext
             e.ToTable("snmp_devices");
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
             e.HasMany(x => x.Interfaces).WithOne(x => x.Device).HasForeignKey(x => x.DeviceId);
             e.HasMany(x => x.Supplies).WithOne(x => x.Device).HasForeignKey(x => x.DeviceId);
             e.HasMany(x => x.Neighbors).WithOne(x => x.Device).HasForeignKey(x => x.DeviceId);

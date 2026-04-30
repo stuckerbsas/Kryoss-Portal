@@ -295,9 +295,12 @@ function OverviewTabContent({ machine, chartData, machineId }: { machine: any; c
 
         <SectionCard icon={<Building2 className="size-4" />} title="Domain">
           <InfoRow label="Status" value={
-            machine.domainStatus ? <Badge variant="outline" className="text-xs">{machine.domainStatus}</Badge> : null
+            machine.domainStatus ? <Badge variant="outline" className="text-xs">{
+              { DomainJoined: 'Domain Joined', AzureADJoined: 'Azure AD Joined', HybridJoined: 'Hybrid Joined', Workgroup: 'Workgroup' }[machine.domainStatus] ?? machine.domainStatus
+            }</Badge> : null
           } />
           <InfoRow label="Domain" value={machine.domainName} />
+          {machine.aadTenantId && <InfoRow label="Tenant ID" value={machine.aadTenantId} />}
         </SectionCard>
 
         {machine.localAdmins && machine.localAdmins.length > 0 && (
@@ -364,6 +367,13 @@ function OverviewTabContent({ machine, chartData, machineId }: { machine: any; c
 
 // ── Tab: Software ──
 
+const categoryBadge: Record<string, { label: string; className: string }> = {
+  licensed: { label: 'Licensed', className: 'bg-blue-100 text-blue-800' },
+  remote_access: { label: 'Remote Access', className: 'bg-amber-100 text-amber-800' },
+  suspicious: { label: 'Suspicious', className: 'bg-red-100 text-red-800' },
+  standard: { label: 'Standard', className: 'bg-gray-100 text-gray-600' },
+};
+
 function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
   const [search, setSearch] = useState('');
   const { data: softwareData, isLoading } = useMachineSoftware(machineId);
@@ -393,16 +403,21 @@ function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
               <TableHead>Name</TableHead>
               <TableHead>Version</TableHead>
               <TableHead>Publisher</TableHead>
+              <TableHead>Category</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((s, i) => (
-              <TableRow key={i}>
-                <TableCell className="font-medium text-sm">{s.name}</TableCell>
-                <TableCell className="text-sm text-muted-foreground font-mono">{s.version ?? '—'}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{s.publisher ?? '—'}</TableCell>
-              </TableRow>
-            ))}
+            {filtered.map((s, i) => {
+              const badge = categoryBadge[s.category] ?? categoryBadge.standard;
+              return (
+                <TableRow key={i}>
+                  <TableCell className="font-medium text-sm">{s.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground font-mono">{s.version ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{s.publisher ?? '—'}</TableCell>
+                  <TableCell><span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span></TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

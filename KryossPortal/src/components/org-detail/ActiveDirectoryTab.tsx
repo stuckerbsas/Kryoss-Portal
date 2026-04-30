@@ -202,6 +202,9 @@ function SecuritySection({ scan }: { scan: NonNullable<ReturnType<typeof useHygi
   const security = scan.findings?.filter((f) => f.objectType === 'Security') ?? [];
 
   const privileged = security.filter((f) => f.status === 'PrivilegedAccount');
+  const domainAdmins = privileged.filter((f) => f.detail?.includes('Domain Admins'));
+  const enterpriseAdmins = privileged.filter((f) => f.detail?.includes('Enterprise Admins'));
+  const schemaAdmins = privileged.filter((f) => f.detail?.includes('Schema Admins'));
   const localAdmins = security.filter((f) => f.status === 'LocalAdmin');
   const kerberoastable = security.filter((f) => f.status === 'Kerberoastable');
   const unconstrainedDeleg = security.filter((f) => f.status === 'UnconstrainedDelegation');
@@ -214,15 +217,34 @@ function SecuritySection({ scan }: { scan: NonNullable<ReturnType<typeof useHygi
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
-            <CardTitle className="text-sm font-medium text-muted-foreground">AD Privileged</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Domain Admins</CardTitle>
             <Shield className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" style={{ color: privileged.length > 5 ? '#C0392B' : '#006536' }}>{privileged.length}</div>
-            <p className="text-xs text-muted-foreground">Domain/Enterprise/Schema</p>
+            <div className="text-2xl font-bold" style={{ color: domainAdmins.length > 5 ? '#C0392B' : '#006536' }}>{domainAdmins.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Enterprise Admins</CardTitle>
+            <Crown className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" style={{ color: enterpriseAdmins.length > 1 ? '#C0392B' : '#006536' }}>{enterpriseAdmins.length}</div>
+            {enterpriseAdmins.length > 1 && <p className="text-xs text-amber-600 font-medium">Best practice: max 1</p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Schema Admins</CardTitle>
+            <ShieldAlert className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" style={{ color: schemaAdmins.length > 1 ? '#C0392B' : '#006536' }}>{schemaAdmins.length}</div>
+            {schemaAdmins.length > 1 && <p className="text-xs text-amber-600 font-medium">Best practice: max 1</p>}
           </CardContent>
         </Card>
         <Card>
@@ -267,7 +289,9 @@ function SecuritySection({ scan }: { scan: NonNullable<ReturnType<typeof useHygi
         </Card>
       </div>
 
-      <FindingsTable findings={privileged} title="AD Privileged Accounts (Domain Admins / Enterprise Admins / Schema Admins)" icon={<Shield className="h-4 w-4 text-purple-500" />} />
+      <FindingsTable findings={domainAdmins} title="Domain Admins" icon={<Shield className="h-4 w-4 text-purple-500" />} />
+      <FindingsTable findings={enterpriseAdmins} title={`Enterprise Admins${enterpriseAdmins.length > 1 ? ' — Best practice: max 1' : ''}`} icon={<Crown className="h-4 w-4 text-purple-500" />} />
+      <FindingsTable findings={schemaAdmins} title={`Schema Admins${schemaAdmins.length > 1 ? ' — Best practice: max 1' : ''}`} icon={<ShieldAlert className="h-4 w-4 text-purple-500" />} />
       <FindingsTable findings={localAdmins} title="Local Administrators (Builtin Administrators Group)" icon={<Shield className="h-4 w-4 text-orange-500" />} />
       <FindingsTable findings={kerberoastable} title="Kerberoastable Accounts (vulnerable to offline cracking)" icon={<AlertTriangle className="h-4 w-4 text-red-500" />} />
       <FindingsTable findings={unconstrainedDeleg} title="Unconstrained Delegation (high risk)" icon={<ShieldAlert className="h-4 w-4 text-red-500" />} />

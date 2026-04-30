@@ -50,6 +50,7 @@ public class Machine : IAuditable
     // Identity
     public string? DomainStatus { get; set; }
     public string? DomainName { get; set; }
+    public string? AadTenantId { get; set; }
 
     // OS role: 1=Workstation, 2=DomainController, 3=Server (from Win32_OperatingSystem.ProductType)
     public short? ProductType { get; set; }

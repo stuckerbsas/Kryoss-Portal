@@ -157,6 +157,7 @@ public class SnmpConfigFunction
                 d.FirstSeenAt,
                 d.IsStale,
                 d.MachineId,
+                machineName = d.Machine != null ? d.Machine.Hostname : null,
                 d.ScanSource,
                 d.SecondaryIps,
                 d.ScannedAt,
@@ -210,7 +211,7 @@ public class SnmpConfigFunction
                 d.InterfaceCount, d.LldpNeighborCount, d.CdpNeighborCount,
                 d.PageCount, d.cpuLoadPct, d.memoryTotalMb, d.memoryUsedMb,
                 d.diskTotalGb, d.diskUsedGb, d.processCount,
-                d.FirstSeenAt, d.IsStale, d.MachineId, d.ScanSource, d.SecondaryIps,
+                d.FirstSeenAt, d.IsStale, d.MachineId, d.machineName, d.ScanSource, d.SecondaryIps,
                 d.ScannedAt, d.interfaces, d.supplies,
                 lldpNeighbors, cdpNeighbors,
                 vendorData = !string.IsNullOrEmpty(d.VendorData)

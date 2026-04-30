@@ -113,6 +113,9 @@ public class HardwareInfo
     [JsonPropertyName("domainName")]
     public string? DomainName { get; set; }
 
+    [JsonPropertyName("aadTenantId")]
+    public string? AadTenantId { get; set; }
+
     // OS role: 1=Workstation, 2=DomainController, 3=Server
     [JsonPropertyName("productType")]
     public int? ProductType { get; set; }

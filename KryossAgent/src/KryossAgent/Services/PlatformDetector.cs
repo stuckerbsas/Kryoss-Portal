@@ -305,7 +305,18 @@ public static class PlatformDetector
         {
             // Check Azure AD join status
             using var aadKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo");
-            var isAadJoined = aadKey?.GetSubKeyNames().Length > 0;
+            var aadSubKeys = aadKey?.GetSubKeyNames();
+            var isAadJoined = aadSubKeys?.Length > 0;
+
+            if (isAadJoined == true)
+            {
+                try
+                {
+                    using var joinKey = aadKey!.OpenSubKey(aadSubKeys![0]);
+                    info.AadTenantId = joinKey?.GetValue("TenantId") as string;
+                }
+                catch { /* non-critical */ }
+            }
 
             // Check traditional AD join
             using var domKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters");

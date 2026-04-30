@@ -8,9 +8,9 @@
 
 | Component | Current | Where | Endpoint |
 |-----------|---------|-------|----------|
-| **API** | 1.38.3 | `KryossApi.csproj` `<Version>` | `GET /v2/version` (no auth) |
-| **Portal** | 1.23.1 | `KryossPortal/package.json` `"version"` | Sidebar footer "Powered by Kryoss vX.Y.Z" |
-| **Agent** | 2.14.2 | `KryossAgent.csproj` `<Version>` | Registry `HKLM\SOFTWARE\Kryoss\Agent\Version` |
+| **API** | 1.38.6 | `KryossApi.csproj` `<Version>` | `GET /v2/version` (no auth) |
+| **Portal** | 1.23.8 | `KryossPortal/package.json` `"version"` | Sidebar footer "Powered by Kryoss vX.Y.Z" |
+| **Agent** | 2.14.3 | `KryossAgent.csproj` `<Version>` | Registry `HKLM\SOFTWARE\Kryoss\Agent\Version` |
 
 **VERSION RULES:** Every behavior change bumps version BEFORE build. Patch=bugfix, Minor=feature, Major=breaking. Update this table when bumping.
 

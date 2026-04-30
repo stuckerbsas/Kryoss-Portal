@@ -246,6 +246,7 @@ public class EvaluationService : IEvaluationService
             // Identity
             machine.DomainStatus = payload.Hardware?.DomainStatus;
             machine.DomainName = payload.Hardware?.DomainName;
+            machine.AadTenantId = payload.Hardware?.AadTenantId;
             if (payload.Hardware?.ProductType is > 0)
                 machine.ProductType = (short)payload.Hardware.ProductType;
             // Lifecycle
@@ -1215,6 +1216,7 @@ public class HardwareInfo
     public string? MacAddress { get; set; }
     public string? DomainStatus { get; set; }
     public string? DomainName { get; set; }
+    public string? AadTenantId { get; set; }
     public int? ProductType { get; set; }
     public int? SystemAgeDays { get; set; }
     public DateTime? LastBootAt { get; set; }

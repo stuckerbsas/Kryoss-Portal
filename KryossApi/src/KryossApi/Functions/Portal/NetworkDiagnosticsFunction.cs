@@ -31,11 +31,14 @@ public class NetworkDiagnosticsFunction
             return bad;
         }
 
-        // Latest scan per machine — summary only (no child collections)
+        // Latest scan per machine — correlated subquery (GroupBy+First breaks navigation props in EF8)
         var diags = await _db.MachineNetworkDiags
             .Where(d => d.Machine.OrganizationId == orgGuid)
-            .GroupBy(d => d.MachineId)
-            .Select(g => g.OrderByDescending(d => d.ScannedAt).First())
+            .Where(d => d.Id == _db.MachineNetworkDiags
+                .Where(d2 => d2.MachineId == d.MachineId)
+                .OrderByDescending(d2 => d2.ScannedAt)
+                .Select(d2 => d2.Id)
+                .FirstOrDefault())
             .OrderBy(d => d.Machine.Hostname)
             .Select(d => new
             {

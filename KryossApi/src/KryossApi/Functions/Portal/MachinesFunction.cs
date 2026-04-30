@@ -155,6 +155,7 @@ public class MachinesFunction
                 // Identity
                 m.DomainStatus,
                 m.DomainName,
+                m.AadTenantId,
                 // Agent
                 m.AgentVersion,
                 // Lifecycle
@@ -273,6 +274,7 @@ public class MachinesFunction
             machine.MacAddress,
             machine.DomainStatus,
             machine.DomainName,
+            machine.AadTenantId,
             machine.SystemAgeDays,
             machine.LastBootAt,
             machine.IsActive,

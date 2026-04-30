@@ -288,6 +288,10 @@ Exit codes: `0` = success, `1` = fatal error, `2` = warning/upload-deferred, `99
 
 ## Changelog
 
+### [2.14.3] - 2026-04-30
+- **Added:** Azure AD TenantId extraction (DAT-01) — reads `TenantId` value from `CloudDomainJoin\JoinInfo` registry subkey. New `aadTenantId` field in HardwareInfo payload.
+- **Files:** `PlatformDetector.cs`, `AssessmentPayload.cs`
+
 ### [2.14.1] - 2026-04-29
 - **Fixed:** Enrollment retry for mass deployment — replaced weak 3-attempt/2-8s backoff with 5-retry exponential backoff + random jitter (30-900s range). Handles 429, 503, 5xx, and network timeouts. Respects `Retry-After` header. Prevents thundering herd when deploying 50+ machines simultaneously via NinjaOne.
 - **Files:** `ApiClient.cs`

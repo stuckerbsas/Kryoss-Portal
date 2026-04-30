@@ -61,6 +61,7 @@ public class SnmpDevice
     public double? PingJitterMs { get; set; }
 
     public Organization Organization { get; set; } = null!;
+    public Machine? Machine { get; set; }
     public ICollection<SnmpDeviceInterface> Interfaces { get; set; } = [];
     public ICollection<SnmpDeviceSupply> Supplies { get; set; } = [];
     public ICollection<SnmpDeviceNeighbor> Neighbors { get; set; } = [];
