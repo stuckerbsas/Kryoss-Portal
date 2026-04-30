@@ -36,7 +36,8 @@ export function SecurityTab() {
           <TabsTrigger
             key={s.value}
             value={s.value}
-            className={s.value === 'active-directory' && !hasAdData ? 'opacity-50' : undefined}
+            className={s.value === 'active-directory' && !hasAdData ? 'opacity-50 pointer-events-none' : undefined}
+            disabled={s.value === 'active-directory' && !hasAdData}
           >
             {s.label}
           </TabsTrigger>

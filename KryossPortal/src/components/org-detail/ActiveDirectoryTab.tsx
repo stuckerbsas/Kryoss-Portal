@@ -33,6 +33,16 @@ import {
 
 // ── Shared helpers ──
 
+const SCHEMA_MAP: Record<number, string> = {
+  30: 'Server 2003', 31: 'Server 2003 R2', 44: 'Server 2008', 47: 'Server 2008 R2',
+  56: 'Server 2012', 69: 'Server 2012 R2', 87: 'Server 2016', 88: 'Server 2019',
+  89: 'Server 2022', 90: 'Server 2025',
+};
+function schemaFriendly(v: number | null): string {
+  if (v === null) return 'Unknown';
+  return SCHEMA_MAP[v] ?? `v${v}`;
+}
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
@@ -72,12 +82,13 @@ function statusBadge(status: string) {
   return <Badge variant="secondary" className={c.className}>{c.label}</Badge>;
 }
 
-function FindingsTable({ findings, title, icon }: { findings: HygieneFinding[]; title: string; icon: React.ReactNode }) {
+function FindingsTable({ findings, title, icon, description }: { findings: HygieneFinding[]; title: string; icon: React.ReactNode; description?: string }) {
   if (findings.length === 0) return null;
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">{icon}{title} ({findings.length})</CardTitle>
+        {description && <p className="text-xs text-muted-foreground mt-1">{description}</p>}
       </CardHeader>
       <CardContent>
         <div className="max-h-80 overflow-y-auto">
@@ -294,8 +305,8 @@ function SecuritySection({ scan }: { scan: NonNullable<ReturnType<typeof useHygi
       <FindingsTable findings={schemaAdmins} title={`Schema Admins${schemaAdmins.length > 1 ? ' — Best practice: max 1' : ''}`} icon={<ShieldAlert className="h-4 w-4 text-purple-500" />} />
       <FindingsTable findings={localAdmins} title="Local Administrators (Builtin Administrators Group)" icon={<Shield className="h-4 w-4 text-orange-500" />} />
       <FindingsTable findings={kerberoastable} title="Kerberoastable Accounts (vulnerable to offline cracking)" icon={<AlertTriangle className="h-4 w-4 text-red-500" />} />
-      <FindingsTable findings={unconstrainedDeleg} title="Unconstrained Delegation (high risk)" icon={<ShieldAlert className="h-4 w-4 text-red-500" />} />
-      <FindingsTable findings={adminResidue} title="AdminCount Residual (orphaned admin permissions)" icon={<Shield className="h-4 w-4 text-amber-500" />} />
+      <FindingsTable findings={unconstrainedDeleg} title="Unconstrained Delegation" icon={<ShieldAlert className="h-4 w-4 text-red-500" />} description="This computer can impersonate any user to any service. Attackers who compromise this machine can access anything in the domain." />
+      <FindingsTable findings={adminResidue} title="AdminCount Residual" icon={<Shield className="h-4 w-4 text-amber-500" />} description="User was once in a privileged group. AD set the adminCount flag but never cleared it when removed, leaving stale elevated permissions on the object's ACL." />
       <FindingsTable findings={noLaps} title="No LAPS (shared local admin password)" icon={<Server className="h-4 w-4 text-amber-500" />} />
     </div>
   );
@@ -321,8 +332,8 @@ function HealthSection({ orgId }: { orgId: string }) {
             <Globe className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">v{s.schemaVersion ?? '?'}</div>
-            <p className="text-xs text-muted-foreground">{s.schemaVersionLabel ?? 'Unknown'}</p>
+            <div className="text-2xl font-bold">{schemaFriendly(s.schemaVersion)}</div>
+            <p className="text-xs text-muted-foreground">Schema v{s.schemaVersion ?? '?'}</p>
           </CardContent>
         </Card>
         <Card>

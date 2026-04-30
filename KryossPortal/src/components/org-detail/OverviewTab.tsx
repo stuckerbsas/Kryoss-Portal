@@ -80,10 +80,10 @@ export function OverviewTab() {
             </CardTitle>
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="flex items-center h-8">
-            <span className="text-2xl">
+          <CardContent>
+            <div className="text-2xl font-bold">
               <GradeBadge grade={topGrade} score={dashboard.avgScore} />
-            </span>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -999,30 +999,54 @@ function ControlResultsView({ run, severity, setSeverity, status, setStatus, sea
         <span className="text-sm text-muted-foreground ml-auto">{filtered.length} results</span>
       </div>
 
-      {/* Results table */}
-      <div className="max-h-[600px] overflow-y-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Severity</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((r: any) => (
-              <TableRow key={r.controlId}>
-                <TableCell className="font-mono text-xs">{r.controlId}</TableCell>
-                <TableCell className="max-w-md truncate text-sm">{r.name}</TableCell>
-                <TableCell className="text-muted-foreground text-sm">{r.categoryName}</TableCell>
-                <TableCell><Badge variant="secondary" className={severityColor(r.severity)}>{r.severity}</Badge></TableCell>
-                <TableCell><Badge variant="secondary" className={statusColor(r.status)}>{r.status}</Badge></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      {/* Results grouped by category */}
+      <div className="max-h-[600px] overflow-y-auto space-y-3">
+        {(() => {
+          const byCategory = new Map<string, any[]>();
+          for (const r of filtered) {
+            const cat = r.categoryName || 'Uncategorized';
+            const list = byCategory.get(cat) ?? [];
+            list.push(r);
+            byCategory.set(cat, list);
+          }
+          return Array.from(byCategory.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([cat, items]) => {
+            const catPass = items.filter((r: any) => r.status === 'pass').length;
+            const catFail = items.filter((r: any) => r.status === 'fail').length;
+            const catWarn = items.filter((r: any) => r.status === 'warn').length;
+            const catScore = items.length > 0 ? Math.round((catPass / items.length) * 100) : 0;
+            return (
+              <Card key={cat} className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold">{cat}</h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold tabular-nums" style={{
+                      color: catScore >= 90 ? '#008852' : catScore >= 70 ? '#A2C564' : catScore >= 50 ? '#D97706' : '#C0392B'
+                    }}>{catScore}%</span>
+                    <span className="text-xs text-muted-foreground">{catPass}P {catWarn}W {catFail}F</span>
+                  </div>
+                </div>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
+                  <div className="h-full rounded-full" style={{
+                    width: `${catScore}%`,
+                    backgroundColor: catScore >= 90 ? '#008852' : catScore >= 70 ? '#A2C564' : catScore >= 50 ? '#D97706' : '#C0392B',
+                  }} />
+                </div>
+                <Table>
+                  <TableBody>
+                    {items.map((r: any) => (
+                      <TableRow key={r.controlId}>
+                        <TableCell className="font-mono text-xs w-24">{r.controlId}</TableCell>
+                        <TableCell className="text-sm max-w-md truncate" title={r.name}>{r.name}</TableCell>
+                        <TableCell className="w-20"><Badge variant="secondary" className={severityColor(r.severity)}>{r.severity}</Badge></TableCell>
+                        <TableCell className="w-16"><Badge variant="secondary" className={statusColor(r.status)}>{r.status}</Badge></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Card>
+            );
+          });
+        })()}
       </div>
     </div>
   );

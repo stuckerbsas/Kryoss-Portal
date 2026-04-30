@@ -1,7 +1,7 @@
 import {
   AlertTriangle,
   CheckCircle,
-  Monitor,
+
   RefreshCw,
   Shield,
   XCircle,
@@ -96,15 +96,21 @@ export function PatchComplianceTab() {
     );
   }
 
+  const fullyPatched = data.machines.filter((m) => m.complianceScore === 100).length;
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Patch Compliance</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          {data.reportingMachines} of {data.totalMachines} machines reporting.
+          {fullyPatched} of {data.reportingMachines} machines fully patched.
+          {data.reportingMachines < data.totalMachines &&
+            ` ${data.totalMachines - data.reportingMachines} not reporting.`}
           {data.rebootPending > 0 && ` ${data.rebootPending} pending reboot.`}
           {data.wuStopped > 0 && ` ${data.wuStopped} with Windows Update stopped.`}
-          {' '}Score based on patch age, reboot state, and update source health.
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Score = patch age + reboot state + update source health. 100% = all patches installed, no reboot pending, healthy update channel.
         </p>
       </div>
 
@@ -128,14 +134,14 @@ export function PatchComplianceTab() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Reporting
+              Fully Patched
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <Monitor className="size-5 text-primary" />
+              <CheckCircle className={`size-5 ${fullyPatched === data.reportingMachines ? 'text-green-600' : 'text-amber-600'}`} />
               <span className="text-2xl font-bold">
-                {data.reportingMachines} / {data.totalMachines}
+                {fullyPatched} / {data.reportingMachines}
               </span>
             </div>
           </CardContent>
