@@ -21,6 +21,14 @@ public class MailFlowInsights
     /// pipeline emits Info recommendation in that case.
     /// </summary>
     public bool MailReadConsented { get; set; } = true;
+
+    // ── Exchange Online REST API checks (Lighthouse gaps) ──
+    public bool ExchangeAvailable { get; set; }
+    public bool UnifiedAuditLogEnabled { get; set; }
+    public bool HasSafeAttachmentPolicy { get; set; }
+    public int SafeAttachmentPolicyCount { get; set; }
+    public bool HasEopStandardProtection { get; set; }
+    public bool HasEopStrictProtection { get; set; }
 }
 
 public class DomainInspectionResult

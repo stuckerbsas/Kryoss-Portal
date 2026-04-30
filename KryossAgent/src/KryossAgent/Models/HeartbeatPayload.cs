@@ -19,4 +19,12 @@ public class HeartbeatPayload
 
     [JsonPropertyName("mode")]
     public string Mode { get; set; } = "service";
+
+    [JsonPropertyName("errors")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AgentErrorDto>? Errors { get; set; }
+
+    [JsonPropertyName("loopStatus")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, LoopStatusDto>? LoopStatus { get; set; }
 }

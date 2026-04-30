@@ -308,20 +308,24 @@ public class NetworkSitesFunction
             .ToListAsync();
 
         var latest = await _db.MachineNetworkDiags
-            .Where(d => machineIds.Contains(d.MachineId) && d.TracerouteJson != null)
+            .Where(d => machineIds.Contains(d.MachineId) && d.HopCount > 0)
             .OrderByDescending(d => d.ScannedAt)
+            .Take(5)
             .Select(d => new
             {
                 d.MachineId,
                 MachineName = d.Machine.Hostname,
                 d.TracerouteTarget,
-                d.TracerouteJson,
+                hops = _db.MachineTracerouteHops
+                    .Where(h => h.DiagId == d.Id)
+                    .OrderBy(h => h.HopNumber)
+                    .Select(h => new { h.HopNumber, h.IpAddress, h.RttMs, h.Hostname })
+                    .ToList(),
                 d.HopCount,
                 d.JitterMs,
                 d.PacketLossPct,
                 d.ScannedAt,
             })
-            .Take(5)
             .ToListAsync();
 
         var res = req.CreateResponse(HttpStatusCode.OK);

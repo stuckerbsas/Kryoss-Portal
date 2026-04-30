@@ -83,6 +83,19 @@ public class EndpointInsights
     public int LateralMovementAttempts30d { get; set; }
 
     // ============================================================
+    // Lighthouse security policy presence checks
+    // ============================================================
+    public bool HasAntivirusPolicy { get; set; }
+    public bool HasFirewallPolicy { get; set; }
+    public bool HasAsrPolicy { get; set; }
+    public bool HasEdgeProfile { get; set; }
+    public bool HasOneDrivePolicy { get; set; }
+    public bool HasWindowsUpdatePolicy { get; set; }
+    public int NotificationTemplateCount { get; set; }
+    public bool EndpointAnalyticsEnabled { get; set; }
+    public bool DefenderAutoOnboard { get; set; }
+
+    // ============================================================
     // Availability flags
     // ============================================================
     public bool IntuneAvailable { get; set; }

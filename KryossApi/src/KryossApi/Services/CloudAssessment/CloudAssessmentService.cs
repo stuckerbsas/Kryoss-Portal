@@ -141,11 +141,18 @@ public class CloudAssessmentService : ICloudAssessmentService
                     "https://management.azure.com", log);
             }
 
-            // CA-9: Power BI governance — disabled until PBI licensing available in test environment.
-            HttpClient? pbiHttp = null;
+            // CA-9: Power BI governance.
+            HttpClient? pbiHttp = await TryCreateAuthenticatedClient(
+                credential, "https://analysis.windows.net/powerbi/api/.default",
+                "https://api.powerbi.com", log);
+
+            // Exchange Online REST API (InvokeCommand) for audit log, safe attachments, EOP checks.
+            HttpClient? exchangeHttp = await TryCreateAuthenticatedClient(
+                credential, "https://outlook.office365.com/.default",
+                "https://outlook.office365.com", log);
 
             AddActlog(db, "info", "scan.tokens.acquired", scanId,
-                $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null} arm={armHttp != null} pbi={pbiHttp != null} azureSubs={azureSubIds.Count}");
+                $"Tokens: beta={graphBetaHttp != null} defender={defenderHttp != null} arm={armHttp != null} pbi={pbiHttp != null} exchange={exchangeHttp != null} azureSubs={azureSubIds.Count}");
             await db.SaveChangesAsync();
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
@@ -177,9 +184,9 @@ public class CloudAssessmentService : ICloudAssessmentService
             var sharepointDeepTask = TrackPipeline("sharepoint_deep",
                 () => SharePointDeepPipeline.RunAsync(graph, log, ct),
                 scanId, db, log);
-            // CA-10: Mail Flow & Email Security — per-domain DNS + mailbox forwarding + shared mailbox heuristic.
+            // CA-10: Mail Flow & Email Security — per-domain DNS + mailbox forwarding + shared mailbox heuristic + Exchange REST checks.
             var mailFlowTask = TrackPipeline("mail_flow",
-                () => MailFlowPipeline.RunAsync(graph, dns, scanId, db, log, ct),
+                () => MailFlowPipeline.RunAsync(graph, dns, exchangeHttp, customerTenantId, scanId, db, log, ct),
                 scanId, db, log);
 
             try { await Task.WhenAll(identityTask, endpointTask, dataTask, productivityTask, azureTask, powerbiTask, sharepointDeepTask, mailFlowTask); }
@@ -396,12 +403,14 @@ public class CloudAssessmentService : ICloudAssessmentService
             // Feature Inventory: license/implementation/adoption matrix per feature.
             try
             {
+                var skuPlans = (productivityResult.Insights as Pipelines.ProductivityInsights)?.SkuPlans;
                 var inventory = FeatureInventoryBuilder.Build(
                     identityResult, endpointResult, dataResult, productivityResult,
                     azureResult, powerbiResult, mailFlowResult,
                     graphConnected: true,
                     azureConnected: hasAzure,
-                    pbiConnected: hasPowerBi);
+                    pbiConnected: hasPowerBi,
+                    skuPlans: skuPlans);
                 scan.FeatureInventory = JsonSerializer.Serialize(inventory,
                     new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             }

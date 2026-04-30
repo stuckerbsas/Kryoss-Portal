@@ -98,18 +98,19 @@ public static class PortScanner
     /// <summary>
     /// Scan TCP ports in parallel. 100 concurrent connections, 500ms timeout.
     /// </summary>
-    public static async Task<List<PortResult>> ScanTcpAsync(string host, int concurrency = 100, int timeoutMs = 500, bool grabBanners = true)
+    public static async Task<List<PortResult>> ScanTcpAsync(string host, int concurrency = 100, int timeoutMs = 500, bool grabBanners = true, CancellationToken ct = default)
     {
         var results = new List<PortResult>();
         var semaphore = new SemaphoreSlim(concurrency);
 
         var tasks = TopTcpPorts.Select(async port =>
         {
-            await semaphore.WaitAsync();
+            await semaphore.WaitAsync(ct);
             try
             {
                 using var tcp = new TcpClient();
-                using var cts = new CancellationTokenSource(timeoutMs);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(timeoutMs);
                 try
                 {
                     await tcp.ConnectAsync(host, port, cts.Token);

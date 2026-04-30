@@ -109,10 +109,21 @@ public class EnrollFunction
 
 public class EnrollRequest
 {
+    [System.Text.Json.Serialization.JsonPropertyName("code")]
     public string Code { get; set; } = null!;
+
+    [System.Text.Json.Serialization.JsonPropertyName("hostname")]
     public string Hostname { get; set; } = null!;
+
+    [System.Text.Json.Serialization.JsonPropertyName("os")]
     public string? Os { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("osVersion")]
     public string? OsVersion { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("osBuild")]
     public string? OsBuild { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("productType")]
     public int? ProductType { get; set; }
 }

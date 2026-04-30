@@ -64,6 +64,8 @@
 | PATCH | `/v2/users/{id}` | `UsersFunction.Update` | Update role/franchise/org (admin:edit) |
 | DELETE | `/v2/users/{id}` | `UsersFunction.Delete` | Soft-delete user (admin:delete) |
 | GET | `/v2/roles` | `UsersFunction.ListRoles` | List available roles (admin:read) |
+| GET | `/v2/me` | `MeFunction.Me` | Current user profile + permissions (no perm required) |
+| PATCH | `/v2/me` | `MeFunction.Update` | Update own displayName/phone/jobTitle (no perm required) |
 
 ### Agent API (v1) — additional endpoints
 
@@ -151,6 +153,15 @@
 | POST | `/v2/cve-findings/rescan?organizationId=X` | `CveFindingsFunction.Rescan` | Re-scan all machines for CVEs |
 | PATCH | `/v2/cve-findings/{id}/dismiss` | `CveFindingsFunction.Dismiss` | Dismiss a CVE finding |
 | GET | `/v2/cve-findings/stats?organizationId=X` | `CveFindingsFunction.Stats` | Top CVEs by CVSS + top vulnerable software |
+
+### Portal API (v2) — CVE Sync (HQ)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/cve-sync/status` | `CveSyncFunction.GetStatus` | CVE DB health: counts, last sync, coverage, recent syncs |
+| GET | `/v2/cve-sync/products` | `CveSyncFunction.GetProducts` | Monitored product checklist with per-vendor stats |
+| POST | `/v2/cve-sync` | `CveSyncFunction.RunManual` | Trigger manual sync (?full=true for rebuild) |
+| Timer | `0 0 3 * * *` | `CveSyncFunction.RunDaily` | Daily incremental NVD + CISA KEV sync |
 
 ### Portal API (v2) — Patch Compliance (A-02)
 
@@ -429,6 +440,135 @@ requests. All actual auth is handled by custom middleware:
 
 ## Changelog
 
+### [1.38.3] - 2026-04-30
+- **Fixed:** CVE product matching — `MatchesCpe` did exact product comparison so CPE slugs ("edge_chromium") never matched CVE display names ("Microsoft Edge (Chromium-based)"). Added `ProductMatches` with normalized bidirectional containment: splits underscores to spaces, strips noise words ("and"/"for"/"the"), checks substring both ways. Fixes Edge, Adobe Reader, VLC, Docker Desktop, AnyConnect, Veeam, Office, FileZilla — all now match their CVE entries. Chrome/Firefox unaffected (already exact match).
+- **Files:** `CveSyncService.cs`
+
+### [1.38.2] - 2026-04-30
+- **Added:** EPSS integration — `epss_score` + `epss_percentile` columns on `cve_entries` (migration 095). `SyncEpssAsync` downloads bulk CSV from FIRST.org (gzipped, ~250K rows), matches against our CVEs, updates scores in 2000-row chunks. Runs daily as part of `CveSyncService` after KEV sync. EPSS = probability of exploitation in next 30 days (0.0-1.0).
+- **Files:** `CveEntry.cs`, `CveSyncService.cs`, `sql/095_cve_epss_columns.sql`
+
+### [1.38.1] - 2026-04-29
+- **Fixed:** Loop status showed numbers (0-5) instead of names in portal — API returned `loopStatus` as array, portal expected `Record<string, LoopStatus>` dictionary keyed by `loopName`. Converted to `ToDictionary` with `lastDurationMs` field matching portal's `LoopStatus` interface.
+- **Files:** `MachinesFunction.cs`
+
+### [1.38.0] - 2026-04-29
+- **Added:** Software normalization pipeline (DB-NORM 1B) — `EvaluationService` now persists `payload.Software` into `software` + `machine_software` tables during scan ingest. Upsert pattern: find-or-create Software catalog entry (with CPE mapping via `CpeMappingService.ResolveKnownCpe`), upsert `MachineSoftware` per machine, mark removed entries with `RemovedAt`. `CveService.ScanMachineAsync` adds direct matching fallback (Path B) when `CveProductMap` is empty — matches `Software.CpeVendor/CpeProduct` against `cve_entries.vendor/product`. `InventoryFunction.Software` and `MachinesFunction.GetSoftware` rewritten to query normalized tables instead of parsing `RawPayload` JSON.
+- **Files:** `EvaluationService.cs`, `CpeMappingService.cs`, `CveService.cs`, `InventoryFunction.cs`, `MachinesFunction.cs`
+
+### [1.37.5] - 2026-04-29
+- **Fixed:** Heartbeat crash — `geo_country` column NVARCHAR(2) but geo API returns full names ("United States"). Widened to NVARCHAR(60) on both `machine_public_ip_history` and `network_sites`.
+- **Files:** `sql/093_widen_geo_country.sql`
+
+### [1.37.4] - 2026-04-29
+- **Fixed:** SNMP `SubmitResults` crash — duplicate `IfIndex` in previous interfaces caused `ToDictionary` to throw `ArgumentException`. Switched to `GroupBy` + `First()` to deduplicate.
+- **Files:** `SnmpFunction.cs`
+
+### [1.37.3] - 2026-04-29
+- **Fixed:** CVE ingestion pipeline deep fix — (1) Multi-field vendor resolution: checks ALL `affected[].vendor` entries then falls back to `providerMetadata.shortName` (was only checking `affected[0].vendor`). (2) Reduced allowlist from 106 to 20 MSP-focused vendors. (3) Product classification column (`product_class`: OS/PLATFORM/APPLICATION/LIBRARY). (4) `ShouldIngest` decision function combines state + vendor checks. (5) Product/version extraction now matches the resolved vendor's affected entry, not blindly `affected[0]`.
+- **Files:** `CveSyncService.cs`, `CveEntry.cs`, `cve-vendors.json`, `sql/092_cve_product_class.sql`, `Scripts/Import-CveBulk.ps1`
+
+### [1.37.2] - 2026-04-29
+- **Fixed:** WAN Health empty — `X-Forwarded-For` header empty in Azure Functions isolated worker. Added fallback to `HttpContext.Connection.RemoteIpAddress` via ASP.NET Core integration. Fixed in both `ApiKeyAuthMiddleware` (agent) and `BearerAuthMiddleware` (portal). Also added comma-split for multi-proxy chains. Without IP, `PublicIpTracker` returned early → no `machine_public_ip_history` → no `network_sites` → no WAN health.
+- **Files:** `ApiKeyAuthMiddleware.cs`, `BearerAuthMiddleware.cs`
+
+### [1.37.1] - 2026-04-29
+- **Fixed:** CVE vendor matching — vendor names from CVE.org (display names like "Palo Alto Networks") didn't match CPE-style slugs in whitelist ("paloaltonetworks"). Added `NormalizeVendor()` that strips spaces/underscores/hyphens before comparison. Same fix in `Import-CveBulk.ps1`.
+- **Files:** `CveSyncService.cs`, `Scripts/Import-CveBulk.ps1`
+
+### [1.37.0] - 2026-04-29
+- **Added:** `GET /v2/local-admins?organizationId=X` — org-level local administrators endpoint. Returns all local admin group members across all machines, grouped by account name with machine list. Sorted by machineCount descending.
+- **Files:** `MachinesFunction.cs` (new `LocalAdminsFunction` class)
+
+### [1.36.0] - 2026-04-29
+- **Added:** Available Updates pipeline (WUC-02/04) — `machine_available_updates` table (migration 091) stores pending Windows Updates per machine with history. Upsert logic: new KBs inserted, existing refreshed, missing-from-scan marked installed. Cross-references `machine_patches` (PatchCollector) to avoid contradictions. Agent endpoint: `POST /v1/available-updates`. Portal endpoints: `GET /v2/organizations/{orgId}/available-updates` (org aggregation with pending/installed counts per KB), `GET /v2/machines/{machineId}/available-updates` (per-machine list, `?status=all` for history).
+- **Files:** `MachineAvailableUpdate.cs` (new), `AvailableUpdatesFunction.cs` (new), `KryossDbContext.cs`, `sql/091_machine_available_updates.sql` (new)
+
+### [1.35.18] - 2026-04-29
+- **Added:** WU-API-01 — `windows_update` ActionType for remediation tasks. Operational tasks bypass control_def/action lookup. Kill switch `ENABLE_WINDOWS_UPDATE_REMEDIATION` guards CreateTask, HeartbeatFunction dispatch, and TaskResult (defense-in-depth). Strict param validation: exact keys (`mode`, `reboot`, `deadlineUtc`), reject unknown. Server injects defaults (`security_only`, `if_required`). Nullable `ControlDefId`/`ActionId` on `RemediationTask` (migration 090). All queries null-safe for ControlDef nav property.
+- **Files:** `Remediation.cs`, `RemediationFunction.cs`, `HeartbeatFunction.cs`, `TaskResultFunction.cs`, `sql/090_remediation_nullable_control.sql`
+
+### [1.35.17] - 2026-04-29
+- **Fixed:** 5 CVE engine quality improvements: (1) Vendor whitelist loaded from shared `cve-vendors.json` — single source of truth for C# and PS1, eliminates drift. (2) `MatchesCpe` now checks vendor+product, not just vendor — eliminates false positives (e.g., Microsoft Word CVE no longer maps to Microsoft Edge). Added `product` column to `cve_entries` (migration 089). (3) Batch `SaveChangesAsync` every 50 records in delta sync — was per-record. (4) CVSS enrichment increased from 50 to 500/run with API key (was 50 fixed). (5) `RebuildProductMapAsync` processes CVEs in chunks of 2000 — was loading all to memory.
+- **Files:** `CveSyncService.cs`, `CveEntry.cs`, `KryossApi.csproj`, `cve-vendors.json`, `sql/089_cve_product_column.sql`, `Scripts/Import-CveBulk.ps1`
+
+### [1.35.16] - 2026-04-29
+- **Changed:** CVE sync rewritten: CVE.org delta.json as primary source (replaces NVD keyword search). Daily delta → parse CVE Record v5.2 → NVD CVSS enrichment (by cveId, max 50/run) → CISA KEV → product map → machine rescan. Added MSP vendor whitelist (~90 vendors) — filters out irrelevant CVEs from both delta sync and bulk import script.
+- **Files:** `CveSyncService.cs`, `Scripts/Import-CveBulk.ps1`
+
+### [1.35.15] - 2026-04-29
+- **Changed:** CVE sync now processes one vendor per timer tick (every 2 min). POST queues job → Runner picks up → processes one vendor → saves progress JSON → exits. Next tick continues with next vendor. After all vendors: KEV + product map + rescan. Zero timeout risk. Each vendor logged to actlog with `[N/24]` progress.
+- **Files:** `CveSyncFunction.cs`, `CveSyncService.cs`, `CveEntry.cs` (added Progress to CveSyncLog)
+
+### [1.35.14] - 2026-04-29
+- **Fixed:** CVE manual sync HTTP timeout — `POST /v2/cve-sync` now returns 202 immediately, queues work via `cve_sync_log` (status=pending). New `CveSync_Runner` timer (every 2 min) picks up pending jobs. Prevents Azure Functions 5-min HTTP timeout killing long syncs. Added `isRunning` to status endpoint. All vendors now logged to actlog (not just those with changes). HTTP errors per vendor logged to actlog.
+- **Files:** `CveSyncFunction.cs`, `CveSyncService.cs`
+
+### [1.35.13] - 2026-04-29
+- **Fixed:** CVE sync crash after ingesting CVEs — post-sync stages (KEV, product map, machine rescan) now wrapped non-fatal so CVE data isn't lost. Inner exception logged to actlog for EF Core errors.
+- **Files:** `CveSyncService.cs`
+
+### [1.35.12] - 2026-04-29
+- **Fixed:** CVE sync timeout — NVD responses for large vendors (Microsoft) exceed 2 min. HttpClient timeout raised to 5 min, page size reduced from 2000 → 500 to get faster responses.
+- **Files:** `Program.cs`, `CveSyncService.cs`
+
+### [1.35.11] - 2026-04-29
+- **Added:** Actlog tracing for CVE sync — writes start/per-vendor/done/fail entries to actlog table for debugging sync issues. Replaced `Console.WriteLine` with `ILogger`.
+- **Files:** `CveSyncService.cs`
+
+### [1.35.10] - 2026-04-29
+- **Fixed:** CVE NVD sync returned 0 results — `keywordSearch` used CPE vendor names (`igor_pavlov`, `git-scm`) which don't appear in CVE descriptions. Added `VendorSearchTerms` mapping (24 entries) to translate CPE vendors → effective NVD search terms (e.g. `rarlab` → `WinRAR`, `git-scm` → `Git`). Unknown vendors fall back to raw name.
+- **Files:** `CveSyncService.cs`
+
+### [1.35.9] - 2026-04-29
+- **Fixed:** CVE sync `POST /v2/cve-sync` now returns 202 Accepted immediately, runs sync in background via `Task.Run` + new DI scope. Added diagnostic logging to `SyncVendorFromNvdAsync` — logs HTTP status on NVD failure, CVE count per vendor per page, and sync parameters at start. Previous sync returned 0 results silently because NVD errors were swallowed.
+- **Files:** `CveSyncFunction.cs`, `CveSyncService.cs`
+
+### [1.35.8] - 2026-04-29
+- **Added:** Heartbeat response includes `latestAgentVersion`, `minAgentVersion`, `apiVersion`, `modeDev` fields (AU-01). Enables agent version handshake without extra API calls. Controlled via env vars `LatestAgentVersion`, `MinAgentVersion`, `AgentModeDev`.
+- **Files:** `HeartbeatFunction.cs`
+
+### [1.35.7] - 2026-04-29
+- **Fixed:** CVE NVD sync never ran — `CpeMappingService` injected scoped `KryossDbContext` as singleton (DI crash). Now uses `IDbContextFactory`. Added 24 baseline vendors (microsoft, google, mozilla, adobe, cisco, etc.) so sync runs even with empty software table. CPE mapping failure is now non-fatal.
+- **Files:** `CveSyncService.cs`, `CpeMappingService.cs`
+
+### [1.35.6] - 2026-04-29
+- **Fixed:** Network health score (NET-050) oscillated on boundary-crossing measurements. Continuous metrics (speed, latency, bandwidth saturation) now rounded to nearest 5-unit before threshold comparison, creating dead zones that absorb natural measurement variance.
+- **Files:** `EvaluationService.cs`
+
+### [1.35.5] - 2026-04-29
+- **Fixed:** Patch compliance score used `DateTime.UtcNow` instead of agent scan timestamp — crossing 7d/14d/30d/60d boundaries between collection and evaluation caused non-deterministic scores. Now uses `payload.Timestamp` as reference time.
+- **Files:** `EvaluationService.cs`
+
+### [1.35.4] - 2026-04-29
+- **Perf:** Dashboard_Fleet rewritten — uses denormalized `LatestRunId` on machines instead of GroupBy+Max+Any subquery. Top failing + framework scores use server-side subquery instead of IN clause with materialized ID list. Added `latest_run_id` column + index via SQL `087`.
+- **Files:** `DashboardFunction.cs`, `Machine.cs`, `EvaluationService.cs`, `sql/087_machine_latest_run_id.sql`
+
+### [1.35.3] - 2026-04-29
+- **Fixed:** Services list ordered by DisplayName (A→Z) instead of internal Name.
+- **Files:** `ServiceManagementFunction.cs`
+
+### [1.35.2] - 2026-04-29
+- **Added:** `GET /v2/cve-sync/products` — monitored product checklist with per-vendor CVE/finding counts + unmapped software count. Extended `GET /v2/cve-sync/status` with totalFindings, softwareWithCpe, totalSoftware, recentSyncs.
+- **Files:** `CveSyncFunction.cs`
+
+### [1.35.1] - 2026-04-29
+- **Added:** Public IP tracking on heartbeat — `PublicIpTracker.TrackAsync` now called every 15 min (heartbeat) instead of only on compliance scan (24h). Populates `machines.last_public_ip` + `machine_public_ip_history` much faster.
+- **Changed:** Network scan enabled by default (`config_enable_network_scan = true`, 12h interval). SQL migration `086` flips existing machines.
+- **Files:** `HeartbeatFunction.cs`, `Machine.cs`, `sql/086_enable_network_scan_default.sql`
+
+### [1.35.0] - 2026-04-28
+- **Added:** `PATCH /v2/me` — users can update their own displayName, phone, and jobTitle. `GET /v2/me` now returns `phone` and `jobTitle` fields. Profile data available for report headers.
+- **Files:** `MeFunction.cs`
+
+### [1.34.12] - 2026-04-28
+- **Fixed:** DcHealthFunction machine lookup used `m.Id == agentId` instead of `m.AgentId == agentId` — DC health submissions fell through to hostname fallback instead of matching by agent GUID. Caused empty `dc_health_snapshots` when hostname didn't match.
+- **Files:** `DcHealthFunction.cs`
+
+### [1.34.11] - 2026-04-28
+- **Fixed:** Heartbeat crash — `actlog.severity` column is VARCHAR(4) but agent error logging wrote `"ERROR"` (5 chars), causing `DbUpdateException` on every heartbeat with errors. Changed to `"ERR"` matching existing convention.
+- **Files:** `HeartbeatFunction.cs`
+
 ### [1.34.10] - 2026-04-28
 - **Fixed:** RemediationLog table name mismatch — EF convention mapped to `remediation_logs` (plural) but SQL table created as `remediation_log` (singular). Added explicit `ToTable("remediation_log")` mapping.
 - **Fixed:** HeartbeatFunction crash diagnostic — wrapped entire function in try-catch that logs exception to actlog (CRIT severity) and returns error details in response body for agent-side debugging.
@@ -499,3 +639,55 @@ requests. All actual auth is handled by custom middleware:
 ### [1.33.0] - 2026-04-28
 - **Added:** Blob-based speed test via SAS tokens (`GET /v1/speedtest/sas`), auto-seeds 100MB test file
 - **Files:** `SpeedTestFunction.cs`
+
+---
+
+## Coding Principles
+
+### 1. Think Before Coding
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+- Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.

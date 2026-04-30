@@ -8,7 +8,6 @@ public class ControlDef : IAuditable
     public string Name { get; set; } = null!;
     public string Type { get; set; } = null!; // registry, secedit, auditpol, firewall, service, netaccount, command
     public string? Severity { get; set; } // low, medium, high, critical
-    public string CheckJson { get; set; } = null!; // JSON: agent instructions + expected values
     public string? Remediation { get; set; }
     public bool IsActive { get; set; } = true;
     public int Version { get; set; } = 1;
@@ -25,6 +24,7 @@ public class ControlDef : IAuditable
     public ControlCategory Category { get; set; } = null!;
     public ICollection<ControlFramework> ControlFrameworks { get; set; } = [];
     public ICollection<ControlPlatform> ControlPlatforms { get; set; } = [];
+    public ICollection<ControlCheckParam> CheckParams { get; set; } = [];
 }
 
 public class ControlCategory : IAuditable

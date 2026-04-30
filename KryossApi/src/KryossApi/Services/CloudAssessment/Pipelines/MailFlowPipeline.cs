@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using KryossApi.Data;
 using KryossApi.Data.Entities;
 using KryossApi.Services.CloudAssessment.Helpers;
@@ -26,6 +28,8 @@ public static class MailFlowPipeline
     public static async Task<PipelineResult> RunAsync(
         GraphServiceClient graph,
         IDnsLookup dns,
+        HttpClient? exchangeHttp,
+        string? tenantId,
         Guid scanId,
         KryossDbContext db,
         ILogger log,
@@ -44,6 +48,7 @@ public static class MailFlowPipeline
             await CollectDomains(graph, dns, ins, log, ct);
             await CollectMailboxRisks(graph, ins, log, ct);
             CollectSharedMailboxes(ins);
+            await CollectExchangePolicies(exchangeHttp, tenantId, ins, log, ct);
         }
         catch (OperationCanceledException)
         {
@@ -411,6 +416,120 @@ public static class MailFlowPipeline
         // distinguishes shared from user mailboxes without Exchange Online.
     }
 
+    // ── Exchange Online REST API collectors (Lighthouse gaps) ─────────
+
+    private static async Task CollectExchangePolicies(
+        HttpClient? exchangeHttp, string? tenantId, MailFlowInsights ins, ILogger log, CancellationToken ct)
+    {
+        if (exchangeHttp is null || string.IsNullOrWhiteSpace(tenantId))
+        {
+            log.LogInformation("Exchange HTTP client unavailable — skipping Exchange policy checks");
+            return;
+        }
+
+        ins.ExchangeAvailable = true;
+        var baseUrl = $"https://outlook.office365.com/adminapi/beta/{tenantId}/InvokeCommand";
+
+        await CollectAuditLogConfig(exchangeHttp, baseUrl, ins, log, ct);
+        await CollectSafeAttachments(exchangeHttp, baseUrl, ins, log, ct);
+        await CollectEopProtection(exchangeHttp, baseUrl, ins, log, ct);
+    }
+
+    private static async Task<JsonDocument?> InvokeExchangeCommand(
+        HttpClient http, string baseUrl, string cmdletName, ILogger log, CancellationToken ct)
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            CmdletInput = new { CmdletName = cmdletName, Parameters = new { } }
+        });
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        try
+        {
+            using var resp = await http.PostAsync(baseUrl, content, ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                log.LogWarning("Exchange InvokeCommand {Cmdlet} returned HTTP {Status}",
+                    cmdletName, (int)resp.StatusCode);
+                return null;
+            }
+            return await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            log.LogWarning("Exchange InvokeCommand {Cmdlet} failed: {Error}", cmdletName, ex.Message);
+            return null;
+        }
+    }
+
+    private static async Task CollectAuditLogConfig(
+        HttpClient http, string baseUrl, MailFlowInsights ins, ILogger log, CancellationToken ct)
+    {
+        using var doc = await InvokeExchangeCommand(http, baseUrl, "Get-AdminAuditLogConfig", log, ct);
+        if (doc is null) return;
+
+        try
+        {
+            if (doc.RootElement.TryGetProperty("value", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in arr.EnumerateArray())
+                {
+                    if (item.TryGetProperty("UnifiedAuditLogIngestionEnabled", out var prop))
+                        ins.UnifiedAuditLogEnabled = prop.GetBoolean();
+                }
+            }
+            else if (doc.RootElement.TryGetProperty("UnifiedAuditLogIngestionEnabled", out var directProp))
+            {
+                ins.UnifiedAuditLogEnabled = directProp.GetBoolean();
+            }
+        }
+        catch (Exception ex) { log.LogWarning("Parse AuditLogConfig failed: {Error}", ex.Message); }
+    }
+
+    private static async Task CollectSafeAttachments(
+        HttpClient http, string baseUrl, MailFlowInsights ins, ILogger log, CancellationToken ct)
+    {
+        using var doc = await InvokeExchangeCommand(http, baseUrl, "Get-SafeAttachmentPolicy", log, ct);
+        if (doc is null) return;
+
+        try
+        {
+            if (doc.RootElement.TryGetProperty("value", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                ins.SafeAttachmentPolicyCount = arr.GetArrayLength();
+                ins.HasSafeAttachmentPolicy = ins.SafeAttachmentPolicyCount > 0;
+            }
+        }
+        catch (Exception ex) { log.LogWarning("Parse SafeAttachmentPolicy failed: {Error}", ex.Message); }
+    }
+
+    private static async Task CollectEopProtection(
+        HttpClient http, string baseUrl, MailFlowInsights ins, ILogger log, CancellationToken ct)
+    {
+        using var doc = await InvokeExchangeCommand(http, baseUrl, "Get-EOPProtectionPolicyRule", log, ct);
+        if (doc is null) return;
+
+        try
+        {
+            if (doc.RootElement.TryGetProperty("value", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in arr.EnumerateArray())
+                {
+                    var name = item.TryGetProperty("Name", out var n) ? n.GetString() : null;
+                    var identity = item.TryGetProperty("Identity", out var id) ? id.GetString() : null;
+                    var combined = $"{name} {identity}".ToLowerInvariant();
+
+                    if (combined.Contains("standard"))
+                        ins.HasEopStandardProtection = true;
+                    if (combined.Contains("strict"))
+                        ins.HasEopStrictProtection = true;
+                }
+            }
+        }
+        catch (Exception ex) { log.LogWarning("Parse EOPProtectionPolicyRule failed: {Error}", ex.Message); }
+    }
+
     // ── Persistence ────────────────────────────────────────────────────
 
     private static void Persist(KryossDbContext db, Guid scanId, MailFlowInsights ins)
@@ -419,9 +538,10 @@ public static class MailFlowPipeline
 
         foreach (var d in ins.DomainResults)
         {
+            var domainId = Guid.NewGuid();
             db.CloudAssessmentMailDomains.Add(new CloudAssessmentMailDomain
             {
-                Id = Guid.NewGuid(),
+                Id = domainId,
                 ScanId = scanId,
                 Domain = d.Domain,
                 IsDefault = d.IsDefault,
@@ -430,10 +550,8 @@ public static class MailFlowPipeline
                 SpfValid = d.SpfValid,
                 SpfMechanism = d.SpfMechanism,
                 SpfLookupCount = d.SpfLookupCount,
-                SpfWarnings = d.SpfWarnings.Count > 0 ? string.Join(",", d.SpfWarnings) : null,
                 DkimS1Present = d.DkimS1Present,
                 DkimS2Present = d.DkimS2Present,
-                DkimSelectors = d.DkimSelectors.Count > 0 ? string.Join(",", d.DkimSelectors) : null,
                 DmarcRecord = d.DmarcRecord,
                 DmarcValid = d.DmarcValid,
                 DmarcPolicy = d.DmarcPolicy,
@@ -447,6 +565,10 @@ public static class MailFlowPipeline
                 Score = d.Score,
                 CreatedAt = now
             });
+            foreach (var w in d.SpfWarnings)
+                db.MailDomainSpfWarnings.Add(new MailDomainSpfWarning { MailDomainId = domainId, WarningText = w });
+            foreach (var s in d.DkimSelectors)
+                db.MailDomainDkimSelectors.Add(new MailDomainDkimSelector { MailDomainId = domainId, Selector = s });
         }
 
         var dedupedRisks = ins.ForwardingRisks
@@ -471,19 +593,22 @@ public static class MailFlowPipeline
 
         foreach (var sm in ins.SharedMailboxes)
         {
+            var mbxId = Guid.NewGuid();
             db.CloudAssessmentSharedMailboxes.Add(new CloudAssessmentSharedMailbox
             {
-                Id = Guid.NewGuid(),
+                Id = mbxId,
                 ScanId = scanId,
                 MailboxUpn = sm.MailboxUpn,
                 DisplayName = sm.DisplayName,
                 DelegatesCount = sm.DelegatesCount,
-                FullAccessUsers = sm.FullAccessUsers.Count > 0 ? string.Join(",", sm.FullAccessUsers) : null,
-                SendAsUsers = sm.SendAsUsers.Count > 0 ? string.Join(",", sm.SendAsUsers) : null,
                 HasPasswordEnabled = sm.HasPasswordEnabled,
                 LastActivity = sm.LastActivity,
                 CreatedAt = now
             });
+            foreach (var u in sm.FullAccessUsers)
+                db.SharedMailboxDelegates.Add(new SharedMailboxDelegate { MailboxId = mbxId, UserEmail = u, PermissionType = "full_access" });
+            foreach (var u in sm.SendAsUsers)
+                db.SharedMailboxDelegates.Add(new SharedMailboxDelegate { MailboxId = mbxId, UserEmail = u, PermissionType = "send_as" });
         }
     }
 
@@ -504,7 +629,12 @@ public static class MailFlowPipeline
             ["forwarding_external"] = ins.ForwardingRisks.Count(r => r.RiskType == "external_forward").ToString(Inv),
             ["forwarding_stealth"] = ins.ForwardingRisks.Count(r => r.RiskType == "stealth_forward").ToString(Inv),
             ["shared_mailboxes_total"] = ins.SharedMailboxes.Count.ToString(Inv),
-            ["avg_domain_score"] = avg.ToString("F1", Inv)
+            ["avg_domain_score"] = avg.ToString("F1", Inv),
+            ["exchange_available"] = ins.ExchangeAvailable.ToString(),
+            ["unified_audit_log_enabled"] = ins.UnifiedAuditLogEnabled.ToString(),
+            ["safe_attachment_policies"] = ins.SafeAttachmentPolicyCount.ToString(Inv),
+            ["eop_standard_protection"] = ins.HasEopStandardProtection.ToString(),
+            ["eop_strict_protection"] = ins.HasEopStrictProtection.ToString()
         };
     }
 }

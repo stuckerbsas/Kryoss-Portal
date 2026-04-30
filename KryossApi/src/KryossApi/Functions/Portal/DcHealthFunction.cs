@@ -50,7 +50,7 @@ public class DcHealthFunction
         Guid? machineId = null;
         if (Guid.TryParse(agentIdHeader, out var mid))
         {
-            var machine = await _db.Machines.FirstOrDefaultAsync(m => m.Id == mid && m.OrganizationId == orgId.Value);
+            var machine = await _db.Machines.FirstOrDefaultAsync(m => m.AgentId == mid && m.OrganizationId == orgId.Value);
             if (machine != null) machineId = machine.Id;
         }
         if (machineId is null)

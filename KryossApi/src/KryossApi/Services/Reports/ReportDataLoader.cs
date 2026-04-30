@@ -3,6 +3,7 @@ using System.Text.Json;
 using KryossApi.Data;
 using KryossApi.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KryossApi.Services.Reports;
 
@@ -17,12 +18,14 @@ public class ReportDataLoader : IReportDataLoader
     private readonly KryossDbContext _db;
     private readonly IDbContextFactory<KryossDbContext> _dbFactory;
     private readonly ICurrentUserService _currentUser;
+    private readonly ILogger<ReportDataLoader> _logger;
 
-    public ReportDataLoader(KryossDbContext db, IDbContextFactory<KryossDbContext> dbFactory, ICurrentUserService currentUser)
+    public ReportDataLoader(KryossDbContext db, IDbContextFactory<KryossDbContext> dbFactory, ICurrentUserService currentUser, ILogger<ReportDataLoader> logger)
     {
         _db = db;
         _dbFactory = dbFactory;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     public async Task<ReportData> LoadAsync(Guid orgId, ReportOptions options, ReportDataNeeds needs)
@@ -186,6 +189,48 @@ public class ReportDataLoader : IReportDataLoader
             (new List<ServiceCatalogItem>(), (FranchiseServiceRate?)null));
         tasks.Add(serviceCatalogTask);
 
+        var cveTask = SafeQuery(
+            Has(needs, ReportDataNeeds.Cve)
+                ? RunWithFactory(db => LoadCveAsync(db, orgId))
+                : Task.FromResult(new List<MachineCveFinding>()),
+            new List<MachineCveFinding>());
+        tasks.Add(cveTask);
+
+        var patchTask = SafeQuery(
+            Has(needs, ReportDataNeeds.Patch)
+                ? RunWithFactory(db => LoadPatchAsync(db, orgId))
+                : Task.FromResult(new List<MachinePatchStatus>()),
+            new List<MachinePatchStatus>());
+        tasks.Add(patchTask);
+
+        var externalScanTask = SafeQuery(
+            Has(needs, ReportDataNeeds.ExternalScan)
+                ? RunWithFactory(db => LoadExternalScanAsync(db, orgId))
+                : Task.FromResult<ExternalScan?>(null),
+            (ExternalScan?)null);
+        tasks.Add(externalScanTask);
+
+        var dcHealthTask = SafeQuery(
+            Has(needs, ReportDataNeeds.DcHealth)
+                ? RunWithFactory(db => LoadDcHealthAsync(db, orgId))
+                : Task.FromResult<DcHealthSnapshot?>(null),
+            (DcHealthSnapshot?)null);
+        tasks.Add(dcHealthTask);
+
+        var wanTask = SafeQuery(
+            Has(needs, ReportDataNeeds.Wan)
+                ? RunWithFactory(db => LoadWanAsync(db, orgId))
+                : Task.FromResult<(List<NetworkSite>, List<WanFinding>)>((new(), new())),
+            (new List<NetworkSite>(), new List<WanFinding>()));
+        tasks.Add(wanTask);
+
+        var remediationTask = SafeQuery(
+            Has(needs, ReportDataNeeds.Remediation)
+                ? RunWithFactory(db => LoadRemediationAsync(db, orgId))
+                : Task.FromResult(new List<RemediationTask>()),
+            new List<RemediationTask>());
+        tasks.Add(remediationTask);
+
         await Task.WhenAll(tasks);
         RecordTimer("parallel_queries");
 
@@ -200,6 +245,12 @@ public class ReportDataLoader : IReportDataLoader
         var networkDiags = await networkTask;
         var savedCtas = await ctasTask;
         var (serviceCatalog, rate) = await serviceCatalogTask;
+        var cveFindings = await cveTask;
+        var patchStatuses = await patchTask;
+        var latestExternalScan = await externalScanTask;
+        var dcHealth = await dcHealthTask;
+        var (wanSites, wanFindings) = await wanTask;
+        var remediationTasks = await remediationTask;
 
         var data = new ReportData
         {
@@ -222,7 +273,14 @@ public class ReportDataLoader : IReportDataLoader
             SavedCtas = savedCtas,
             ServiceCatalog = serviceCatalog,
             Rate = rate,
-            NetworkDiags = networkDiags
+            NetworkDiags = networkDiags,
+            CveFindings = cveFindings,
+            PatchStatuses = patchStatuses,
+            LatestExternalScan = latestExternalScan,
+            DcHealth = dcHealth,
+            NetworkSites = wanSites,
+            WanFindings = wanFindings,
+            RemediationTasks = remediationTasks
         };
 
         return (data, timings);
@@ -425,7 +483,7 @@ public class ReportDataLoader : IReportDataLoader
         if (!string.IsNullOrEmpty(scan.AreaScores))
         {
             try { areaScores = JsonSerializer.Deserialize<Dictionary<string, decimal>>(scan.AreaScores); }
-            catch { }
+            catch { /* non-critical: report renders without area scores */ }
         }
 
         return new CloudData
@@ -525,6 +583,79 @@ public class ReportDataLoader : IReportDataLoader
             JobTitle = dbUser?.JobTitle ?? _currentUser.JobTitle,
             CompanyName = franchise?.Name
         };
+    }
+
+    private static async Task<List<MachineCveFinding>> LoadCveAsync(KryossDbContext db, Guid orgId)
+    {
+        return await db.MachineCveFindings
+            .AsNoTracking()
+            .Include(f => f.Machine)
+            .Where(f => f.OrganizationId == orgId && f.Status == "open")
+            .OrderByDescending(f => f.CvssScore)
+            .ThenByDescending(f => f.FoundAt)
+            .ToListAsync();
+    }
+
+    private static async Task<List<MachinePatchStatus>> LoadPatchAsync(KryossDbContext db, Guid orgId)
+    {
+        return await db.MachinePatchStatuses
+            .AsNoTracking()
+            .Include(p => p.Machine)
+            .Where(p => p.OrganizationId == orgId)
+            .OrderBy(p => p.ComplianceScore)
+            .ToListAsync();
+    }
+
+    private static async Task<ExternalScan?> LoadExternalScanAsync(KryossDbContext db, Guid orgId)
+    {
+        return await db.ExternalScans
+            .AsNoTracking()
+            .Include(s => s.Results)
+            .Include(s => s.Findings)
+            .Where(s => s.OrganizationId == orgId && s.Status == "completed")
+            .OrderByDescending(s => s.CompletedAt)
+            .FirstOrDefaultAsync();
+    }
+
+    private static async Task<DcHealthSnapshot?> LoadDcHealthAsync(KryossDbContext db, Guid orgId)
+    {
+        return await db.DcHealthSnapshots
+            .AsNoTracking()
+            .Include(s => s.ReplicationPartners)
+            .Include(s => s.Machine)
+            .Where(s => s.OrganizationId == orgId)
+            .OrderByDescending(s => s.ScannedAt)
+            .FirstOrDefaultAsync();
+    }
+
+    private static async Task<(List<NetworkSite>, List<WanFinding>)> LoadWanAsync(KryossDbContext db, Guid orgId)
+    {
+        var sites = await db.NetworkSites
+            .AsNoTracking()
+            .Where(s => s.OrganizationId == orgId)
+            .OrderByDescending(s => s.AgentCount)
+            .ToListAsync();
+
+        var findings = await db.WanFindings
+            .AsNoTracking()
+            .Where(f => f.OrganizationId == orgId)
+            .OrderByDescending(f => f.Severity == "critical" ? 0 : f.Severity == "high" ? 1 : f.Severity == "medium" ? 2 : 3)
+            .ToListAsync();
+
+        return (sites, findings);
+    }
+
+    private static async Task<List<RemediationTask>> LoadRemediationAsync(KryossDbContext db, Guid orgId)
+    {
+        return await db.RemediationTasks
+            .AsNoTracking()
+            .Include(t => t.Machine)
+            .Include(t => t.ControlDef)
+            .Include(t => t.Action)
+            .Where(t => t.OrganizationId == orgId)
+            .OrderByDescending(t => t.CreatedAt)
+            .Take(100)
+            .ToListAsync();
     }
 
     private class CloudData

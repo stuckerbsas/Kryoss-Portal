@@ -27,10 +27,11 @@ public class ActlogService : IActlogService
         string? oldValues = null, string? newValues = null,
         short? responseCode = null, int? durationMs = null)
     {
+        var userId = _user.UserId == Guid.Empty ? null : (Guid?)_user.UserId;
         var entry = new Actlog
         {
             Timestamp = DateTime.UtcNow,
-            ActorId = _user.UserId == Guid.Empty ? null : _user.UserId,
+            ActorId = userId,
             ActorEmail = _user.Email,
             ActorIp = _user.IpAddress,
             SessionId = _user.SessionId,
@@ -43,7 +44,9 @@ public class ActlogService : IActlogService
             NewValues = newValues,
             ResponseCode = responseCode,
             DurationMs = durationMs,
-            Message = message
+            Message = message,
+            MachineId = _user.MachineId,
+            UserId = userId
         };
 
         _db.Actlog.Add(entry);

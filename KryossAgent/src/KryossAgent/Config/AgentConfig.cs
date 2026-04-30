@@ -115,6 +115,7 @@ public class AgentConfig
         key.SetValue("EnableNetworkScan", EnableNetworkScan ? "1" : "0");
         key.SetValue("NetworkScanIntervalHours", NetworkScanIntervalHours.ToString());
         key.SetValue("EnablePassiveDiscovery", EnablePassiveDiscovery ? "1" : "0");
+        key.SetValue("Version", typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
 
         try
         {

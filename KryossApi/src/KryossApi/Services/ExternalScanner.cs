@@ -76,7 +76,7 @@ public class ExternalScanner : IExternalScanner
                     };
                     lock (results) results.Add(result);
                 }
-                catch { }
+                catch { /* closed/filtered port — expected */ }
             }
             finally { sem.Release(); }
         });

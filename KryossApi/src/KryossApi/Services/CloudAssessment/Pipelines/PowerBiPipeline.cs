@@ -48,7 +48,7 @@ public static class PowerBiPipeline
                 return new PipelineResult
                 {
                     PipelineName = "powerbi",
-                    Status = "partial",
+                    Status = "skipped",
                     Findings = PowerBiRecommendations.Generate(ins)
                 };
             }

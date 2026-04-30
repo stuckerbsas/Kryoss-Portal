@@ -83,6 +83,8 @@ public interface ICurrentUserService
     string? IpAddress { get; }
     string? SessionId { get; }
     string[] Permissions { get; }
+    Guid? MachineId { get; }
+    string? MachineHostname { get; }
 }
 
 public class CurrentUserService : ICurrentUserService
@@ -98,4 +100,6 @@ public class CurrentUserService : ICurrentUserService
     public string? IpAddress { get; set; }
     public string? SessionId { get; set; }
     public string[] Permissions { get; set; } = [];
+    public Guid? MachineId { get; set; }
+    public string? MachineHostname { get; set; }
 }

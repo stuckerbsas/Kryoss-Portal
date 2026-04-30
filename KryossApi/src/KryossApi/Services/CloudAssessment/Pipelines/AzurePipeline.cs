@@ -145,7 +145,7 @@ public static class AzurePipeline
                 var now = DateTime.UtcNow;
                 foreach (var row in ins.Resources)
                 {
-                    db.CloudAssessmentAzureResources.Add(new CloudAssessmentAzureResource
+                    var entity = new CloudAssessmentAzureResource
                     {
                         ScanId = scanId,
                         SubscriptionId = row.SubscriptionId,
@@ -154,12 +154,24 @@ public static class AzurePipeline
                         Name = row.Name,
                         Location = row.Location,
                         Kind = row.Kind,
-                        PropertiesJson = row.PropertiesJson,
-                        RiskFlags = row.RiskFlags.Count > 0
-                            ? JsonSerializer.Serialize(row.RiskFlags)
-                            : null,
                         CreatedAt = now,
-                    });
+                    };
+                    if (!string.IsNullOrEmpty(row.PropertiesJson))
+                    {
+                        try
+                        {
+                            var props = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row.PropertiesJson);
+                            if (props is not null)
+                            {
+                                foreach (var (k, v) in props)
+                                    entity.Properties.Add(new CloudFindingProperty { PropName = k, PropValue = v.GetRawText() });
+                            }
+                        }
+                        catch (Exception ex) { log.LogWarning(ex, "Failed to parse PropertiesJson for Azure resource"); }
+                    }
+                    foreach (var flag in row.RiskFlags)
+                        entity.RiskFlags.Add(new CloudResourceRiskFlag { FlagCode = flag });
+                    db.CloudAssessmentAzureResources.Add(entity);
                 }
 
                 await db.SaveChangesAsync(ct);

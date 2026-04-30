@@ -32,8 +32,7 @@ public class DashboardFunction
         else if (_user.OrganizationId.HasValue)
             machineQuery = machineQuery.Where(m => m.OrganizationId == _user.OrganizationId.Value);
 
-        var machineIds = await machineQuery.Select(m => m.Id).ToListAsync();
-        var totalMachines = machineIds.Count;
+        var totalMachines = await machineQuery.CountAsync();
 
         if (totalMachines == 0)
         {
@@ -50,21 +49,17 @@ public class DashboardFunction
             return empty;
         }
 
-        // Latest run per machine — GroupBy+Max then join back (EF Core translates this reliably)
-        var latestPerMachine = _db.AssessmentRuns
-            .Where(r => machineIds.Contains(r.MachineId))
-            .GroupBy(r => r.MachineId)
-            .Select(g => new { MachineId = g.Key, MaxStartedAt = g.Max(r => r.StartedAt) });
-
-        var latestRuns = await _db.AssessmentRuns
-            .AsNoTracking()
-            .Where(r => latestPerMachine.Any(lp => lp.MachineId == r.MachineId && lp.MaxStartedAt == r.StartedAt))
-            .Select(r => new
+        // Use denormalized LatestRunId — single indexed join, no GroupBy+Max subquery
+        var latestRuns = await (
+            from m in machineQuery
+            where m.LatestRunId != null
+            join r in _db.AssessmentRuns.AsNoTracking() on m.LatestRunId equals r.Id
+            select new
             {
                 r.Id, r.MachineId, r.GlobalScore, r.Grade,
                 r.PassCount, r.WarnCount, r.FailCount
-            })
-            .ToListAsync();
+            }
+        ).ToListAsync();
 
         var assessedMachines = latestRuns.Count;
         var avgScore = latestRuns.Count > 0
@@ -74,11 +69,14 @@ public class DashboardFunction
             .GroupBy(r => r.Grade ?? "N/A")
             .ToDictionary(g => g.Key, g => g.Count());
 
-        var runIds = latestRuns.Select(r => r.Id).ToList();
+        // Server-side subquery — no IN clause with large list
+        var runIdsQuery = machineQuery
+            .Where(m => m.LatestRunId != null)
+            .Select(m => m.LatestRunId!.Value);
 
         var topFailing = await _db.ControlResults
             .AsNoTracking()
-            .Where(cr => runIds.Contains(cr.RunId) && cr.Status == "fail")
+            .Where(cr => runIdsQuery.Contains(cr.RunId) && cr.Status == "fail")
             .GroupBy(cr => cr.ControlDefId)
             .Select(g => new { controlDefId = g.Key, failCount = g.Count() })
             .OrderByDescending(x => x.failCount)
@@ -89,7 +87,7 @@ public class DashboardFunction
 
         var frameworkScores = await _db.RunFrameworkScores
             .AsNoTracking()
-            .Where(fs => runIds.Contains(fs.RunId))
+            .Where(fs => runIdsQuery.Contains(fs.RunId))
             .GroupBy(fs => fs.FrameworkId)
             .Select(g => new
             {

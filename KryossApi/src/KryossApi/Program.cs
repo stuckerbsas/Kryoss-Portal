@@ -83,6 +83,15 @@ else
 {
     builder.Services.AddSingleton<INonceCache, InMemoryNonceCache>();
 }
+// Blob storage for raw payload offload (Cool tier)
+var blobConn = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+if (!string.IsNullOrEmpty(blobConn))
+{
+    var blobService = new Azure.Storage.Blobs.BlobServiceClient(blobConn);
+    builder.Services.AddSingleton(blobService);
+    builder.Services.AddSingleton<IBlobPayloadService, BlobPayloadService>();
+}
+
 builder.Services.AddSingleton<IDnsLookup, DnsLookup>();
 builder.Services.AddScoped<IHwidVerifier, HwidVerifier>();
 builder.Services.AddScoped<IPlatformResolver, PlatformResolver>();
@@ -110,10 +119,18 @@ builder.Services.AddScoped<IPublicIpTracker, PublicIpTracker>();
 builder.Services.AddScoped<ISiteClusterService, SiteClusterService>();
 builder.Services.AddScoped<IWanHealthService, WanHealthService>();
 builder.Services.AddScoped<ICveService, CveService>();
+builder.Services.AddSingleton<ICpeMappingService, CpeMappingService>();
+builder.Services.AddScoped<ICveSyncService, CveSyncService>();
 builder.Services.AddScoped<IScanScheduleService, ScanScheduleService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
 builder.Services.AddSingleton<IKeyRotationService, KeyRotationService>();
+builder.Services.AddScoped<IRemediationLogService, RemediationLogService>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("nvd", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
+    client.DefaultRequestHeaders.Add("User-Agent", "Kryoss-CVE-Scanner/1.0");
+});
 
 // ── M365 multi-tenant admin consent config ──
 // SH-02: Client secret loaded from Key Vault when available, env var fallback for local dev.

@@ -7,7 +7,7 @@ namespace KryossAgent.Services;
 
 public static class ScanCycle
 {
-    public static async Task<ComplianceScanResult> RunComplianceScanAsync(AgentConfig config, bool silent, bool verbose)
+    public static async Task<ComplianceScanResult> RunComplianceScanAsync(AgentConfig config, bool silent, bool verbose, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
 
@@ -126,7 +126,7 @@ public static class ScanCycle
         if (!silent) Console.Write("    Running network diagnostics...");
         try
         {
-            networkDiag = await NetworkDiagnostics.RunAllAsync(config.ApiUrl, verbose);
+            networkDiag = await NetworkDiagnostics.RunAllAsync(config.ApiUrl, verbose, ct);
             if (!silent)
             {
                 var vpnCount = networkDiag.VpnInterfaces?.Count ?? 0;
@@ -147,6 +147,17 @@ public static class ScanCycle
         try { patchStatus = PatchCollector.Collect(); }
         catch { }
         if (!silent) Console.WriteLine($" {patchStatus?.Hotfixes.Count ?? 0} hotfixes, source={patchStatus?.UpdateSource ?? "?"}");
+
+        if (!silent) Console.Write("    Collecting available Windows Updates...");
+        List<AvailableUpdateItem> availableUpdates;
+        try
+        {
+            using var wuCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            wuCts.CancelAfter(TimeSpan.FromMinutes(10));
+            availableUpdates = await WindowsUpdateCollector.CollectAsync(wuCts.Token);
+        }
+        catch { availableUpdates = []; }
+        if (!silent) Console.WriteLine($" {availableUpdates.Count} pending");
 
         if (!silent) Console.Write("    Enumerating local administrators...");
         List<LocalAdminItem> localAdmins;
@@ -176,10 +187,11 @@ public static class ScanCycle
             HardwareInfo = hardwareInfo,
             NetworkDiag = networkDiag,
             CheckCount = allResults.Count,
+            AvailableUpdates = availableUpdates,
         };
     }
 
-    public static async Task RunSnmpScanAsync(ApiClient apiClient, NetworkDiagResult? networkDiag, bool silent, bool verbose, IReadOnlyCollection<string>? extraTargets = null)
+    public static async Task RunSnmpScanAsync(ApiClient apiClient, NetworkDiagResult? networkDiag, bool silent, bool verbose, IReadOnlyCollection<string>? extraTargets = null, CancellationToken ct = default)
     {
         try
         {
@@ -216,7 +228,7 @@ public static class ScanCycle
                 return;
             }
 
-            var snmpResult = await SnmpScanner.ScanAsync(snmpCreds, snmpTargets, verbose);
+            var snmpResult = await SnmpScanner.ScanAsync(snmpCreds, snmpTargets, verbose, ct);
 
             foreach (var dev in snmpResult.Devices)
             {
@@ -314,7 +326,7 @@ public static class ScanCycle
         }
     }
 
-    public static async Task RunNetworkScanAsync(ApiClient apiClient, bool silent, bool verbose)
+    public static async Task RunNetworkScanAsync(ApiClient apiClient, bool silent, bool verbose, CancellationToken ct = default)
     {
         try
         {
@@ -329,13 +341,15 @@ public static class ScanCycle
 
             if (!silent) Console.Write("  Scanning ports...");
             var portPayload = new PortBulkPayload();
-            var sem = new SemaphoreSlim(10);
+            var sem = new SemaphoreSlim(20);
             await Task.WhenAll(targets.Select(async t =>
             {
-                await sem.WaitAsync();
+                await sem.WaitAsync(ct);
                 try
                 {
-                    var ports = await PortScanner.ScanTcpAsync(t.Address, timeoutMs: 1000);
+                    using var targetCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    targetCts.CancelAfter(TimeSpan.FromMinutes(2));
+                    var ports = await PortScanner.ScanTcpAsync(t.Address, timeoutMs: 1000, ct: targetCts.Token);
                     if (ports.Count > 0)
                         lock (portPayload.Machines)
                             portPayload.Machines.Add(new PortPayload
@@ -349,6 +363,7 @@ public static class ScanCycle
                                 }).ToList()
                             });
                 }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
                 finally { sem.Release(); }
             }));
 
@@ -368,7 +383,7 @@ public static class ScanCycle
         }
     }
 
-    public static async Task RunAdHygieneAsync(ApiClient apiClient, HardwareInfo hardwareInfo, bool silent, bool verbose)
+    public static async Task RunAdHygieneAsync(ApiClient apiClient, HardwareInfo hardwareInfo, bool silent, bool verbose, CancellationToken ct = default)
     {
         if (hardwareInfo.ProductType != 2) return;
 
@@ -431,7 +446,7 @@ public static class ScanCycle
         }
     }
 
-    public static async Task RunDcHealthAsync(ApiClient apiClient, bool silent, bool verbose)
+    public static async Task RunDcHealthAsync(ApiClient apiClient, bool silent, bool verbose, CancellationToken ct = default)
     {
         if (!silent) Console.Write("  Collecting DC health (schema/replication/FSMO)...");
         try
@@ -456,7 +471,7 @@ public static class ScanCycle
     }
 
     public static async Task<ResultsResponse?> UploadPayloadAsync(
-        ApiClient apiClient, AssessmentPayload payload, bool silent)
+        ApiClient apiClient, AssessmentPayload payload, bool silent, CancellationToken ct = default)
     {
         if (!silent) Console.Write("  Uploading results...");
         var response = await apiClient.SubmitResultsAsync(payload);
@@ -490,6 +505,8 @@ public class ComplianceScanResult
     public HardwareInfo? HardwareInfo { get; set; }
     public NetworkDiagResult? NetworkDiag { get; set; }
     public int CheckCount { get; set; }
+
+    public List<AvailableUpdateItem>? AvailableUpdates { get; set; }
 
     public static ComplianceScanResult Failed(string error) => new() { Error = error };
     public static ComplianceScanResult Skipped(string reason) => new() { WasSkipped = true, Error = reason };

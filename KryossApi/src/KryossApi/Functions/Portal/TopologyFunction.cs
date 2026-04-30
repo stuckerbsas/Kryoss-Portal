@@ -1,6 +1,7 @@
 using System.Net;
 using KryossApi.Data;
 using KryossApi.Data.Entities;
+using KryossApi.Middleware;
 using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -8,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KryossApi.Functions.Portal;
 
+[RequirePermission("machines:read")]
 public class TopologyFunction
 {
     private readonly KryossDbContext _db;

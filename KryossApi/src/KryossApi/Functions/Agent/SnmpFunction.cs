@@ -229,7 +229,7 @@ public class SnmpFunction
                         .Where(i => i.DeviceId == existing.Id)
                         .Select(i => new { i.IfIndex, i.InOctets, i.OutOctets })
                         .ToListAsync();
-                    var prevByIdx = prevIfaces.ToDictionary(i => i.IfIndex);
+                    var prevByIdx = prevIfaces.GroupBy(i => i.IfIndex).ToDictionary(g => g.Key, g => g.First());
                     var interval = (int)(now - lastScannedAt).TotalSeconds;
 
                     await _db.SnmpDeviceInterfaces.Where(i => i.DeviceId == existing.Id).ExecuteDeleteAsync();

@@ -124,107 +124,61 @@ public class ControlsFunction
             join cp in _db.ControlPlatforms
                 on new { CdId = cd.Id, PId = machine.PlatformId.Value }
                 equals new { CdId = cp.ControlDefId, PId = cp.PlatformId }
-            select new { cd.ControlId, cd.Type, cd.CheckJson }
+            select new { cd.ControlId, cd.Type, cd.Id }
         ).ToListAsync();
 
-        // Build agent-friendly response: strip server-side fields.
-        // Agent-relevant field list must stay in sync with
-        // KryossAgent/Models/ControlDef.cs.
-        //
-        // v1.5.0: expanded to support new check types (tls, user_right,
-        // applocker, custom). Both camelCase and snake_case variants are
-        // accepted so legacy seed files (BL-02xx..04xx) work without a full
-        // data migration — the camelCase key takes precedence.
-        (string camel, string snake)[] agentFieldAliases =
-        [
-            // Core dispatch
-            ("checkType",              "check_type"),
-            // Registry-style
-            ("hive",                   "hive"),
-            ("path",                   "path"),
-            ("valueName",              "value_name"),
-            // Audit / policy / service
-            ("subcategory",            "subcategory"),
-            ("profile",                "profile"),
-            ("property",               "property"),
-            ("settingName",            "setting_name"),
-            ("serviceName",            "service_name"),
-            ("field",                  "field"),
-            // Shell / command
-            ("executable",             "executable"),
-            ("arguments",              "arguments"),
-            ("display",                "display"),
-            ("timeoutSeconds",         "timeout_seconds"),
-            ("parent",                 "parent"),
-            // Event log / certs / drives
-            ("logName",                "log_name"),
-            ("storeName",              "store_name"),
-            ("storeLocation",          "store_location"),
-            ("drive",                  "drive"),
-            // v1.5.0: TLS (SCHANNEL) handler fields
-            ("protocol",               "protocol"),
-            ("side",                   "side"),
-            // v1.5.0: User rights (LSA) handler fields
-            ("privilege",              "privilege"),
-            ("expectedSidsOrAccounts", "expected_sids_or_accounts"),
-            // v1.5.0: AppLocker handler fields
-            ("collection",             "collection"),
-            // v1.5.0: Generic comparison operators
-            ("expected",               "expected"),
-            ("operator",               "operator"),
-            ("matchPattern",           "match_pattern"),
-            // v1.5.0: Custom check notes (PowerShell one-liner description for server-side eval)
-            ("notes",                  "notes"),
-            ("label",                  "label"),
-            // v1.5.1: EventLog event_count / event_top_sources fields
-            ("eventIds",               "event_ids"),
-            ("days",                   "days"),
-            ("topN",                   "top_n"),
-            ("payloadField",           "payload_field"),
+        var controlDefIds = controls.Select(c => c.Id).ToList();
+        var allParams = await _db.ControlCheckParams
+            .Where(p => controlDefIds.Contains(p.ControlDefId))
+            .ToListAsync();
+        var paramsByDef = allParams.GroupBy(p => p.ControlDefId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Server-only fields — strip from agent response
+        HashSet<string> serverOnlyFields = ["expected", "operator", "missingBehavior", "expectedStartType", "optional"];
+
+        // Fields that must always serialize as JSON strings even if the DB value looks numeric.
+        // Agent ControlDef model declares these as string? — sending a JSON number causes deserialization crash.
+        HashSet<string> alwaysStringFields = [
+            "valueName", "hive", "path", "settingName", "subcategory", "profile",
+            "logName", "storeName", "storeLocation", "drive", "serviceName",
+            "parent", "display", "executable", "arguments", "field",
+            "checkType", "protocol", "side", "privilege", "collection",
+            "expectedSidsOrAccounts", "notes", "label", "payloadField"
         ];
 
         var checks = new List<object>();
         foreach (var control in controls)
         {
-            var spec = JsonSerializer.Deserialize<JsonElement>(control.CheckJson);
             var agentCheck = new Dictionary<string, object?>
             {
                 ["id"] = control.ControlId,
                 ["type"] = control.Type
             };
 
-            foreach (var (camel, snake) in agentFieldAliases)
+            if (paramsByDef.TryGetValue(control.Id, out var parms))
             {
-                // Prefer camelCase, fall back to snake_case
-                JsonElement val = default;
-                bool found = spec.TryGetProperty(camel, out val)
-                    && val.ValueKind != JsonValueKind.Null;
-                if (!found && camel != snake)
+                foreach (var p in parms)
                 {
-                    found = spec.TryGetProperty(snake, out val)
-                        && val.ValueKind != JsonValueKind.Null;
-                }
-                if (!found) continue;
+                    if (serverOnlyFields.Contains(p.ParamName)) continue;
+                    if (p.ParamValue is null) continue;
 
-                // Preserve typed primitives + arrays
-                agentCheck[camel] = val.ValueKind switch
-                {
-                    JsonValueKind.Number => val.TryGetInt32(out var i) ? i : val.GetDouble(),
-                    JsonValueKind.True   => true,
-                    JsonValueKind.False  => false,
-                    JsonValueKind.Array  => val.EnumerateArray()
-                                              .Select(e => e.ValueKind switch
-                                              {
-                                                  JsonValueKind.Number => e.TryGetInt32(out var ii)
-                                                      ? (object)ii : e.GetDouble(),
-                                                  JsonValueKind.True   => true,
-                                                  JsonValueKind.False  => false,
-                                                  JsonValueKind.String => e.GetString()!,
-                                                  _ => e.ToString()
-                                              })
-                                              .ToArray(),
-                    _ => val.ToString()
-                };
+                    if (alwaysStringFields.Contains(p.ParamName))
+                    {
+                        agentCheck[p.ParamName] = p.ParamValue;
+                    }
+                    else if (int.TryParse(p.ParamValue, out var intVal))
+                        agentCheck[p.ParamName] = intVal;
+                    else if (bool.TryParse(p.ParamValue, out var boolVal))
+                        agentCheck[p.ParamName] = boolVal;
+                    else if (p.ParamValue.StartsWith('['))
+                    {
+                        try { agentCheck[p.ParamName] = JsonSerializer.Deserialize<JsonElement>(p.ParamValue); }
+                        catch { agentCheck[p.ParamName] = p.ParamValue; }
+                    }
+                    else
+                        agentCheck[p.ParamName] = p.ParamValue;
+                }
             }
 
             checks.Add(agentCheck);

@@ -156,7 +156,7 @@ public class HypervisorPipeline : IHypervisorPipeline
         }
 
         // Cleanup session
-        try { await http.DeleteAsync("/api/session"); } catch { }
+        try { await http.DeleteAsync("/api/session"); } catch (Exception ex) { _log.LogDebug(ex, "VMware session cleanup failed"); }
 
         return (hosts, vms);
     }

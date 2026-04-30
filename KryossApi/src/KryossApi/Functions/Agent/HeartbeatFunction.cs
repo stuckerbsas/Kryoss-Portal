@@ -15,11 +15,16 @@ public class HeartbeatFunction
 {
     private readonly KryossDbContext _db;
     private readonly ILogger<HeartbeatFunction> _logger;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IPublicIpTracker _ipTracker;
 
-    public HeartbeatFunction(KryossDbContext db, ILogger<HeartbeatFunction> logger)
+    public HeartbeatFunction(KryossDbContext db, ILogger<HeartbeatFunction> logger,
+        ICurrentUserService currentUser, IPublicIpTracker ipTracker)
     {
         _db = db;
         _logger = logger;
+        _currentUser = currentUser;
+        _ipTracker = ipTracker;
     }
 
     [Function("Heartbeat")]
@@ -61,6 +66,9 @@ public class HeartbeatFunction
         machine.AgentUptimeSeconds = body?.UptimeSeconds;
         if (!string.IsNullOrEmpty(body?.Version))
             machine.AgentVersion = body.Version;
+
+        try { await _ipTracker.TrackAsync(machine.Id, _currentUser.IpAddress); }
+        catch (Exception ex) { _logger.LogWarning(ex, "IP tracking failed for {Host}", machine.Hostname); }
 
         // Key rotation: check ForceKeyRotation flag set by middleware (machine_secret reauth path)
         string? newSessionKey = null;
@@ -128,7 +136,7 @@ public class HeartbeatFunction
             foreach (var err in body.Errors)
             {
                 await actlogService.LogAsync(
-                    severity: err.IsTimeout ? "WARN" : "ERROR",
+                    severity: err.IsTimeout ? "WARN" : "ERR",
                     module: "agent",
                     action: err.Phase,
                     entityType: "machine",
@@ -176,16 +184,18 @@ public class HeartbeatFunction
         await _db.SaveChangesAsync();
 
         var now = DateTime.UtcNow;
+        var wuEnabled = Environment.GetEnvironmentVariable("ENABLE_WINDOWS_UPDATE_REMEDIATION") == "true";
         var pendingTasks = await _db.RemediationTasks
             .Where(t => t.MachineId == machine.Id && t.Status == "approved"
-                && (t.ScheduledFor == null || t.ScheduledFor <= now))
+                && (t.ScheduledFor == null || t.ScheduledFor <= now)
+                && (wuEnabled || t.ActionType != "windows_update"))
             .Select(t => new
             {
                 t.Id,
                 t.ActionType,
                 t.Params,
                 t.ControlDefId,
-                controlId = t.ControlDef.ControlId,
+                controlId = t.ControlDef != null ? t.ControlDef.ControlId : (string?)null,
                 t.ApprovedAt,
             })
             .ToListAsync();
@@ -259,12 +269,18 @@ public class HeartbeatFunction
             priorityServices = prioritySvcList,
         };
 
+        var latestAgentVersion = Environment.GetEnvironmentVariable("LatestAgentVersion");
+        var minAgentVersion = Environment.GetEnvironmentVariable("MinAgentVersion");
+        var modeDev = Environment.GetEnvironmentVariable("AgentModeDev") == "true";
+        var apiVersion = typeof(HeartbeatFunction).Assembly.GetName().Version?.ToString(3);
+
         await ok.WriteAsJsonAsync(new
         {
             ack = true,
             pendingTasks = signedTasks,
             newMachineSecret, newSessionKey, newSessionKeyExpiresAt,
             config, forceScan,
+            latestAgentVersion, minAgentVersion, apiVersion, modeDev,
         });
         return ok;
 

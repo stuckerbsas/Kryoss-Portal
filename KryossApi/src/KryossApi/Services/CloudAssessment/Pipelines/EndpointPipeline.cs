@@ -58,11 +58,16 @@ public static class EndpointPipeline
                 CollectManagedApps(graph, ins, err, log, ct),
                 CollectEnrollmentAndAutopilot(graph, ins, err, log, ct),
                 CollectConfigProfileAssignmentStatus(graph, ins, err, log, ct),
+                CollectNotificationTemplates(graph, ins, err, log, ct),
             };
 
             if (graphBetaHttp is not null)
             {
                 tasks.Add(CollectAutopilotProfiles(graphBetaHttp, ins, err, log, ct));
+                tasks.Add(CollectSecurityPolicies(graphBetaHttp, ins, err, log, ct));
+                tasks.Add(CollectWindowsUpdateProfiles(graphBetaHttp, ins, err, log, ct));
+                tasks.Add(CollectEndpointAnalytics(graphBetaHttp, ins, err, log, ct));
+                tasks.Add(CollectDefenderConnectors(graphBetaHttp, ins, err, log, ct));
             }
 
             // --- Defender for Endpoint (only when HTTP client is configured) ---
@@ -130,6 +135,17 @@ public static class EndpointPipeline
             m["usb_usage_30d"] = ins.UsbUsageEvents.ToString(inv);
             m["unsigned_binaries_30d"] = ins.UnsignedBinariesLast30d.ToString(inv);
             m["lateral_movement_30d"] = ins.LateralMovementAttempts30d.ToString(inv);
+
+            // Lighthouse policy checks
+            m["has_antivirus_policy"] = ins.HasAntivirusPolicy ? "true" : "false";
+            m["has_firewall_policy"] = ins.HasFirewallPolicy ? "true" : "false";
+            m["has_asr_policy"] = ins.HasAsrPolicy ? "true" : "false";
+            m["has_edge_profile"] = ins.HasEdgeProfile ? "true" : "false";
+            m["has_onedrive_policy"] = ins.HasOneDrivePolicy ? "true" : "false";
+            m["has_windows_update_policy"] = ins.HasWindowsUpdatePolicy ? "true" : "false";
+            m["notification_templates"] = ins.NotificationTemplateCount.ToString(inv);
+            m["endpoint_analytics_enabled"] = ins.EndpointAnalyticsEnabled ? "true" : "false";
+            m["defender_auto_onboard"] = ins.DefenderAutoOnboard ? "true" : "false";
 
             // Availability
             m["intune_available"] = ins.IntuneAvailable ? "true" : "false";
@@ -212,6 +228,18 @@ public static class EndpointPipeline
             if (resp?.Value is null) return;
             ins.IntuneAvailable = true;
             ins.DeviceConfigProfileCount = resp.Value.Count;
+
+            foreach (var cfg in resp.Value)
+            {
+                var odataType = cfg.OdataType?.ToLowerInvariant() ?? "";
+                if (odataType.Contains("windowsupdateforbusiness"))
+                    ins.HasWindowsUpdatePolicy = true;
+                if (odataType.Contains("endpointprotection"))
+                {
+                    ins.HasFirewallPolicy = true;
+                    ins.HasAsrPolicy = true;
+                }
+            }
         }
         catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
         {
@@ -473,6 +501,206 @@ public static class EndpointPipeline
         {
             err.MarkError();
             log.LogWarning(ex, "Config profile assignment status collection failed");
+        }
+    }
+
+    // ================================================================
+    // Lighthouse: Security policies via Settings Catalog (beta)
+    // ================================================================
+
+    private static async Task CollectSecurityPolicies(
+        HttpClient http, EndpointInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await http.GetAsync(
+                "/beta/deviceManagement/configurationPolicies?$select=id,name,templateReference&$top=200", ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                log.LogWarning("Security policies: {Code}", (int)resp.StatusCode);
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (!doc.RootElement.TryGetProperty("value", out var items)) return;
+
+            ins.IntuneAvailable = true;
+
+            foreach (var policy in items.EnumerateArray())
+            {
+                var family = "";
+                if (policy.TryGetProperty("templateReference", out var tRef) &&
+                    tRef.ValueKind == JsonValueKind.Object &&
+                    tRef.TryGetProperty("templateFamily", out var tf))
+                {
+                    family = tf.GetString()?.ToLowerInvariant() ?? "";
+                }
+
+                var name = policy.TryGetProperty("name", out var n)
+                    ? n.GetString()?.ToLowerInvariant() ?? "" : "";
+
+                if (family.Contains("antivirus") || name.Contains("antivirus"))
+                    ins.HasAntivirusPolicy = true;
+                if (family.Contains("firewall") || name.Contains("firewall"))
+                    ins.HasFirewallPolicy = true;
+                if (family.Contains("attacksurfacereduction") || name.Contains("attack surface"))
+                    ins.HasAsrPolicy = true;
+                if (name.Contains("edge") || name.Contains("microsoft edge"))
+                    ins.HasEdgeProfile = true;
+                if (name.Contains("onedrive"))
+                    ins.HasOneDrivePolicy = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "Security policies collection failed");
+        }
+    }
+
+    // ================================================================
+    // Lighthouse: Windows Feature Update profiles (beta)
+    // ================================================================
+
+    private static async Task CollectWindowsUpdateProfiles(
+        HttpClient http, EndpointInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await http.GetAsync(
+                "/beta/deviceManagement/windowsFeatureUpdateProfiles", ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                log.LogWarning("Windows update profiles: {Code}", (int)resp.StatusCode);
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (doc.RootElement.TryGetProperty("value", out var items) && items.GetArrayLength() > 0)
+            {
+                ins.IntuneAvailable = true;
+                ins.HasWindowsUpdatePolicy = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "Windows update profile collection failed");
+        }
+    }
+
+    // ================================================================
+    // Lighthouse: Noncompliant device notification templates
+    // ================================================================
+
+    private static async Task CollectNotificationTemplates(
+        GraphServiceClient graph, EndpointInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            var resp = await graph.DeviceManagement.NotificationMessageTemplates
+                .GetAsync(cancellationToken: ct);
+            if (resp?.Value is not null)
+            {
+                ins.IntuneAvailable = true;
+                ins.NotificationTemplateCount = resp.Value.Count;
+            }
+        }
+        catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
+        {
+            log.LogWarning("Notification templates: skipped (HTTP {Code})", ex.ResponseStatusCode);
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "Notification template collection failed");
+        }
+    }
+
+    // ================================================================
+    // Lighthouse: Endpoint Analytics (beta)
+    // ================================================================
+
+    private static async Task CollectEndpointAnalytics(
+        HttpClient http, EndpointInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await http.GetAsync(
+                "/beta/deviceManagement/userExperienceAnalyticsOverview", ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                log.LogWarning("Endpoint Analytics: {Code}", (int)resp.StatusCode);
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+            ins.IntuneAvailable = true;
+            ins.EndpointAnalyticsEnabled = true;
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "Endpoint Analytics collection failed");
+        }
+    }
+
+    // ================================================================
+    // Lighthouse: Defender auto-onboard via Intune connectors (beta)
+    // ================================================================
+
+    private static async Task CollectDefenderConnectors(
+        HttpClient http, EndpointInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await http.GetAsync(
+                "/beta/deviceManagement/mobileThreatDefenseConnectors", ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                log.LogWarning("MTD connectors: {Code}", (int)resp.StatusCode);
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (!doc.RootElement.TryGetProperty("value", out var items)) return;
+
+            foreach (var connector in items.EnumerateArray())
+            {
+                var state = connector.TryGetProperty("partnerState", out var s)
+                    ? s.GetString()?.ToLowerInvariant() ?? "" : "";
+                var windowsAllowed = connector.TryGetProperty("windowsDevicesAllowed", out var w)
+                    && w.ValueKind == JsonValueKind.True;
+
+                if ((state == "enabled" || state == "available") && windowsAllowed)
+                {
+                    ins.DefenderAutoOnboard = true;
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "MTD connector collection failed");
         }
     }
 

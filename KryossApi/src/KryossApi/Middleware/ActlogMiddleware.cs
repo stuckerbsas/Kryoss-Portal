@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KryossApi.Data;
 using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -23,9 +24,16 @@ public class ActlogMiddleware : IFunctionsWorkerMiddleware
             return;
         }
 
-        var sw = Stopwatch.StartNew();
         var method = httpReq.Method;
         var path = httpReq.Url.PathAndQuery;
+
+        if (path.Contains("/v1/heartbeat", StringComparison.OrdinalIgnoreCase))
+        {
+            await next(context);
+            return;
+        }
+
+        var sw = Stopwatch.StartNew();
 
         try
         {
@@ -69,12 +77,19 @@ public class ActlogMiddleware : IFunctionsWorkerMiddleware
                     _ => "api"
                 };
 
+                // Include machine hostname in agent requests for easier debugging
+                var user = context.InstanceServices.GetRequiredService<ICurrentUserService>();
+                var hostname = user.MachineHostname;
+                var msgPrefix = hostname is not null ? $"[{hostname}] " : "";
+
                 var actlog = context.InstanceServices.GetRequiredService<IActlogService>();
                 await actlog.LogAsync(
                     severity: severity,
                     module: module,
                     action: $"{method.ToLowerInvariant()}.{path.Split('?')[0].TrimEnd('/').Split('/').LastOrDefault()}",
-                    message: $"{method} {path} -> {responseCode} ({sw.ElapsedMilliseconds}ms)",
+                    entityType: hostname is not null ? "machine" : null,
+                    entityId: user.MachineId?.ToString(),
+                    message: $"{msgPrefix}{method} {path} -> {responseCode} ({sw.ElapsedMilliseconds}ms)",
                     responseCode: responseCode,
                     durationMs: (int)sw.ElapsedMilliseconds
                 );

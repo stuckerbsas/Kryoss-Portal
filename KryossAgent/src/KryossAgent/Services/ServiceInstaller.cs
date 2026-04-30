@@ -93,10 +93,40 @@ internal static partial class ServiceInstaller
         public IntPtr lpsaActions;
     }
 
+    private const string CanonicalDir = @"C:\Program Files\Kryoss";
+    private const string CanonicalExe = @"C:\Program Files\Kryoss\KryossAgent.exe";
+
+    private static string EnsureCanonicalPath()
+    {
+        var currentExe = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Cannot determine executable path");
+
+        if (string.Equals(Path.GetDirectoryName(currentExe), CanonicalDir, StringComparison.OrdinalIgnoreCase))
+            return currentExe;
+
+        Console.WriteLine($"  Binary not in canonical path. Copying to {CanonicalDir}...");
+        Directory.CreateDirectory(CanonicalDir);
+
+        // Stop + delete existing service if pointing elsewhere
+        if (IsInstalled())
+        {
+            Console.WriteLine("  Removing old service registration...");
+            Uninstall();
+            Thread.Sleep(1000);
+        }
+
+        // Clean old binary if present
+        if (File.Exists(CanonicalExe))
+            File.Delete(CanonicalExe);
+
+        File.Copy(currentExe, CanonicalExe, overwrite: true);
+        Console.WriteLine($"  Copied to {CanonicalExe}");
+        return CanonicalExe;
+    }
+
     public static void Install()
     {
-        var exePath = Environment.ProcessPath
-            ?? throw new InvalidOperationException("Cannot determine executable path");
+        var exePath = EnsureCanonicalPath();
         var binPath = $"\"{exePath}\" --service";
 
         var scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);

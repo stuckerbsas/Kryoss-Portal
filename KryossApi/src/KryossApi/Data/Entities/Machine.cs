@@ -75,21 +75,24 @@ public class Machine : IAuditable
     public DateTime? KeyRotatedAt { get; set; }
     public int AuthVersion { get; set; } = 1;
 
-    // Local admins (JSON array of {name, type, source})
-    public string? LocalAdminsJson { get; set; }
-
     // Remote agent configuration (portal-controlled, delivered via heartbeat)
     public int ConfigComplianceIntervalHours { get; set; } = 24;
     public int ConfigSnmpIntervalMinutes { get; set; } = 240;
-    public bool ConfigEnableNetworkScan { get; set; }
+    public bool ConfigEnableNetworkScan { get; set; } = true;
     public int ConfigNetworkScanIntervalHours { get; set; } = 12;
     public bool ConfigEnablePassiveDiscovery { get; set; } = true;
+
+    // Agent loop status (v2.8.0 parallel loops)
+    public DateTime? LastErrorAt { get; set; }
+    public string? LastErrorPhase { get; set; }
+    public string? LastErrorMsg { get; set; }
 
     // On-demand scan trigger (portal sets, heartbeat delivers, then clears)
     public DateTime? ForceScanRequestedAt { get; set; }
     public Guid? ForceScanRequestedBy { get; set; }
 
     // Denormalized latest score (updated by EvaluationService on each run)
+    public Guid? LatestRunId { get; set; }
     public decimal? LatestScore { get; set; }
     public string? LatestGrade { get; set; }
     public DateTime? LatestScanAt { get; set; }

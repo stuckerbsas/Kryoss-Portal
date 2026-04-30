@@ -297,8 +297,13 @@ public class BearerAuthMiddleware : IFunctionsWorkerMiddleware
             currentUser.Permissions = user.Role.RolePermissions
                 .Select(rp => rp.Permission.Slug)
                 .ToArray();
-            currentUser.IpAddress = httpReq.Headers.TryGetValues("X-Forwarded-For", out var fwdValues)
+            var ipAddr = httpReq.Headers.TryGetValues("X-Forwarded-For", out var fwdValues)
                 ? fwdValues.FirstOrDefault() : null;
+            if (string.IsNullOrEmpty(ipAddr))
+                ipAddr = context.GetHttpContext()?.Connection.RemoteIpAddress?.MapToIPv4().ToString();
+            if (!string.IsNullOrEmpty(ipAddr) && ipAddr.Contains(','))
+                ipAddr = ipAddr.Split(',')[0].Trim();
+            currentUser.IpAddress = ipAddr;
             currentUser.SessionId = httpReq.Headers.TryGetValues("X-MS-TOKEN-AAD-ID-TOKEN", out var tokenValues)
                 ? tokenValues.FirstOrDefault()?[..Math.Min(32, tokenValues.FirstOrDefault()?.Length ?? 0)] : null;
         }

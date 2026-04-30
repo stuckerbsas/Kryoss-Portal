@@ -184,6 +184,18 @@ public class IdentityInsights
     // --- Admin MFA gap ---
     public int AdminsWithoutMfa { get; set; }
 
+    // --- SSPR (Lighthouse: Configure self-service password reset) ---
+    public int SsprRegisteredUsers { get; set; }
+    public double SsprRegistrationPct { get; set; }
+    public bool SsprEnabled { get; set; }
+
+    // --- Break-glass / Emergency Access (Lighthouse) ---
+    public int BreakGlassAccountCount { get; set; }
+
+    // --- Entra device join (Lighthouse: Configure Microsoft Entra for joining devices) ---
+    public bool DeviceJoinConfigured { get; set; }
+    public string? DeviceJoinScope { get; set; }
+
     // --- Consent surface ---
     public int ConsentedPartnerApps { get; set; }
     public int OAuthConsentGrantsToAllUsers { get; set; }

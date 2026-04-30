@@ -33,7 +33,8 @@ public class RecycleBinFunction
         var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
         var typeFilter = query["type"]; // "organization", "machine", "enrollment_code"
 
-        var items = new List<object>();
+        var items = new List<RecycleBinItem>();
+        var deletedByIds = new HashSet<Guid>();
 
         // --- Organizations ---
         if (typeFilter is null or "organization")
@@ -43,30 +44,18 @@ public class RecycleBinFunction
                 .Where(o => o.DeletedAt != null)
                 .Select(o => new
                 {
-                    o.Id,
-                    o.Name,
-                    o.DeletedAt,
-                    o.DeletedBy,
-                    machineCount = _db.Machines.IgnoreQueryFilters()
-                        .Count(m => m.OrganizationId == o.Id),
-                    enrollmentCodeCount = _db.EnrollmentCodes.IgnoreQueryFilters()
-                        .Count(e => e.OrganizationId == o.Id)
+                    o.Id, o.Name, o.DeletedAt, o.DeletedBy,
+                    machineCount = _db.Machines.IgnoreQueryFilters().Count(m => m.OrganizationId == o.Id),
+                    enrollmentCodeCount = _db.EnrollmentCodes.IgnoreQueryFilters().Count(e => e.OrganizationId == o.Id)
                 })
                 .ToListAsync();
 
             foreach (var o in orgs)
             {
-                var email = await ResolveDeletedByEmail(o.DeletedBy);
-                items.Add(new
-                {
-                    entityType = "organization",
-                    id = o.Id.ToString(),
-                    name = o.Name,
-                    description = $"{o.machineCount} machines, {o.enrollmentCodeCount} enrollment codes",
-                    deletedAt = o.DeletedAt,
-                    deletedByEmail = email,
-                    canRestore = true
-                });
+                if (o.DeletedBy.HasValue) deletedByIds.Add(o.DeletedBy.Value);
+                items.Add(new RecycleBinItem("organization", o.Id.ToString(), o.Name,
+                    $"{o.machineCount} machines, {o.enrollmentCodeCount} enrollment codes",
+                    o.DeletedAt, o.DeletedBy, true));
             }
         }
 
@@ -78,35 +67,19 @@ public class RecycleBinFunction
                 .Where(m => m.DeletedAt != null)
                 .Select(m => new
                 {
-                    m.Id,
-                    m.Hostname,
-                    m.DeletedAt,
-                    m.DeletedBy,
-                    m.OrganizationId,
+                    m.Id, m.Hostname, m.DeletedAt, m.DeletedBy,
                     orgName = _db.Organizations.IgnoreQueryFilters()
-                        .Where(o => o.Id == m.OrganizationId)
-                        .Select(o => o.Name)
-                        .FirstOrDefault(),
+                        .Where(o => o.Id == m.OrganizationId).Select(o => o.Name).FirstOrDefault(),
                     orgDeletedAt = _db.Organizations.IgnoreQueryFilters()
-                        .Where(o => o.Id == m.OrganizationId)
-                        .Select(o => o.DeletedAt)
-                        .FirstOrDefault()
+                        .Where(o => o.Id == m.OrganizationId).Select(o => o.DeletedAt).FirstOrDefault()
                 })
                 .ToListAsync();
 
             foreach (var m in machines)
             {
-                var email = await ResolveDeletedByEmail(m.DeletedBy);
-                items.Add(new
-                {
-                    entityType = "machine",
-                    id = m.Id.ToString(),
-                    name = m.Hostname,
-                    description = $"Org: {m.orgName ?? "Unknown"}",
-                    deletedAt = m.DeletedAt,
-                    deletedByEmail = email,
-                    canRestore = m.orgDeletedAt == null // can only restore if parent org is not deleted
-                });
+                if (m.DeletedBy.HasValue) deletedByIds.Add(m.DeletedBy.Value);
+                items.Add(new RecycleBinItem("machine", m.Id.ToString(), m.Hostname,
+                    $"Org: {m.orgName ?? "Unknown"}", m.DeletedAt, m.DeletedBy, m.orgDeletedAt == null));
             }
         }
 
@@ -118,46 +91,37 @@ public class RecycleBinFunction
                 .Where(e => e.DeletedAt != null)
                 .Select(e => new
                 {
-                    e.Id,
-                    e.Code,
-                    e.Label,
-                    e.DeletedAt,
-                    e.DeletedBy,
-                    e.OrganizationId,
+                    e.Id, e.Code, e.Label, e.DeletedAt, e.DeletedBy,
                     orgName = _db.Organizations.IgnoreQueryFilters()
-                        .Where(o => o.Id == e.OrganizationId)
-                        .Select(o => o.Name)
-                        .FirstOrDefault(),
+                        .Where(o => o.Id == e.OrganizationId).Select(o => o.Name).FirstOrDefault(),
                     orgDeletedAt = _db.Organizations.IgnoreQueryFilters()
-                        .Where(o => o.Id == e.OrganizationId)
-                        .Select(o => o.DeletedAt)
-                        .FirstOrDefault()
+                        .Where(o => o.Id == e.OrganizationId).Select(o => o.DeletedAt).FirstOrDefault()
                 })
                 .ToListAsync();
 
             foreach (var c in codes)
             {
-                var email = await ResolveDeletedByEmail(c.DeletedBy);
+                if (c.DeletedBy.HasValue) deletedByIds.Add(c.DeletedBy.Value);
                 var displayName = !string.IsNullOrWhiteSpace(c.Label) ? $"{c.Code} ({c.Label})" : c.Code;
-                items.Add(new
-                {
-                    entityType = "enrollment_code",
-                    id = c.Id.ToString(),
-                    name = displayName,
-                    description = $"Org: {c.orgName ?? "Unknown"}",
-                    deletedAt = c.DeletedAt,
-                    deletedByEmail = email,
-                    canRestore = c.orgDeletedAt == null
-                });
+                items.Add(new RecycleBinItem("enrollment_code", c.Id.ToString(), displayName,
+                    $"Org: {c.orgName ?? "Unknown"}", c.DeletedAt, c.DeletedBy, c.orgDeletedAt == null));
             }
         }
 
-        // Sort by DeletedAt descending
+        // Batch-resolve all deleted-by emails (single query, no N+1)
+        var emailMap = deletedByIds.Count > 0
+            ? await _db.Users.IgnoreQueryFilters()
+                .Where(u => deletedByIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.Email)
+            : new Dictionary<Guid, string>();
+
         var sorted = items
-            .OrderByDescending(i =>
+            .OrderByDescending(i => i.DeletedAt)
+            .Select(i => new
             {
-                var prop = i.GetType().GetProperty("deletedAt");
-                return prop?.GetValue(i) as DateTime?;
+                i.EntityType, i.Id, i.Name, i.Description, i.DeletedAt,
+                deletedByEmail = i.DeletedById.HasValue && emailMap.TryGetValue(i.DeletedById.Value, out var e) ? e : null,
+                i.CanRestore
             })
             .ToList();
 
@@ -337,16 +301,9 @@ public class RecycleBinFunction
         return response;
     }
 
-    private async Task<string?> ResolveDeletedByEmail(Guid? deletedBy)
-    {
-        if (deletedBy is null) return null;
-
-        return await _db.Users
-            .IgnoreQueryFilters()
-            .Where(u => u.Id == deletedBy.Value)
-            .Select(u => u.Email)
-            .FirstOrDefaultAsync();
-    }
+    private record RecycleBinItem(
+        string EntityType, string Id, string Name, string Description,
+        DateTime? DeletedAt, Guid? DeletedById, bool CanRestore);
 
     private static async Task<HttpResponseData> BadRequest(HttpRequestData req, string error)
     {

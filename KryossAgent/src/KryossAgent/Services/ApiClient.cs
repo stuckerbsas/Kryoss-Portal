@@ -66,6 +66,11 @@ public class ApiClient : IDisposable
     /// <summary>
     /// POST /v1/enroll — no HMAC needed (public endpoint).
     /// </summary>
+    private static readonly (int MinSec, int MaxSec)[] EnrollBackoff =
+    {
+        (30, 60), (60, 120), (120, 300), (300, 600), (600, 900)
+    };
+
     public async Task<EnrollmentResponse?> EnrollAsync(string code, string hostname,
         PlatformInfo? platform, int productType = 0)
     {
@@ -76,9 +81,10 @@ public class ApiClient : IDisposable
             ProductType = productType
         };
         var json = JsonSerializer.Serialize(enrollBody, KryossJsonContext.Default.EnrollRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var rng = new Random();
+        const int maxAttempts = 6; // 1 initial + 5 retries
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/enroll")
             {
@@ -88,15 +94,33 @@ public class ApiClient : IDisposable
 
             HttpResponseMessage response;
             try { response = await _http.SendAsync(request); }
-            catch (Exception) when (attempt < 2)
+            catch (Exception ex) when (attempt < maxAttempts - 1)
             {
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)));
+                var (minS, maxS) = EnrollBackoff[attempt];
+                var waitSec = rng.Next(minS, maxS + 1);
+                AgentLogger.Log("RETRY", $"Enrollment network error. Attempt {attempt + 1}/{maxAttempts - 1}, waiting {waitSec}s... ({ex.GetType().Name})");
+                await Task.Delay(TimeSpan.FromSeconds(waitSec));
                 continue;
             }
 
-            if ((int)response.StatusCode == 429 && attempt < 2)
+            var statusCode = (int)response.StatusCode;
+            var isRetryable = statusCode == 429 || statusCode == 503 || statusCode >= 500;
+
+            if (isRetryable && attempt < maxAttempts - 1)
             {
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt + 1)));
+                int waitSec;
+                if (response.Headers.TryGetValues("Retry-After", out var raValues) &&
+                    int.TryParse(raValues.FirstOrDefault(), out var retryAfter) && retryAfter > 0)
+                {
+                    waitSec = Math.Min(retryAfter, 900);
+                }
+                else
+                {
+                    var (minS, maxS) = EnrollBackoff[attempt];
+                    waitSec = rng.Next(minS, maxS + 1);
+                }
+                AgentLogger.Log("RETRY", $"Enrollment rate-limited ({statusCode}). Attempt {attempt + 1}/{maxAttempts - 1}, waiting {waitSec}s...");
+                await Task.Delay(TimeSpan.FromSeconds(waitSec));
                 continue;
             }
 
@@ -105,13 +129,15 @@ public class ApiClient : IDisposable
                 string error;
                 try { error = await response.Content.ReadAsStringAsync(); }
                 catch { error = response.StatusCode.ToString(); }
-                LogAuthFailure((int)response.StatusCode, "/v1/enroll");
+                LogAuthFailure(statusCode, "/v1/enroll");
+                if (isRetryable)
+                    throw new ApiException($"Enrollment failed after {maxAttempts - 1} retry attempts (last status: {response.StatusCode})");
                 throw new ApiException($"Enrollment failed ({response.StatusCode}): {error}");
             }
 
             return await response.Content.ReadFromJsonAsync(KryossJsonContext.Default.EnrollmentResponse);
         }
-        throw new ApiException("Enrollment failed after 3 attempts");
+        throw new ApiException($"Enrollment failed after {maxAttempts - 1} retry attempts (rate limited)");
     }
 
     /// <summary>
@@ -466,6 +492,27 @@ public class ApiClient : IDisposable
             return response.IsSuccessStatusCode;
         }
         catch { return false; }
+    }
+
+    public async Task<bool> SubmitAvailableUpdatesAsync(List<AvailableUpdateItem> updates)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(updates, KryossJsonContext.Default.ListAvailableUpdateItem);
+        var path = "/v1/available-updates";
+        var request = CreateSignedRequest(HttpMethod.Post, path, json);
+        request.Content = new ByteArrayContent(json);
+        request.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        try
+        {
+            var response = await _http.SendAsync(request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            AgentLogger.Error("WU-COLLECT", $"Upload failed: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>

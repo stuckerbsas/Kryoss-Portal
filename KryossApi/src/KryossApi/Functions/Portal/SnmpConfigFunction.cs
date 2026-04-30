@@ -6,6 +6,7 @@ using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KryossApi.Functions.Portal;
 
@@ -13,11 +14,13 @@ public class SnmpConfigFunction
 {
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
+    private readonly ILogger<SnmpConfigFunction> _logger;
 
-    public SnmpConfigFunction(KryossDbContext db, ICurrentUserService user)
+    public SnmpConfigFunction(KryossDbContext db, ICurrentUserService user, ILogger<SnmpConfigFunction> logger)
     {
         _db = db;
         _user = user;
+        _logger = logger;
     }
 
     [Function("SnmpConfig_Get")]
@@ -198,7 +201,7 @@ public class SnmpConfigFunction
                     if (doc.RootElement.TryGetProperty("cdpNeighbors", out var cdp))
                         cdpNeighbors = JsonSerializer.Deserialize<JsonElement>(cdp.GetRawText());
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Failed to parse SNMP neighbor data"); }
             }
             return new
             {

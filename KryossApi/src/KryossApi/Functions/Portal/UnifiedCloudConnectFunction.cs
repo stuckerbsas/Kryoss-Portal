@@ -315,8 +315,7 @@ public class UnifiedCloudConnectFunction
             // Discover Azure subscriptions with delegated ARM token
             await TryAutoAssignAzureReader(armToken, tenantId, orgId, results);
 
-            // Power BI — disabled until PBI licensing available in test environment.
-            // await TryVerifyPowerBi(tenantId, orgId, results);
+            await TryVerifyPowerBi(tenantId, orgId, results);
 
             // Start scan
             var m365Tenant = await _db.M365Tenants
@@ -667,7 +666,22 @@ public class UnifiedCloudConnectFunction
             "37a27590-87eb-4bb5-8a10-85e0ff394ef9", // Software.Read.All
             "02a4a1f0-20e0-4e25-be0e-55568da41a31", // Score.Read.All
         }, "Microsoft Threat Protection"),
+
+        // Office 365 Exchange Online — Exchange.ManageAsApp
+        ("00000002-0000-0ff1-ce00-000000000000", new[]
+        {
+            "dc50a0fb-09a3-484d-be87-e023b12c6440", // Exchange.ManageAsApp
+        }, "Office 365 Exchange Online"),
+
+        // Power BI Service — Tenant.Read.All
+        ("00000009-0000-0000-c000-000000000000", new[]
+        {
+            "654b31ae-d941-4e22-8798-7add8fdf049f", // Tenant.Read.All
+        }, "Power BI Service"),
     };
+
+    // Exchange Administrator role template ID for directory role assignment.
+    private const string ExchangeAdminRoleTemplateId = "29232cdf-9323-42fd-ade2-1d097af3e4de";
 
     private async Task TryGrantOptionalApiPermissions(string tenantId, Guid orgId)
     {
@@ -728,11 +742,75 @@ public class UnifiedCloudConnectFunction
                         apiName, tenantId, ex.Message);
                 }
             }
+
+            // Exchange.ManageAsApp also requires Exchange Administrator directory role.
+            await TryAssignExchangeAdminRole(http, ourSpnId, tenantId);
         }
         catch (Exception ex)
         {
             _log.LogInformation("TryGrantOptionalApiPermissions failed for tenant {Tenant}: {Error}",
                 tenantId, ex.Message);
+        }
+    }
+
+    private async Task TryAssignExchangeAdminRole(HttpClient http, string spnObjectId, string tenantId)
+    {
+        try
+        {
+            // Resolve Exchange Administrator role definition ID in the tenant
+            var roleResp = await http.GetAsync(
+                $"directoryRoles?$filter=roleTemplateId eq '{ExchangeAdminRoleTemplateId}'&$select=id");
+            string? roleId = null;
+
+            if (roleResp.IsSuccessStatusCode)
+            {
+                using var roleDoc = await JsonDocument.ParseAsync(await roleResp.Content.ReadAsStreamAsync());
+                var roles = roleDoc.RootElement.GetProperty("value");
+                if (roles.GetArrayLength() > 0)
+                    roleId = roles[0].GetProperty("id").GetString();
+            }
+
+            // Role not yet activated in tenant — activate it
+            if (roleId is null)
+            {
+                var activateBody = JsonSerializer.Serialize(new { roleTemplateId = ExchangeAdminRoleTemplateId });
+                var activateContent = new StringContent(activateBody, System.Text.Encoding.UTF8, "application/json");
+                var activateResp = await http.PostAsync("directoryRoles", activateContent);
+                if (activateResp.IsSuccessStatusCode)
+                {
+                    using var activateDoc = await JsonDocument.ParseAsync(await activateResp.Content.ReadAsStreamAsync());
+                    roleId = activateDoc.RootElement.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                }
+            }
+
+            if (roleId is null)
+            {
+                _log.LogInformation("Could not resolve Exchange Administrator role in tenant {Tenant}", tenantId);
+                return;
+            }
+
+            // Assign our SPN to the role
+            var memberBody = JsonSerializer.Serialize(new
+            {
+                // Graph expects @odata.id for directory objects
+                OdataId = $"https://graph.microsoft.com/v1.0/servicePrincipals/{spnObjectId}"
+            });
+            // Use $ref endpoint for role member assignment
+            var body = JsonSerializer.Serialize(new { @odata = new { id = $"https://graph.microsoft.com/v1.0/directoryObjects/{spnObjectId}" } });
+            var refBody = $"{{\"@odata.id\":\"https://graph.microsoft.com/v1.0/directoryObjects/{spnObjectId}\"}}";
+            var refContent = new StringContent(refBody, System.Text.Encoding.UTF8, "application/json");
+            var assignResp = await http.PostAsync($"directoryRoles/{roleId}/members/$ref", refContent);
+
+            // 204 = success, 400 with "already exist" = already assigned
+            if (assignResp.IsSuccessStatusCode || (int)assignResp.StatusCode == 400)
+                _log.LogInformation("Exchange Administrator role assigned to SPN in tenant {Tenant}", tenantId);
+            else
+                _log.LogInformation("Exchange Admin role assignment returned {Status} in tenant {Tenant}",
+                    (int)assignResp.StatusCode, tenantId);
+        }
+        catch (Exception ex)
+        {
+            _log.LogInformation("TryAssignExchangeAdminRole failed for tenant {Tenant}: {Error}", tenantId, ex.Message);
         }
     }
 

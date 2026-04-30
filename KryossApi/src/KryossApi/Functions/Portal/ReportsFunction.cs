@@ -6,6 +6,7 @@ using KryossApi.Services.Reports;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KryossApi.Functions.Portal;
 
@@ -17,6 +18,7 @@ public class ReportsFunction
     private readonly IActlogService _actlog;
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
+    private readonly ILogger<ReportsFunction> _logger;
 
     private static readonly HashSet<string> _composerTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -27,13 +29,14 @@ public class ReportsFunction
         "test-fixture"
     };
 
-    public ReportsFunction(IReportService reports, IReportComposer composer, IActlogService actlog, KryossDbContext db, ICurrentUserService user)
+    public ReportsFunction(IReportService reports, IReportComposer composer, IActlogService actlog, KryossDbContext db, ICurrentUserService user, ILogger<ReportsFunction> logger)
     {
         _reports = reports;
         _composer = composer;
         _actlog = actlog;
         _db = db;
         _user = user;
+        _logger = logger;
     }
 
     /// <summary>
@@ -206,7 +209,7 @@ public class ReportsFunction
                     $"{ex.GetType().Name}: {ex.Message} | inner: {ex.InnerException?.Message} | stack: {ex.StackTrace?[..Math.Min(500, ex.StackTrace?.Length ?? 0)]}",
                     entityType: "Organization", entityId: orgId.ToString());
             }
-            catch { }
+            catch (Exception logEx) { _logger.LogWarning(logEx, "Report error actlog write failed"); }
 
             var statusCode = ex is InvalidOperationException ? HttpStatusCode.NotFound : HttpStatusCode.InternalServerError;
             var error = req.CreateResponse(statusCode);

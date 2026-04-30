@@ -18,11 +18,13 @@ public class MachinesFunction
 {
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
+    private readonly IBlobPayloadService? _blob;
 
-    public MachinesFunction(KryossDbContext db, ICurrentUserService user)
+    public MachinesFunction(KryossDbContext db, ICurrentUserService user, IBlobPayloadService? blob = null)
     {
         _db = db;
         _user = user;
+        _blob = blob;
     }
 
     [Function("Machines_List")]
@@ -163,7 +165,6 @@ public class MachinesFunction
                 m.TrialExpiresAt,
                 m.LastSeenAt,
                 m.FirstSeenAt,
-                m.LocalAdminsJson,
                 // Agent config
                 m.ConfigComplianceIntervalHours,
                 m.ConfigSnmpIntervalMinutes,
@@ -171,6 +172,14 @@ public class MachinesFunction
                 m.ConfigNetworkScanIntervalHours,
                 m.ConfigEnablePassiveDiscovery,
                 m.ForceScanRequestedAt,
+                // Service mode
+                m.AgentMode,
+                m.AgentUptimeSeconds,
+                m.LastHeartbeatAt,
+                // Loop status (v2.8.0)
+                m.LastErrorAt,
+                m.LastErrorPhase,
+                m.LastErrorMsg,
                 // Assessment history (last 10 runs)
                 assessmentHistory = _db.AssessmentRuns
                     .Where(r => r.MachineId == m.Id)
@@ -225,13 +234,17 @@ public class MachinesFunction
             })
             .ToListAsync();
 
-        // Per-machine local administrators (from agent payload)
-        object? localAdmins = null;
-        if (!string.IsNullOrEmpty(machine.LocalAdminsJson))
-        {
-            try { localAdmins = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(machine.LocalAdminsJson); }
-            catch { }
-        }
+        var localAdmins = await _db.MachineLocalAdmins
+            .Where(a => a.MachineId == id)
+            .Select(a => new { a.Name, a.Type, a.Source })
+            .ToListAsync();
+
+        var loopStatusList = await _db.MachineLoopStatuses
+            .Where(ls => ls.MachineId == id)
+            .ToListAsync();
+        var loopStatus = loopStatusList.ToDictionary(
+            ls => ls.LoopName,
+            ls => new { state = ls.State, lastRunAt = ls.LastRunAt, lastDurationMs = ls.DurationMs, lastError = ls.LastError });
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new
@@ -267,7 +280,7 @@ public class MachinesFunction
             machine.FirstSeenAt,
             machine.assessmentHistory,
             disks,
-            localAdmins,
+            localAdmins = localAdmins.Count > 0 ? (object)localAdmins : null,
             agentConfig = new
             {
                 complianceIntervalHours = machine.ConfigComplianceIntervalHours,
@@ -278,6 +291,15 @@ public class MachinesFunction
             },
             scanPending = machine.ForceScanRequestedAt.HasValue,
             scanRequestedAt = machine.ForceScanRequestedAt,
+            // Service mode
+            machine.AgentMode,
+            machine.AgentUptimeSeconds,
+            machine.LastHeartbeatAt,
+            // Loop status
+            loopStatus = loopStatus.Count > 0 ? loopStatus : null,
+            machine.LastErrorAt,
+            machine.LastErrorPhase,
+            machine.LastErrorMsg,
         });
         return response;
     }
@@ -395,25 +417,19 @@ public class MachinesFunction
             }
         }
 
-        var rawPayload = await _db.AssessmentRuns
-            .Where(r => r.MachineId == machineId)
-            .OrderByDescending(r => r.StartedAt)
-            .Select(r => r.RawPayload)
-            .FirstOrDefaultAsync();
-
-        if (rawPayload is null)
-        {
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            await response.WriteAsJsonAsync(new { items = Array.Empty<object>() });
-            return response;
-        }
-
-        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        var payload = JsonSerializer.Deserialize<AgentPayload>(rawPayload, opts);
-        var software = payload?.Software?
-            .OrderBy(s => s.Name)
-            .Select(s => new { s.Name, s.Version, s.Publisher })
-            .ToList() ?? [];
+        var software = await _db.MachineSoftware
+            .Include(ms => ms.Software)
+            .Where(ms => ms.MachineId == machineId && ms.RemovedAt == null)
+            .OrderBy(ms => ms.Software.Name)
+            .Select(ms => new
+            {
+                ms.Software.Name,
+                ms.Version,
+                ms.Software.Publisher,
+                ms.Software.Category,
+                ms.DetectedAt,
+            })
+            .ToListAsync();
 
         var resp = req.CreateResponse(HttpStatusCode.OK);
         await resp.WriteAsJsonAsync(new { total = software.Count, items = software });
@@ -489,6 +505,84 @@ public class MachinesFunction
         });
         return response;
     }
+
+    [Function("Machine_Activity")]
+    public async Task<HttpResponseData> Activity(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/machines/{id}/activity")] HttpRequestData req,
+        string id)
+    {
+        if (!Guid.TryParse(id, out var machineId))
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        var qs = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var page = int.TryParse(qs["page"], out var p) ? p : 1;
+        var pageSize = int.TryParse(qs["pageSize"], out var ps) ? Math.Min(ps, 100) : 50;
+        var severityFilter = qs["severity"];
+
+        var machineIdStr = machineId.ToString();
+        var actlogItems = await _db.Actlog
+            .Where(a => a.MachineId == machineId
+                || (a.EntityType == "machine" && a.EntityId == machineIdStr))
+            .OrderByDescending(a => a.Timestamp)
+            .Take(200)
+            .Select(a => new ActivityEntry
+            {
+                Timestamp = a.Timestamp,
+                Type = a.Action,
+                Severity = a.Severity,
+                Action = a.Message ?? a.Action,
+                ActorEmail = a.ActorEmail,
+                Source = "actlog",
+            })
+            .ToListAsync();
+
+        var remlogItems = await _db.RemediationLogs
+            .Where(r => r.MachineId == machineId)
+            .OrderByDescending(r => r.Timestamp)
+            .Take(200)
+            .Select(r => new ActivityEntry
+            {
+                Timestamp = r.Timestamp,
+                Type = r.EventType,
+                Severity = r.EventType == "rejected" ? "ERR"
+                    : r.EventType == "failed" ? "WARN"
+                    : r.EventType == "service_heal" ? "WARN"
+                    : "INFO",
+                Action = r.ServiceName != null
+                    ? r.EventType + ": " + r.ActionType + " on " + r.ServiceName
+                    : r.EventType + ": " + r.ActionType,
+                Source = "remediation",
+                ServiceName = r.ServiceName,
+                ErrorMessage = r.ErrorMessage,
+            })
+            .ToListAsync();
+
+        IEnumerable<ActivityEntry> combined = actlogItems.Concat(remlogItems)
+            .OrderByDescending(a => a.Timestamp);
+
+        if (!string.IsNullOrEmpty(severityFilter))
+            combined = combined.Where(a => a.Severity == severityFilter);
+
+        var allItems = combined.ToList();
+        var total = allItems.Count;
+        var items = allItems.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        var ok = req.CreateResponse(HttpStatusCode.OK);
+        await ok.WriteAsJsonAsync(new { total, page, pageSize, items });
+        return ok;
+    }
+}
+
+internal class ActivityEntry
+{
+    public DateTime Timestamp { get; set; }
+    public string Type { get; set; } = null!;
+    public string Severity { get; set; } = null!;
+    public string Action { get; set; } = null!;
+    public string? ActorEmail { get; set; }
+    public string Source { get; set; } = null!;
+    public string? ServiceName { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 public class AgentConfigPatch
@@ -498,4 +592,55 @@ public class AgentConfigPatch
     public bool? EnableNetworkScan { get; set; }
     public int? NetworkScanIntervalHours { get; set; }
     public bool? EnablePassiveDiscovery { get; set; }
+}
+
+[RequirePermission("machines:read")]
+public class LocalAdminsFunction
+{
+    private readonly KryossDbContext _db;
+
+    public LocalAdminsFunction(KryossDbContext db) => _db = db;
+
+    [Function("LocalAdmins_ByOrg")]
+    public async Task<HttpResponseData> ByOrg(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/local-admins")] HttpRequestData req)
+    {
+        var qs = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        if (!Guid.TryParse(qs["organizationId"], out var orgId))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "organizationId required" });
+            return bad;
+        }
+
+        var admins = await _db.MachineLocalAdmins
+            .Where(a => a.Machine.OrganizationId == orgId && a.Machine.IsActive)
+            .Select(a => new
+            {
+                a.Name,
+                a.Type,
+                a.Source,
+                machineId = a.MachineId,
+                hostname = a.Machine.Hostname,
+            })
+            .ToListAsync();
+
+        var grouped = admins
+            .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new
+            {
+                name = g.Key,
+                type = g.First().Type,
+                source = g.First().Source,
+                machineCount = g.Count(),
+                machines = g.Select(m => new { m.machineId, m.hostname }).ToList(),
+            })
+            .OrderByDescending(g => g.machineCount)
+            .ThenBy(g => g.name)
+            .ToList();
+
+        var ok = req.CreateResponse(HttpStatusCode.OK);
+        await ok.WriteAsJsonAsync(new { totalAccounts = grouped.Count, totalEntries = admins.Count, admins = grouped });
+        return ok;
+    }
 }

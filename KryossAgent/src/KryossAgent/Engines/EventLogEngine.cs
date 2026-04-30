@@ -191,7 +191,8 @@ public class EventLogEngine : ICheckEngine
     /// </summary>
     private static int CountEvents(string logName, int[] eventIds, int days)
     {
-        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("o");
+        // Snap to midnight UTC so scans on the same day produce identical counts
+        var cutoff = DateTime.UtcNow.Date.AddDays(-days).ToString("o");
         var idFilter = eventIds.Length == 1
             ? $"EventID={eventIds[0]}"
             : $"({string.Join(" or ", eventIds.Select(e => $"EventID={e}"))})";
@@ -231,7 +232,7 @@ public class EventLogEngine : ICheckEngine
     private static string GetTopEventSources(string logName, int[] eventIds,
         int days, string payloadField, int topN)
     {
-        var cutoff = DateTime.UtcNow.AddDays(-days).ToString("o");
+        var cutoff = DateTime.UtcNow.Date.AddDays(-days).ToString("o");
         var idFilter = eventIds.Length == 1
             ? $"EventID={eventIds[0]}"
             : $"({string.Join(" or ", eventIds.Select(e => $"EventID={e}"))})";

@@ -198,11 +198,11 @@ var cliCode = GetArg(args, "--code");
 var cliApiUrl = GetArg(args, "--api-url");
 var forceReenroll = args.Contains("--reenroll", StringComparer.OrdinalIgnoreCase);
 
-// ── Patched binary: ALWAYS start clean ──
-// A patched .exe is meant to be dropped on any machine and just work.
-// Wipe any stale enrollment from a previous org/run so it re-enrolls
-// with the embedded code every time.
-if (EmbeddedConfig.IsPatched || forceReenroll)
+// ── Registry wipe: ONLY on explicit --reenroll ──
+// Patched binaries used to wipe unconditionally, destroying service
+// credentials on every NinjaOne execution. If already enrolled,
+// keep the registry — the service needs those credentials.
+if (forceReenroll)
 {
     try
     {
@@ -836,6 +836,23 @@ try
         }
     }
 
+    // ── Auto-install as service FIRST so credentials survive all subsequent steps ──
+    var serviceInstalled = ServiceInstaller.IsInstalled();
+    if (!scanMode && !serviceInstalled)
+    {
+        try
+        {
+            if (!silent) Console.WriteLine("\n  Installing Kryoss Agent as Windows Service...");
+            ServiceInstaller.Install();
+            serviceInstalled = true;
+            if (!silent) Console.WriteLine("  Agent will now run continuously with heartbeat every 15 min.");
+        }
+        catch (Exception svcEx)
+        {
+            if (verbose) Console.Error.WriteLine($"  [WARN] Auto-install service failed: {svcEx.Message}");
+        }
+    }
+
     // ── Trial mode: download report, open in browser, clean up ──
     if (trialMode && response is not null)
     {
@@ -936,29 +953,17 @@ try
     }
 
     var pendingCount = OfflineStore.LoadPending().Count;
-    if (pendingCount == 0)
+    if (pendingCount == 0 && !serviceInstalled)
     {
         AgentConfig.Wipe();
         if (verbose) Console.WriteLine("  [state] Registry wiped (stateless cycle complete)");
     }
     else if (verbose)
     {
-        Console.WriteLine($"  [state] Registry kept ({pendingCount} offline payloads pending)");
-    }
-
-    // Auto-install as service if not already installed (continuous monitoring)
-    if (!scanMode && !ServiceInstaller.IsInstalled())
-    {
-        try
-        {
-            if (!silent) Console.WriteLine("\n  Installing Kryoss Agent as Windows Service...");
-            ServiceInstaller.Install();
-            if (!silent) Console.WriteLine("  Agent will now run continuously with heartbeat every 15 min.");
-        }
-        catch (Exception svcEx)
-        {
-            if (verbose) Console.Error.WriteLine($"  [WARN] Auto-install service failed: {svcEx.Message}");
-        }
+        if (serviceInstalled)
+            Console.WriteLine("  [state] Registry kept (service installed — credentials needed)");
+        else
+            Console.WriteLine($"  [state] Registry kept ({pendingCount} offline payloads pending)");
     }
 
     Environment.Exit(0);

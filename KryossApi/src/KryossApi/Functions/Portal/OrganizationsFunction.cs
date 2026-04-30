@@ -91,19 +91,11 @@ public class OrganizationsFunction
             .Select(g => new { OrgId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.OrgId, x => x.Count);
 
-        var latestRunIdsForAvg = await _db.Database
-            .SqlQueryRaw<Guid>(@"
-                SELECT id AS [Value] FROM (
-                    SELECT id, ROW_NUMBER() OVER (PARTITION BY machine_id ORDER BY started_at DESC) AS rn
-                    FROM assessment_runs
-                ) r WHERE r.rn = 1")
-            .ToListAsync();
-
-        var avgScores = await _db.AssessmentRuns
+        var avgScores = await _db.Machines
             .AsNoTracking()
-            .Where(r => latestRunIdsForAvg.Contains(r.Id) && orgIds.Contains(r.OrganizationId) && r.GlobalScore != null)
-            .GroupBy(r => r.OrganizationId)
-            .Select(g => new { OrgId = g.Key, Avg = Math.Round(g.Average(r => (double)r.GlobalScore!.Value), 1) })
+            .Where(m => orgIds.Contains(m.OrganizationId) && m.IsActive && m.LatestScore != null)
+            .GroupBy(m => m.OrganizationId)
+            .Select(g => new { OrgId = g.Key, Avg = Math.Round(g.Average(m => (double)m.LatestScore!.Value), 1) })
             .ToDictionaryAsync(x => x.OrgId, x => x.Avg);
 
         var items = orgs.Select(o => new

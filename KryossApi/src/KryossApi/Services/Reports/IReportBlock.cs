@@ -16,10 +16,17 @@ public enum ReportDataNeeds
     Network          = 1 << 9,
     Ctas             = 1 << 10,
     ServiceCatalog   = 1 << 11,
+    Cve              = 1 << 12,
+    Patch            = 1 << 13,
+    ExternalScan     = 1 << 14,
+    DcHealth         = 1 << 15,
+    Wan              = 1 << 16,
+    Remediation      = 1 << 17,
 
     EndpointCore = Runs | ControlResults | FrameworkScores,
     All = Runs | ControlResults | FrameworkScores | Enrichment | PreviousScore
         | ScoreHistory | Hygiene | M365 | Cloud | Network | Ctas | ServiceCatalog
+        | Cve | Patch | ExternalScan | DcHealth | Wan | Remediation
 }
 
 public interface IReportBlock

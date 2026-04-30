@@ -18,8 +18,8 @@ public class RemediationTask
     public long Id { get; set; }
     public Guid OrganizationId { get; set; }
     public Guid MachineId { get; set; }
-    public int ControlDefId { get; set; }
-    public int ActionId { get; set; }
+    public int? ControlDefId { get; set; }
+    public int? ActionId { get; set; }
     public string ActionType { get; set; } = null!;
     public string? Params { get; set; }
     public string Status { get; set; } = "pending";
@@ -37,8 +37,8 @@ public class RemediationTask
 
     public Organization Organization { get; set; } = null!;
     public Machine Machine { get; set; } = null!;
-    public ControlDef ControlDef { get; set; } = null!;
-    public RemediationAction Action { get; set; } = null!;
+    public ControlDef? ControlDef { get; set; }
+    public RemediationAction? Action { get; set; }
 }
 
 public class OrgAutoRemediate

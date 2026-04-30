@@ -193,21 +193,28 @@ public static class SnmpScanner
     }
 
     public static async Task<SnmpScanResult> ScanAsync(
-        SnmpCredentials creds, List<string> targets, bool verbose = false)
+        SnmpCredentials creds, List<string> targets, bool verbose = false, CancellationToken ct = default)
     {
         var result = new SnmpScanResult();
         var semaphore = new SemaphoreSlim(10);
 
         var tasks = targets.Select(async ip =>
         {
-            await semaphore.WaitAsync();
+            await semaphore.WaitAsync(ct);
             try
             {
+                using var deviceCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                deviceCts.CancelAfter(TimeSpan.FromSeconds(60));
                 var device = await ScanDeviceAsync(ip, creds, verbose);
                 if (device != null)
                     lock (result.Devices) result.Devices.Add(device);
                 else
                     lock (result.Unreachable) result.Unreachable.Add(ip);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                if (verbose) Console.Error.WriteLine($"  [SNMP] {ip}: timeout after 60s");
+                lock (result.Unreachable) result.Unreachable.Add(ip);
             }
             finally { semaphore.Release(); }
         });

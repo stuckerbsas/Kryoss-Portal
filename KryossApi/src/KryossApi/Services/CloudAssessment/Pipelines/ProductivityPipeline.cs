@@ -48,7 +48,7 @@ public static class ProductivityPipeline
         ILogger log,
         CancellationToken ct)
     {
-        var result = new PipelineResult { PipelineName = "productivity", Status = "ok" };
+        var result = new PipelineResult { PipelineName = "productivity", Status = "ok", Insights = ins };
         var err = new CollectorErrorTracker();
 
         try

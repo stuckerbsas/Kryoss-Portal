@@ -105,11 +105,12 @@ KryossAgent/
 10. Server responds with score/grade → printed to console
 11. Write `lastrun.txt`, run network scan (unless `--alone`/`--silent`), wipe registry
 
-**Service mode (ServiceWorker v3 — 5 parallel loops):**
+**Service mode (ServiceWorker v4 — 6 parallel loops):**
 1. Apply staged update, initialize `AgentLogger`, start passive discovery
-2. `Task.WhenAll` launches 5 independent loops (staggered startup: 0/5/30/60/90s):
+2. `Task.WhenAll` launches 6 independent loops (staggered startup: 0/5/10/30/60/90s):
    - **SelfUpdateLoop** (6h interval, 5min timeout): check blob storage for newer version
-   - **HeartbeatLoop** (15min interval, 30s timeout): POST /v1/heartbeat, drain error queue (max 20), process config/forceScan/pendingTasks
+   - **HeartbeatLoop** (15min interval, 30s timeout): POST /v1/heartbeat, drain error queue (max 20), enqueue pendingTasks to remediation queue, distribute config/forceScan/version flags. Pure dispatcher — never executes heavy work.
+   - **RemediationLoop** (queue-driven, 5s poll, 2h batch timeout): dequeues from `ConcurrentQueue<PendingRemediationTask>`, executes via `RemediationExecutor`, reports results. Dedup by TaskId. Feature flag `KRYOSS_INLINE_REMEDIATION=true` reverts to old inline behavior.
    - **ComplianceLoop** (configurable, default 24h, 30min timeout): full compliance scan via `ScanCycle`
    - **SnmpLoop** (configurable, default 4h, 15min timeout): NetworkDiagnostics + SNMP scan + passive IPs
    - **NetworkScanLoop** (configurable, default disabled, 20min timeout): discovery + ports + AD hygiene
@@ -287,6 +288,44 @@ Exit codes: `0` = success, `1` = fatal error, `2` = warning/upload-deferred, `99
 
 ## Changelog
 
+### [2.14.1] - 2026-04-29
+- **Fixed:** Enrollment retry for mass deployment — replaced weak 3-attempt/2-8s backoff with 5-retry exponential backoff + random jitter (30-900s range). Handles 429, 503, 5xx, and network timeouts. Respects `Retry-After` header. Prevents thundering herd when deploying 50+ machines simultaneously via NinjaOne.
+- **Files:** `ApiClient.cs`
+
+### [2.14.0] - 2026-04-29
+- **Added:** WindowsUpdateCollector (WUC-01/03) — enumerates available (pending) Windows Updates via WUA COM on dedicated STA thread. Collects KB number, title, severity, classification, isMandatory, maxDownloadSize, releaseDate, supportUrl per update. Runs during compliance scan cycle (24h + forceScan). 10min timeout. Kill switch: `KRYOSS_DISABLE_WU_COLLECTOR`. Results submitted to `POST /v1/available-updates` after scan upload. Empty list sent even when no updates (clears stale pending on server).
+- **Files:** `WindowsUpdateCollector.cs` (new), `ScanCycle.cs`, `ServiceWorker.cs`, `ApiClient.cs`, `JsonContext.cs`
+
+### [2.13.2] - 2026-04-29
+- **Added:** System Restore Point creation before Windows Update execution (WU-RP-01). WMI `root\default:SystemRestore.CreateRestorePoint` on same STA thread. Checks System Protection enabled via registry, bypasses 24h frequency limit temporarily, restores original value. Best-effort — failure never blocks WU. Kill switch: `KRYOSS_SKIP_RESTORE_POINT=true`. Result includes `restorePointCreated`/`restorePointName` in both `NewValue` JSON and `TaskResultPayload`.
+- **Files:** `WindowsUpdateExecutor.cs`, `RemediationModels.cs`
+
+### [2.13.1] - 2026-04-29
+- **Added:** Windows Update handler wired into RemediationExecutor — `windows_update` action routes to `WindowsUpdateExecutor.ExecuteAsync` on dedicated STA thread with CancellationToken propagation. CancellationToken added to `ExecuteTasksAsync` signature, passed from RemediationLoop's 2h timeout CTS.
+- **Files:** `RemediationExecutor.cs`, `ServiceWorker.cs`
+
+### [2.13.0] - 2026-04-29
+- **Changed:** Heartbeat refactored to pure dispatcher — remediation tasks no longer execute inline. HeartbeatLoop enqueues to `ConcurrentQueue<PendingRemediationTask>`, new RemediationLoop (Loop 6) dequeues and executes with 2h per-batch timeout. Dedup by TaskId via `ConcurrentDictionary`. Feature flag `KRYOSS_INLINE_REMEDIATION=true` reverts to old inline behavior. `PendingRemediationTask.ControlDefId` changed to `int?` (server now sends nullable for operational tasks like `windows_update`).
+- **Files:** `ServiceWorker.cs`, `RemediationModels.cs`
+
+### [2.12.0] - 2026-04-29
+- **Added:** Version handshake in heartbeat (AU-01) — parses `latestAgentVersion`, `minAgentVersion`, `apiVersion`, `modeDev` from heartbeat response. Sets `_updateAvailable` / `_updateMandatory` flags. No download/swap inside heartbeat.
+- **Added:** Dev-mode immediate updater trigger (AU-02) — `SelfUpdateLoop` uses interruptible `Task.Delay` via `CancellationTokenSource`. Heartbeat signals wake when `modeDev=true` + update available. `SemaphoreSlim` prevents concurrent updater runs.
+- **Added:** Smart updater skip (AU-03) — `SelfUpdateLoop` skips `CheckAndUpdateAsync` when heartbeat reports no update needed. Mandatory updates override. First boot (no heartbeat yet) runs normally.
+- **Files:** `ServiceWorker.cs`, `RemediationModels.cs`
+
+### [2.11.4] - 2026-04-29
+- **Fixed:** RemediationExecutor used reflection-based `JsonSerializer.Deserialize<T>()` — crashes on trimmed binary. All deserialization now uses source-gen `KryossJsonContext.Default.*`. Anonymous object serialization replaced with manual JSON builders. Added `RegistryParams`, `ServiceParams`, `ServiceStartupParams`, `AuditPolicyParams` to `JsonContext`.
+- **Files:** `RemediationExecutor.cs`, `JsonContext.cs`
+
+### [2.11.3] - 2026-04-29
+- **Fixed:** Event log counts (event_count + event_top_sources) used rolling `DateTime.UtcNow` cutoff — scans minutes apart got different counts for same events. Now snaps cutoff to midnight UTC so all scans on same day produce identical results.
+- **Files:** `EventLogEngine.cs`
+
+### [2.11.2] - 2026-04-28
+- **Fixed:** Compliance scan loop — scan failure (success=false) had no cooldown, retrying every 1 min indefinitely. Added 30-min cooldown matching timeout/exception behavior. Also persists `_lastComplianceScan` to `C:\ProgramData\Kryoss\last_compliance.txt` so it survives service restarts — prevents immediate re-scan on restart.
+- **Files:** `ServiceWorker.cs`
+
 ### [2.11.1] - 2026-04-28
 - **Fixed:** Heartbeat error response body now logged — on HTTP 500, agent reads and logs full response body for server-side error diagnosis.
 - **Files:** `ApiClient.cs`
@@ -303,3 +342,55 @@ Exit codes: `0` = success, `1` = fatal error, `2` = warning/upload-deferred, `99
 ### [2.10.1] - 2026-04-28
 - **Fixed:** Serial number reading `SystemSKU` instead of `SystemSerialNumber` from BIOS registry key.
 - **Files:** `PlatformDetector.cs`
+
+---
+
+## Coding Principles
+
+### 1. Think Before Coding
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+- Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.

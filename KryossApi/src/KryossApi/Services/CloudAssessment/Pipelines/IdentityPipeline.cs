@@ -58,6 +58,7 @@ public static class IdentityPipeline
             if (graphBetaHttp is not null)
             {
                 tasks.Add(CollectGsa(graphBetaHttp, insights, errorTracker, log, ct));
+                tasks.Add(CollectDeviceRegistrationPolicy(graphBetaHttp, insights, errorTracker, log, ct));
             }
 
             await Task.WhenAll(tasks);
@@ -110,6 +111,13 @@ public static class IdentityPipeline
             m["spn_creds_older_2y"] = insights.ServicePrincipalCredentialsOlderThan2Years.ToString(CultureInfo.InvariantCulture);
             m["oauth_grants_all_users"] = insights.OAuthConsentGrantsToAllUsers.ToString(CultureInfo.InvariantCulture);
             m["admins_without_mfa"] = insights.AdminsWithoutMfa.ToString(CultureInfo.InvariantCulture);
+
+            m["sspr_enabled"] = insights.SsprEnabled ? "true" : "false";
+            m["sspr_registered_users"] = insights.SsprRegisteredUsers.ToString(CultureInfo.InvariantCulture);
+            m["sspr_registration_pct"] = insights.SsprRegistrationPct.ToString("F1", CultureInfo.InvariantCulture);
+            m["break_glass_accounts"] = insights.BreakGlassAccountCount.ToString(CultureInfo.InvariantCulture);
+            m["device_join_configured"] = insights.DeviceJoinConfigured ? "true" : "false";
+            m["device_join_scope"] = insights.DeviceJoinScope ?? "unknown";
 
             m["users_password_never_expires"] = insights.UsersPasswordNeverExpires.ToString(CultureInfo.InvariantCulture);
             m["users_created_30d"] = insights.UsersCreatedLast30d.ToString(CultureInfo.InvariantCulture);
@@ -290,6 +298,8 @@ public static class IdentityPipeline
             {
                 if (u.IsMfaRegistered == true) ins.MfaRegistered++;
                 if (u.IsMfaCapable == true) ins.MfaCapable++;
+                if (u.IsSsprRegistered == true) ins.SsprRegisteredUsers++;
+                if (u.IsSsprEnabled == true) ins.SsprEnabled = true;
 
                 var methods = u.MethodsRegistered;
                 if (methods is null) continue;
@@ -308,6 +318,7 @@ public static class IdentityPipeline
             {
                 ins.MfaRegistrationPct = ins.MfaRegistered * 100.0 / ins.TotalUsers;
                 ins.PasswordlessPct = ins.PasswordlessEnabled * 100.0 / ins.TotalUsers;
+                ins.SsprRegistrationPct = ins.SsprRegisteredUsers * 100.0 / ins.TotalUsers;
             }
         }
         catch (ODataError ex) when (ex.ResponseStatusCode is 403 or 401)
@@ -1193,7 +1204,18 @@ public static class IdentityPipeline
                         foreach (var member in membersResp.Value)
                         {
                             if (member is User user && !string.IsNullOrEmpty(user.Id))
+                            {
                                 adminUserIds.Add(user.Id);
+
+                                if (template == GlobalAdminRoleTemplateId)
+                                {
+                                    var dn = user.DisplayName?.ToLowerInvariant() ?? "";
+                                    var upn = user.UserPrincipalName?.ToLowerInvariant() ?? "";
+                                    if (dn.Contains("break") || dn.Contains("emergency") ||
+                                        upn.Contains("breakglass") || upn.Contains("emergency"))
+                                        ins.BreakGlassAccountCount++;
+                                }
+                            }
                         }
                     }
                 }
@@ -1234,6 +1256,52 @@ public static class IdentityPipeline
         {
             err.MarkError();
             log.LogWarning(ex, "Identity user hygiene collection failed");
+        }
+    }
+
+    // ================================================================
+    // 12. Device registration policy (Lighthouse: Entra device join)
+    // ================================================================
+    private static async Task CollectDeviceRegistrationPolicy(
+        HttpClient http, IdentityInsights ins,
+        CollectorErrorTracker err, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await http.GetAsync("/beta/policies/deviceRegistrationPolicy", ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                log.LogWarning("Device registration policy: {Code}", (int)resp.StatusCode);
+                return;
+            }
+            resp.EnsureSuccessStatusCode();
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("azureADJoin", out var joinSection))
+            {
+                ins.DeviceJoinConfigured = true;
+                if (joinSection.TryGetProperty("allowedToJoin", out var allowed))
+                {
+                    var type = allowed.TryGetProperty("@odata.type", out var t)
+                        ? t.GetString() ?? "" : "";
+                    if (type.Contains("allDeviceRegistrationMembership"))
+                        ins.DeviceJoinScope = "all";
+                    else if (type.Contains("noDeviceRegistrationMembership"))
+                        ins.DeviceJoinScope = "none";
+                    else
+                        ins.DeviceJoinScope = "selected";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            err.MarkError();
+            log.LogWarning(ex, "Device registration policy collection failed");
         }
     }
 }

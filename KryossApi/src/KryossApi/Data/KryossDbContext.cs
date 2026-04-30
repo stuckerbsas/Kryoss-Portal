@@ -148,6 +148,9 @@ public class KryossDbContext : DbContext
     public DbSet<MachinePatchStatus> MachinePatchStatuses => Set<MachinePatchStatus>();
     public DbSet<MachinePatch> MachinePatches => Set<MachinePatch>();
 
+    // Available Updates (WUC-02)
+    public DbSet<MachineAvailableUpdate> MachineAvailableUpdates => Set<MachineAvailableUpdate>();
+
     // DC Health (DC-02+03)
     public DbSet<DcHealthSnapshot> DcHealthSnapshots => Set<DcHealthSnapshot>();
     public DbSet<DcReplicationPartner> DcReplicationPartners => Set<DcReplicationPartner>();
@@ -1607,6 +1610,18 @@ public class KryossDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
             e.HasOne(x => x.Software).WithMany().HasForeignKey(x => x.SoftwareId);
+        });
+
+        // ── Available Updates (WUC-02) ──
+        mb.Entity<MachineAvailableUpdate>(e =>
+        {
+            e.ToTable("machine_available_updates");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Machine).WithMany().HasForeignKey(x => x.MachineId);
+            e.HasOne(x => x.Organization).WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasIndex(x => new { x.MachineId, x.IsPending });
+            e.HasIndex(x => x.KbNumber);
+            e.HasIndex(x => new { x.OrganizationId, x.IsPending });
         });
     }
 }

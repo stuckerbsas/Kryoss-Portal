@@ -102,7 +102,7 @@ public class AlertService : IAlertService
             var summary = BuildSummary(rule, org.Name, scan.OverallScore, previousScan?.OverallScore);
             var severity = rule.RuleType is "new_critical" or "score_drop" ? "high" : "medium";
 
-            alerts.Add(new CloudAssessmentAlertSent
+            var alert = new CloudAssessmentAlertSent
             {
                 ScanId = scanId,
                 RuleId = rule.Id,
@@ -110,23 +110,30 @@ public class AlertService : IAlertService
                 Severity = severity,
                 RuleType = rule.RuleType,
                 Summary = summary,
-                PayloadJson = JsonSerializer.Serialize(new
-                {
-                    orgName = org.Name,
-                    scanId,
-                    overallScore = scan.OverallScore,
-                    previousScore = previousScan?.OverallScore,
-                    ruleType = rule.RuleType,
-                    threshold = rule.Threshold
-                }),
                 DeliveryStatus = "pending",
                 FiredAt = DateTime.UtcNow
-            });
+            };
+            alerts.Add(alert);
         }
 
         if (alerts.Count == 0) return;
 
         _db.CloudAssessmentAlertsSent.AddRange(alerts);
+        await _db.SaveChangesAsync(ct);
+
+        foreach (var a in alerts)
+        {
+            var rule = rules.First(r => r.Id == a.RuleId);
+            _db.AlertPayloadFields.AddRange(new[]
+            {
+                new AlertPayloadField { AlertId = a.Id, FieldName = "orgName", FieldValue = org.Name },
+                new AlertPayloadField { AlertId = a.Id, FieldName = "scanId", FieldValue = scanId.ToString() },
+                new AlertPayloadField { AlertId = a.Id, FieldName = "overallScore", FieldValue = scan.OverallScore?.ToString() },
+                new AlertPayloadField { AlertId = a.Id, FieldName = "previousScore", FieldValue = previousScan?.OverallScore?.ToString() },
+                new AlertPayloadField { AlertId = a.Id, FieldName = "ruleType", FieldValue = rule.RuleType },
+                new AlertPayloadField { AlertId = a.Id, FieldName = "threshold", FieldValue = rule.Threshold?.ToString() },
+            });
+        }
         await _db.SaveChangesAsync(ct);
 
         foreach (var alert in alerts)

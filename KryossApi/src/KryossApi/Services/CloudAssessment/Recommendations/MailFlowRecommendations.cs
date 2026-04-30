@@ -40,6 +40,7 @@ public static class MailFlowRecommendations
         all.AddRange(GenerateForwardingFindings(ins));
         all.AddRange(GenerateSharedMailboxFindings(ins));
         all.AddRange(GenerateConsentFinding(ins));
+        all.AddRange(GenerateExchangeFindings(ins));
 
         return all;
     }
@@ -278,6 +279,60 @@ public static class MailFlowRecommendations
                 observation: "Forwarding-rule inspection skipped — Graph returned 403 on mailFolders/inbox/messageRules.",
                 recommendation: "Grant 'MailboxSettings.Read' (or 'Mail.Read') application permission in the consent flow and re-scan.",
                 linkText: "Graph permissions", linkUrl: "https://learn.microsoft.com/graph/permissions-reference#mailboxsettings-permissions"));
+        }
+
+        return list;
+    }
+
+    private const string AuditLogLink = "https://learn.microsoft.com/purview/audit-log-enable-disable";
+    private const string SafeAttachLink = "https://learn.microsoft.com/defender-office-365/safe-attachments-about";
+    private const string EopLink = "https://learn.microsoft.com/defender-office-365/preset-security-policies";
+
+    private static List<RecommendationResult> GenerateExchangeFindings(MailFlowInsights ins)
+    {
+        var list = new List<RecommendationResult>();
+        if (!ins.ExchangeAvailable) return list;
+
+        if (!ins.UnifiedAuditLogEnabled)
+        {
+            list.Add(RecommendationResult.ActionRequired(MailFlowSvc, "Unified Audit Logs", "high",
+                observation: "Unified audit log ingestion is disabled. Microsoft 365 audit events are not being recorded.",
+                recommendation: "Enable unified audit log ingestion in the compliance portal or via Exchange PowerShell (Set-AdminAuditLogConfig -UnifiedAuditLogIngestionEnabled $true).",
+                linkText: "Enable audit logging", linkUrl: AuditLogLink));
+        }
+        else
+        {
+            list.Add(RecommendationResult.Success(MailFlowSvc, "Unified Audit Logs",
+                observation: "Unified audit log ingestion is enabled.",
+                linkText: "Audit logging", linkUrl: AuditLogLink));
+        }
+
+        if (!ins.HasSafeAttachmentPolicy)
+        {
+            list.Add(RecommendationResult.ActionRequired(MailFlowSvc, "Safe Attachments", "medium",
+                observation: "No Safe Attachments policies are configured. Email attachments are not scanned for malware in a sandbox.",
+                recommendation: "Configure a Safe Attachments policy in Microsoft Defender for Office 365 to scan inbound attachments.",
+                linkText: "Safe Attachments", linkUrl: SafeAttachLink));
+        }
+        else
+        {
+            list.Add(RecommendationResult.Success(MailFlowSvc, "Safe Attachments",
+                observation: $"{ins.SafeAttachmentPolicyCount} Safe Attachments policy(ies) configured.",
+                linkText: "Safe Attachments", linkUrl: SafeAttachLink));
+        }
+
+        if (!ins.HasEopStandardProtection)
+        {
+            list.Add(RecommendationResult.ActionRequired(MailFlowSvc, "EOP Standard Protection", "medium",
+                observation: "EOP/MDO Standard preset protection policy is not active. Basic email protection may not be enforced consistently.",
+                recommendation: "Enable the Standard preset security policy in Microsoft Defender for Office 365 portal.",
+                linkText: "Preset security policies", linkUrl: EopLink));
+        }
+        else
+        {
+            list.Add(RecommendationResult.Success(MailFlowSvc, "EOP Standard Protection",
+                observation: $"EOP preset protection active — Standard: yes, Strict: {(ins.HasEopStrictProtection ? "yes" : "no")}.",
+                linkText: "Preset security policies", linkUrl: EopLink));
         }
 
         return list;

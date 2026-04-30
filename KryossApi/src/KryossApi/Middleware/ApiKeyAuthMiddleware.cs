@@ -259,15 +259,41 @@ public class ApiKeyAuthMiddleware : IFunctionsWorkerMiddleware
         {
             currentUser.OrganizationId = org.Id;
             currentUser.FranchiseId = org.FranchiseId;
-            currentUser.IpAddress =
+            var resolvedIp =
                 (httpReq.Headers.TryGetValues("X-Forwarded-For", out var fwdValues) ? fwdValues.FirstOrDefault() : null)
                 ?? (httpReq.Headers.TryGetValues("X-Azure-ClientIP", out var azValues) ? azValues.FirstOrDefault() : null)
                 ?? (httpReq.Headers.TryGetValues("X-Client-IP", out var cliValues) ? cliValues.FirstOrDefault() : null);
-            logger.LogInformation("IP resolution: XFF={Xff} AzureClientIP={AzCli} XClientIP={XCli} → resolved={Ip}",
-                httpReq.Headers.TryGetValues("X-Forwarded-For", out var xff2) ? xff2.FirstOrDefault() : "(none)",
-                httpReq.Headers.TryGetValues("X-Azure-ClientIP", out var az2) ? az2.FirstOrDefault() : "(none)",
-                httpReq.Headers.TryGetValues("X-Client-IP", out var cli2) ? cli2.FirstOrDefault() : "(none)",
-                currentUser.IpAddress ?? "(null)");
+
+            // ASP.NET Core integration fallback: HttpContext.Connection has the real remote IP
+            if (string.IsNullOrEmpty(resolvedIp))
+            {
+                var httpContext = context.GetHttpContext();
+                resolvedIp = httpContext?.Connection.RemoteIpAddress?.MapToIPv4().ToString();
+            }
+
+            // X-Forwarded-For can contain "client, proxy1, proxy2" — take first
+            if (!string.IsNullOrEmpty(resolvedIp) && resolvedIp.Contains(','))
+                resolvedIp = resolvedIp.Split(',')[0].Trim();
+
+            currentUser.IpAddress = resolvedIp;
+            logger.LogInformation("IP resolved={Ip}", currentUser.IpAddress ?? "(null)");
+
+            // Resolve machine identity for actlog tracking
+            var agentIdForIdentity = httpReq.Headers.TryGetValues("X-Agent-Id", out var aidIdentityVals)
+                ? aidIdentityVals.FirstOrDefault() : null;
+            if (!string.IsNullOrEmpty(agentIdForIdentity) && Guid.TryParse(agentIdForIdentity, out var machineIdGuid))
+            {
+                var machineIdentity = await db.Machines
+                    .IgnoreQueryFilters()
+                    .Where(m => m.AgentId == machineIdGuid && m.OrganizationId == org.Id && m.DeletedAt == null)
+                    .Select(m => new { m.Id, m.Hostname })
+                    .FirstOrDefaultAsync();
+                if (machineIdentity is not null)
+                {
+                    currentUser.MachineId = machineIdentity.Id;
+                    currentUser.MachineHostname = machineIdentity.Hostname;
+                }
+            }
         }
 
         await next(context);

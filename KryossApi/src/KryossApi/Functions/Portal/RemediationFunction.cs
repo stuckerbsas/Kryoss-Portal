@@ -7,6 +7,7 @@ using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KryossApi.Functions.Portal;
 
@@ -21,17 +22,39 @@ public class RemediationFunction
         @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\",
     };
 
+    private static readonly HashSet<string> OperationalActionTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "windows_update",
+    };
+
+    private static readonly HashSet<string> AllowedWuParamKeys = new(StringComparer.Ordinal)
+    {
+        "mode", "reboot", "deadlineUtc",
+    };
+
+    private static readonly HashSet<string> AllowedWuModes = new(StringComparer.Ordinal)
+    {
+        "security_only", "all",
+    };
+
+    private static readonly HashSet<string> AllowedWuReboot = new(StringComparer.Ordinal)
+    {
+        "none", "if_required", "force",
+    };
+
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
     private readonly IActlogService _actlog;
     private readonly IRemediationLogService _remLog;
+    private readonly ILogger<RemediationFunction> _logger;
 
-    public RemediationFunction(KryossDbContext db, ICurrentUserService user, IActlogService actlog, IRemediationLogService remLog)
+    public RemediationFunction(KryossDbContext db, ICurrentUserService user, IActlogService actlog, IRemediationLogService remLog, ILogger<RemediationFunction> logger)
     {
         _db = db;
         _actlog = actlog;
         _user = user;
         _remLog = remLog;
+        _logger = logger;
     }
 
     [Function("Remediation_CreateTask")]
@@ -39,13 +62,35 @@ public class RemediationFunction
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/remediation/tasks")] HttpRequestData req)
     {
         var body = await req.ReadFromJsonAsync<CreateRemediationTaskRequest>();
-        if (body is null || body.MachineId == Guid.Empty || body.ControlDefId == 0)
+        if (body is null || body.MachineId == Guid.Empty)
         {
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteAsJsonAsync(new { error = "machineId and controlDefId required" });
+            await bad.WriteAsJsonAsync(new { error = "machineId required" });
             return bad;
         }
 
+        var machine = await _db.Machines.FirstOrDefaultAsync(m => m.Id == body.MachineId);
+        if (machine is null)
+            return req.CreateResponse(HttpStatusCode.NotFound);
+
+        bool isOperational = !string.IsNullOrEmpty(body.ActionType)
+            && OperationalActionTypes.Contains(body.ActionType);
+
+        if (!isOperational && body.ControlDefId == 0)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "controlDefId required (or pass actionType for operational tasks)" });
+            return bad;
+        }
+
+        // Operational task path (windows_update, etc.)
+        if (isOperational)
+        {
+            var result = await CreateOperationalTask(req, body, machine);
+            return result;
+        }
+
+        // Control-based task path (existing logic)
         var action = await _db.RemediationActions
             .FirstOrDefaultAsync(a => a.ControlDefId == body.ControlDefId && a.IsActive);
         if (action is null)
@@ -55,7 +100,6 @@ public class RemediationFunction
             return notFound;
         }
 
-        // Reconstruct params template from normalized table
         string? actionParamsJson = null;
         if (body.Params is null)
         {
@@ -82,20 +126,16 @@ public class RemediationFunction
                         if (!AllowedRegistryPrefixes.Any(p => normalized.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
                         {
                             try { await _actlog.LogAsync("WARN", "remediation", "path_rejected",
-                                message: $"Registry path rejected: {regPath}"); } catch { }
+                                message: $"Registry path rejected: {regPath}"); } catch (Exception ex) { _logger.LogWarning(ex, "Actlog write failed for path_rejected"); }
                             var forbidden = req.CreateResponse(HttpStatusCode.BadRequest);
                             await forbidden.WriteAsJsonAsync(new { error = "Registry path not in allowed prefixes" });
                             return forbidden;
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to parse registry params for validation"); }
             }
         }
-
-        var machine = await _db.Machines.FirstOrDefaultAsync(m => m.Id == body.MachineId);
-        if (machine is null)
-            return req.CreateResponse(HttpStatusCode.NotFound);
 
         if (action.ActionType is "enable_service" or "disable_service" or "restart_service"
             or "stop_service" or "set_service_startup")
@@ -110,7 +150,7 @@ public class RemediationFunction
                     if (svcJson.TryGetProperty("serviceName", out var sn) || svcJson.TryGetProperty("ServiceName", out sn))
                         serviceName = sn.GetString();
                 }
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "Failed to parse service params"); }
             }
 
             if (!string.IsNullOrEmpty(serviceName))
@@ -169,7 +209,7 @@ public class RemediationFunction
                 "created", task.ActionType, task.ControlDefId,
                 paramsJson: task.Params, actorId: _user.UserId, ipAddress: _user.IpAddress);
         }
-        catch { }
+        catch (Exception ex) { _logger.LogWarning(ex, "Remediation log write failed"); }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new
@@ -185,6 +225,122 @@ public class RemediationFunction
             description = action.Description,
         });
         return response;
+    }
+
+    private async Task<HttpResponseData> CreateOperationalTask(
+        HttpRequestData req, CreateRemediationTaskRequest body, Data.Entities.Machine machine)
+    {
+        if (body.ActionType == "windows_update")
+        {
+            if (Environment.GetEnvironmentVariable("ENABLE_WINDOWS_UPDATE_REMEDIATION") != "true")
+            {
+                var off = req.CreateResponse(HttpStatusCode.BadRequest);
+                await off.WriteAsJsonAsync(new { error = "windows_update remediation is not enabled" });
+                return off;
+            }
+
+            var wuParams = new Dictionary<string, string>();
+
+            if (!string.IsNullOrEmpty(body.Params))
+            {
+                try
+                {
+                    var raw = JsonSerializer.Deserialize<JsonElement>(body.Params);
+                    if (raw.ValueKind != JsonValueKind.Object)
+                    {
+                        var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                        await bad.WriteAsJsonAsync(new { error = "params must be a JSON object" });
+                        return bad;
+                    }
+
+                    foreach (var prop in raw.EnumerateObject())
+                    {
+                        if (!AllowedWuParamKeys.Contains(prop.Name))
+                        {
+                            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                            await bad.WriteAsJsonAsync(new { error = $"Unknown param key '{prop.Name}'. Allowed: mode, reboot, deadlineUtc" });
+                            return bad;
+                        }
+                        wuParams[prop.Name] = prop.Value.GetString() ?? "";
+                    }
+                }
+                catch (JsonException)
+                {
+                    var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                    await bad.WriteAsJsonAsync(new { error = "Invalid JSON in params" });
+                    return bad;
+                }
+            }
+
+            if (!wuParams.ContainsKey("mode"))
+                wuParams["mode"] = "security_only";
+            if (!wuParams.ContainsKey("reboot"))
+                wuParams["reboot"] = "if_required";
+
+            if (!AllowedWuModes.Contains(wuParams["mode"]))
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = $"Invalid mode '{wuParams["mode"]}'. Allowed: security_only, all" });
+                return bad;
+            }
+
+            if (!AllowedWuReboot.Contains(wuParams["reboot"]))
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteAsJsonAsync(new { error = $"Invalid reboot '{wuParams["reboot"]}'. Allowed: none, if_required, force" });
+                return bad;
+            }
+
+            if (wuParams.TryGetValue("deadlineUtc", out var deadline))
+            {
+                if (!DateTime.TryParse(deadline, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt)
+                    || dt.Kind != DateTimeKind.Utc)
+                {
+                    var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                    await bad.WriteAsJsonAsync(new { error = "deadlineUtc must be ISO 8601 UTC (e.g. 2026-05-01T03:00:00Z)" });
+                    return bad;
+                }
+            }
+
+            var finalParams = JsonSerializer.Serialize(wuParams);
+
+            var task = new RemediationTask
+            {
+                OrganizationId = machine.OrganizationId,
+                MachineId = body.MachineId,
+                ActionType = "windows_update",
+                Params = finalParams,
+                Status = "approved",
+                ScheduledFor = body.ScheduledFor,
+                CreatedBy = _user.UserId,
+                ApprovedBy = _user.UserId,
+                ApprovedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _db.RemediationTasks.Add(task);
+            await _db.SaveChangesAsync();
+
+            try
+            {
+                await _remLog.LogAsync(task.Id, task.MachineId, task.OrganizationId,
+                    "created", task.ActionType, controlDefId: null,
+                    paramsJson: finalParams, actorId: _user.UserId, ipAddress: _user.IpAddress);
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "Remediation log write failed"); }
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(new
+            {
+                task.Id, task.MachineId, task.ActionType,
+                task.Params, task.Status, task.ScheduledFor,
+                riskLevel = "high",
+            });
+            return response;
+        }
+
+        var unsupported = req.CreateResponse(HttpStatusCode.BadRequest);
+        await unsupported.WriteAsJsonAsync(new { error = $"Unsupported operational actionType '{body.ActionType}'" });
+        return unsupported;
     }
 
     [Function("Remediation_ListTasks")]
@@ -215,8 +371,8 @@ public class RemediationFunction
                 t.Id,
                 t.MachineId,
                 t.ControlDefId,
-                controlId = t.ControlDef.ControlId,
-                controlName = t.ControlDef.Name,
+                controlId = t.ControlDef != null ? t.ControlDef.ControlId : (string?)null,
+                controlName = t.ControlDef != null ? t.ControlDef.Name : (string?)null,
                 t.ActionType,
                 t.Status,
                 t.PreviousValue,
@@ -253,6 +409,13 @@ public class RemediationFunction
             return bad;
         }
 
+        if (OperationalActionTypes.Contains(original.ActionType))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteAsJsonAsync(new { error = "Operational tasks (windows_update) cannot be rolled back" });
+            return bad;
+        }
+
         var rollbackTask = new RemediationTask
         {
             OrganizationId = original.OrganizationId,
@@ -281,7 +444,7 @@ public class RemediationFunction
                 "rolled_back", original.ActionType, original.ControlDefId,
                 actorId: _user.UserId, ipAddress: _user.IpAddress);
         }
-        catch { }
+        catch (Exception ex) { _logger.LogWarning(ex, "Remediation log write failed"); }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { rollbackTaskId = rollbackTask.Id, originalTaskId = taskId });
@@ -333,8 +496,8 @@ public class RemediationFunction
                 t.Id,
                 t.MachineId,
                 hostname = t.Machine.Hostname,
-                controlId = t.ControlDef.ControlId,
-                controlName = t.ControlDef.Name,
+                controlId = t.ControlDef != null ? t.ControlDef.ControlId : (string?)null,
+                controlName = t.ControlDef != null ? t.ControlDef.Name : (string?)null,
                 t.ActionType,
                 t.Status,
                 t.CreatedBy,
@@ -380,7 +543,7 @@ public class RemediationFunction
                 "rescheduled", task.ActionType, task.ControlDefId,
                 actorId: _user.UserId, ipAddress: _user.IpAddress);
         }
-        catch { }
+        catch (Exception ex) { _logger.LogWarning(ex, "Remediation log write failed"); }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { task.Id, task.ScheduledFor, task.Status });
@@ -416,6 +579,7 @@ internal class CreateRemediationTaskRequest
 {
     public Guid MachineId { get; set; }
     public int ControlDefId { get; set; }
+    public string? ActionType { get; set; }
     public string? Params { get; set; }
     public DateTime? ScheduledFor { get; set; }
 }

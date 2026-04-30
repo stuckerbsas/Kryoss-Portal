@@ -47,7 +47,8 @@ public class AssessmentRun
     public int? DurationMs { get; set; }
     public DateTime StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
-    public string? RawPayload { get; set; } // full agent JSON
+    public string? RawPayload { get; set; } // full agent JSON (null after blob offload)
+    public string? RawPayloadBlobUrl { get; set; } // blob storage path after offload
 
     // Navigation
     public Organization Organization { get; set; } = null!;

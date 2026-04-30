@@ -13,12 +13,12 @@
 
 | Component | Version | Key Metric |
 |-----------|---------|------------|
-| API | 1.32.0 | 163 endpoints, 41 report blocks, 16 recipes, 7 CA pipelines |
-| Agent | 2.9.1 | 13 engines, 22 services, 918 controls (827 active), zero Process.Start |
-| Portal | 1.18.0 | 8 pages, 18 org tabs, 7 CA tabs, 20 API modules |
-| DB | 81 migrations | 154+ tables, 24 seed files |
+| API | 1.34.3 | 163 endpoints, 41 report blocks, 16 recipes, 7 CA pipelines, ~42 feature inventory entries |
+| Agent | 2.10.0 | 13 engines, 22 services, 918 controls (827 active), zero Process.Start |
+| Portal | 1.18.3 | 8 pages, 18 org tabs, 7 CA tabs, 20 API modules |
+| DB | 84 migrations | 154+ tables, 24 seed files |
 
-**Last session (2026-04-28):** DB nuclear wipe (fresh start) + 3 new report blocks (DcHealth, WanHealth, RemediationStatus). RP-RECIPE-OVERHAUL 6/9 done.
+**Last session (2026-04-28):** CA-LH Lighthouse baseline gap closure (15 new checks), CA-EXO Exchange Online REST API (3 InvokeCommand checks), CA-TIER license tier detection (22 features), PBI consent re-enabled, Feature Inventory ~42 entries with `licenseTier`.
 
 **In progress:** Nothing.
 
@@ -62,7 +62,7 @@
 |-------|-------|---------|
 | v1 (10 items) | IA-0, IA-11, CA-13, CA-14, IA-1, IA-2 P1, CA-15, A-SVC, A-NET, RP-EXPANSION | All shipped 2026-04-26 |
 | v2 (10 items) | SH-02, SH-BATCH, IA-3, A-01, A-02, DC-02+03, SEC-REM-FW, Ookla speed test | 8/10 shipped. CA-16A suspended, CA-17+SH-HARDEN pending |
-| v3 (16 items) | GAP-VUL, RP-RECIPE-OVERHAUL partial, SEC-REM-FW | 3/16 shipped. 13 remaining |
+| v3 (16 items) | GAP-VUL, RP-RECIPE-OVERHAUL partial, SEC-REM-FW, CA-LH, CA-EXO, CA-TIER | 6/16 shipped. 10 remaining |
 
 ---
 

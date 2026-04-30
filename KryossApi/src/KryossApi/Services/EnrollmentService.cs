@@ -96,9 +96,8 @@ public class EnrollmentService : IEnrollmentService
         Guid agentId;
         if (machine is not null)
         {
-            // Re-enrollment: reuse machine, generate new credentials
-            agentId = Guid.NewGuid();
-            machine.AgentId = agentId;
+            // Re-enrollment: keep existing AgentId (avoids desync if SaveChanges fails)
+            agentId = machine.AgentId;
             machine.OsName = os;
             machine.OsVersion = osVersion;
             machine.OsBuild = osBuild;
@@ -138,13 +137,18 @@ public class EnrollmentService : IEnrollmentService
             machine.TrialExpiresAt = DateTime.UtcNow.AddDays(enrollment.TrialDays ?? 30);
         }
 
-        // Generate per-machine auth keys
-        var (machineSecret, sessionKey, expiresAt) = _keyRotation.GenerateInitialKeys();
-        machine.MachineSecret = machineSecret;
-        machine.SessionKey = sessionKey;
-        machine.SessionKeyExpiresAt = expiresAt;
-        machine.AuthVersion = 2;
-        machine.KeyRotatedAt = DateTime.UtcNow;
+        // Generate per-machine auth keys — only for new machines or machines
+        // with missing credentials. Re-enrollment preserves existing keys to
+        // prevent desync if SaveChangesAsync fails downstream.
+        if (string.IsNullOrEmpty(machine.MachineSecret))
+        {
+            var (machineSecret, sessionKey, expiresAt) = _keyRotation.GenerateInitialKeys();
+            machine.MachineSecret = machineSecret;
+            machine.SessionKey = sessionKey;
+            machine.SessionKeyExpiresAt = expiresAt;
+            machine.AuthVersion = 2;
+            machine.KeyRotatedAt = DateTime.UtcNow;
+        }
 
         // Mark enrollment code usage
         enrollment.UseCount++;

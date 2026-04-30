@@ -11,7 +11,7 @@ public interface IEvaluationService
 }
 
 /// <summary>
-/// Server-side evaluation: compare agent raw values against expected values in control_defs.check_json.
+/// Server-side evaluation: compare agent raw values against expected values in control_check_params.
 /// Agent is "dumb" — only reports what it found. This service determines PASS/FAIL/WARN.
 /// </summary>
 public class EvaluationService : IEvaluationService
@@ -19,12 +19,14 @@ public class EvaluationService : IEvaluationService
     private readonly KryossDbContext _db;
     private readonly IPlatformResolver _platformResolver;
     private readonly ICveService _cve;
+    private readonly IBlobPayloadService? _blob;
 
-    public EvaluationService(KryossDbContext db, IPlatformResolver platformResolver, ICveService cve)
+    public EvaluationService(KryossDbContext db, IPlatformResolver platformResolver, ICveService cve, IBlobPayloadService? blob = null)
     {
         _db = db;
         _platformResolver = platformResolver;
         _cve = cve;
+        _blob = blob;
     }
 
     public async Task<AssessmentRun> EvaluateAsync(Guid machineId, Guid organizationId, AgentPayload payload)
@@ -38,12 +40,13 @@ public class EvaluationService : IEvaluationService
             DurationMs = payload.DurationMs,
             StartedAt = payload.Timestamp,
             CompletedAt = DateTime.UtcNow,
-            RawPayload = JsonSerializer.Serialize(payload)
+            RawPayload = null
         };
 
-        // Load all active control definitions
+        // Load all active control definitions with their check params
         var controlIds = payload.Results.Select(r => r.Id).ToList();
         var controlDefs = await _db.ControlDefs
+            .Include(c => c.CheckParams)
             .Where(c => controlIds.Contains(c.ControlId) && c.IsActive)
             .ToDictionaryAsync(c => c.ControlId);
 
@@ -56,9 +59,7 @@ public class EvaluationService : IEvaluationService
             if (!controlDefs.TryGetValue(agentResult.Id, out var controlDef))
                 continue;
 
-            var checkSpec = JsonSerializer.Deserialize<CheckSpec>(controlDef.CheckJson,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
+            var checkSpec = BuildCheckSpec(controlDef.CheckParams);
             if (checkSpec is null) continue;
 
             var (status, score, maxScore, finding) = Evaluate(agentResult, checkSpec, controlDef);
@@ -93,6 +94,7 @@ public class EvaluationService : IEvaluationService
             if (platformId != null)
             {
                 var netControls = await _db.ControlDefs
+                    .Include(c => c.CheckParams)
                     .Where(c => c.IsActive && c.Type == "network_diag")
                     .Where(c => _db.ControlPlatforms.Any(cp => cp.ControlDefId == c.Id && cp.PlatformId == platformId))
                     .ToListAsync();
@@ -101,8 +103,7 @@ public class EvaluationService : IEvaluationService
 
                 foreach (var ctrl in netControls)
                 {
-                    var spec = JsonSerializer.Deserialize<CheckSpec>(ctrl.CheckJson,
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    var spec = BuildCheckSpec(ctrl.CheckParams);
                     if (spec is null) continue;
 
                     var (status, score, maxScore, finding) = EvaluateNetworkControl(spec, ctrl, netValues);
@@ -137,6 +138,9 @@ public class EvaluationService : IEvaluationService
         run.EarnedPoints = (short)earnedPoints;
         run.GlobalScore = totalPoints > 0 ? Math.Round((decimal)earnedPoints / totalPoints * 100, 2) : 0;
         run.Grade = CalculateGrade(run.GlobalScore.Value);
+
+        // Serialize raw payload for blob offload before adding to DB
+        var rawJson = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
         _db.AssessmentRuns.Add(run);
         _db.ControlResults.AddRange(results);
@@ -188,6 +192,27 @@ public class EvaluationService : IEvaluationService
 
         await _db.SaveChangesAsync();
 
+        // Offload raw payload to blob storage (Cool tier, gzipped)
+        if (_blob is not null)
+        {
+            try
+            {
+                var blobUrl = await _blob.UploadAsync(organizationId, run.Id, rawJson);
+                run.RawPayloadBlobUrl = blobUrl;
+                run.RawPayload = null;
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[EvaluationService] Blob offload failed (payload kept in SQL): {ex.Message}");
+            }
+        }
+        else
+        {
+            run.RawPayload = rawJson;
+            await _db.SaveChangesAsync();
+        }
+
         // Update machine last_seen_at + OS drift detection
         var machine = await _db.Machines.FindAsync(machineId);
         if (machine is not null)
@@ -226,11 +251,99 @@ public class EvaluationService : IEvaluationService
             // Lifecycle
             machine.SystemAgeDays = payload.Hardware?.SystemAgeDays;
             machine.LastBootAt = payload.Hardware?.LastBootAt;
-            // Local admins
+            // Local admins → normalized table
             if (payload.LocalAdmins is { Count: > 0 })
-                machine.LocalAdminsJson = System.Text.Json.JsonSerializer.Serialize(payload.LocalAdmins);
+            {
+                var existingAdmins = await _db.MachineLocalAdmins
+                    .Where(a => a.MachineId == machineId)
+                    .ToDictionaryAsync(a => a.Name);
+
+                foreach (var admin in payload.LocalAdmins)
+                {
+                    if (string.IsNullOrEmpty(admin.Name)) continue;
+                    if (!existingAdmins.ContainsKey(admin.Name))
+                    {
+                        _db.MachineLocalAdmins.Add(new MachineLocalAdmin
+                        {
+                            MachineId = machineId,
+                            Name = admin.Name,
+                            Type = admin.Type ?? "user",
+                            Source = admin.Source
+                        });
+                    }
+                }
+
+                var currentNames = payload.LocalAdmins.Select(a => a.Name).ToHashSet();
+                foreach (var stale in existingAdmins.Values.Where(a => !currentNames.Contains(a.Name)))
+                    _db.MachineLocalAdmins.Remove(stale);
+            }
+
+            // Software → normalized tables (Software + MachineSoftware)
+            if (payload.Software is { Count: > 0 })
+            {
+                var existingSw = await _db.MachineSoftware
+                    .Include(ms => ms.Software)
+                    .Where(ms => ms.MachineId == machineId && ms.RemovedAt == null)
+                    .ToListAsync();
+
+                var existingByKey = existingSw.ToDictionary(
+                    ms => $"{ms.Software.Name}|||{ms.Software.Publisher}",
+                    StringComparer.OrdinalIgnoreCase);
+
+                var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var sw in payload.Software)
+                {
+                    if (string.IsNullOrWhiteSpace(sw.Name)) continue;
+                    var name = sw.Name.Trim();
+                    var publisher = sw.Publisher?.Trim();
+                    var key = $"{name}|||{publisher}";
+
+                    if (!seenKeys.Add(key)) continue;
+
+                    if (existingByKey.TryGetValue(key, out var existing))
+                    {
+                        existing.Version = sw.Version;
+                        existing.DetectedAt = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        var softwareEntry = await _db.Software
+                            .FirstOrDefaultAsync(s => s.Name == name && s.Publisher == publisher);
+
+                        if (softwareEntry is null)
+                        {
+                            var (cpeVendor, cpeProduct) = CpeMappingService.ResolveKnownCpe(name);
+                            softwareEntry = new Software
+                            {
+                                Name = name,
+                                Publisher = publisher,
+                                Category = CategorizeSoftware(name, publisher),
+                                CpeVendor = cpeVendor,
+                                CpeProduct = cpeProduct,
+                                CreatedBy = Guid.Empty,
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            _db.Software.Add(softwareEntry);
+                            await _db.SaveChangesAsync();
+                        }
+
+                        _db.MachineSoftware.Add(new MachineSoftware
+                        {
+                            MachineId = machineId,
+                            SoftwareId = softwareEntry.Id,
+                            Version = sw.Version,
+                            DetectedAt = DateTime.UtcNow,
+                        });
+                    }
+                }
+
+                foreach (var stale in existingSw.Where(ms => !seenKeys.Contains($"{ms.Software.Name}|||{ms.Software.Publisher}")))
+                    stale.RemovedAt = DateTime.UtcNow;
+            }
 
             // Denormalized latest score for fast list queries
+            machine.LatestRunId = run.Id;
             machine.LatestScore = run.GlobalScore;
             machine.LatestGrade = run.Grade;
             machine.LatestScanAt = run.StartedAt;
@@ -344,12 +457,24 @@ public class EvaluationService : IEvaluationService
                     PacketLossPct = nd.PacketLossPct,
                     HopCount = nd.Traceroute?.Count(h => !h.TimedOut),
                     TracerouteTarget = nd.TracerouteTarget,
-                    TracerouteJson = nd.Traceroute is { Count: > 0 }
-                        ? System.Text.Json.JsonSerializer.Serialize(nd.Traceroute)
-                        : null,
-                    RawData = System.Text.Json.JsonSerializer.Serialize(nd),
                     ScannedAt = DateTime.UtcNow,
                 };
+
+                // Traceroute hops → normalized table
+                if (nd.Traceroute is { Count: > 0 })
+                {
+                    short hopNum = 0;
+                    foreach (var hop in nd.Traceroute)
+                    {
+                        hopNum++;
+                        diag.TracerouteHops.Add(new MachineTracerouteHop
+                        {
+                            HopNumber = hopNum,
+                            IpAddress = hop.Address,
+                            RttMs = hop.RttMs
+                        });
+                    }
+                }
 
                 if (nd.LinkLatency is { Count: > 0 })
                 {
@@ -415,7 +540,7 @@ public class EvaluationService : IEvaluationService
                 var existing = await _db.MachinePatchStatuses
                     .FirstOrDefaultAsync(p => p.MachineId == machineId);
 
-                var score = ComputePatchComplianceScore(ps);
+                var score = ComputePatchComplianceScore(ps, payload.Timestamp);
 
                 if (existing != null)
                 {
@@ -490,39 +615,34 @@ public class EvaluationService : IEvaluationService
         return run;
     }
 
-    private static int ComputePatchComplianceScore(PatchStatusDto ps)
+    private static int ComputePatchComplianceScore(PatchStatusDto ps, DateTime asOf)
     {
         int score = 100;
 
-        // WU service not running: -30
         if (ps.WuServiceStatus is "stopped" or "disabled" or "not-found")
             score -= 30;
 
-        // Reboot pending: -15
         if (ps.RebootPending)
             score -= 15;
 
-        // No managed update source: -10
         if (ps.UpdateSource is "standalone" or "unknown")
             score -= 10;
 
-        // Days since last check
         if (ps.LastCheckUtc.HasValue)
         {
-            var daysSinceCheck = (DateTime.UtcNow - ps.LastCheckUtc.Value).TotalDays;
+            var daysSinceCheck = (asOf - ps.LastCheckUtc.Value).TotalDays;
             if (daysSinceCheck > 30) score -= 25;
             else if (daysSinceCheck > 14) score -= 15;
             else if (daysSinceCheck > 7) score -= 5;
         }
         else
         {
-            score -= 20; // never checked
+            score -= 20;
         }
 
-        // Days since last install
         if (ps.LastInstallUtc.HasValue)
         {
-            var daysSinceInstall = (DateTime.UtcNow - ps.LastInstallUtc.Value).TotalDays;
+            var daysSinceInstall = (asOf - ps.LastInstallUtc.Value).TotalDays;
             if (daysSinceInstall > 60) score -= 15;
             else if (daysSinceInstall > 30) score -= 10;
         }
@@ -531,7 +651,6 @@ public class EvaluationService : IEvaluationService
             score -= 10;
         }
 
-        // Low recent patch count
         if (ps.InstalledCount30d == 0 && ps.InstalledCount90d == 0)
             score -= 5;
 
@@ -801,13 +920,20 @@ public class EvaluationService : IEvaluationService
     {
         decimal score = 100;
 
-        if (ValDecimal(vals, "downloadMbps") < 10) score -= 15;
-        else if (ValDecimal(vals, "downloadMbps") < 50) score -= 5;
+        // Round continuous metrics before comparison to avoid threshold oscillation.
+        // Speed rounded to nearest 5 Mbps, latency to nearest 5 ms, saturation to nearest 5%.
+        var dlRounded = Math.Round(ValDecimal(vals, "downloadMbps") / 5) * 5;
+        var ulRounded = Math.Round(ValDecimal(vals, "uploadMbps") / 5) * 5;
+        var latRounded = Math.Round(ValDecimal(vals, "internetLatencyMs") / 5) * 5;
+        var satRounded = Math.Round(ValDecimal(vals, "bandwidthSaturationPct") / 5) * 5;
 
-        if (ValDecimal(vals, "uploadMbps") < 5) score -= 10;
+        if (dlRounded < 10) score -= 15;
+        else if (dlRounded < 50) score -= 5;
 
-        if (ValDecimal(vals, "internetLatencyMs") > 100) score -= 15;
-        else if (ValDecimal(vals, "internetLatencyMs") > 50) score -= 5;
+        if (ulRounded < 5) score -= 10;
+
+        if (latRounded > 100) score -= 15;
+        else if (latRounded > 50) score -= 5;
 
         if (ValInt(vals, "maxPeerPacketLoss") > 5) score -= 15;
         if (ValInt(vals, "unreachablePeerCount") > 0) score -= 10;
@@ -816,7 +942,7 @@ public class EvaluationService : IEvaluationService
         if (ValBool(vals, "invalidSubnetMask")) score -= 10;
         if (!ValBool(vals, "hasDnsServers")) score -= 20;
         if (!ValBool(vals, "hasGateway")) score -= 20;
-        if (ValDecimal(vals, "bandwidthSaturationPct") > 80) score -= 10;
+        if (satRounded > 80) score -= 10;
 
         return Math.Max(0, Math.Round(score, 0));
     }
@@ -875,6 +1001,65 @@ public class EvaluationService : IEvaluationService
             return ("pass", maxScore, maxScore, null);
 
         return ("fail", 0, maxScore, $"Expected {field} {op} {expectedDecimal}, got {actualDecimal}");
+    }
+
+    private static CheckSpec? BuildCheckSpec(ICollection<ControlCheckParam> checkParams)
+    {
+        if (checkParams.Count == 0) return null;
+        var dict = checkParams.ToDictionary(p => p.ParamName, p => p.ParamValue);
+        return new CheckSpec
+        {
+            CheckType = dict.GetValueOrDefault("checkType"),
+            Hive = dict.GetValueOrDefault("hive"),
+            Path = dict.GetValueOrDefault("path"),
+            ValueName = dict.GetValueOrDefault("valueName"),
+            Subcategory = dict.GetValueOrDefault("subcategory"),
+            Profile = dict.GetValueOrDefault("profile"),
+            Property = dict.GetValueOrDefault("property"),
+            SettingName = dict.GetValueOrDefault("settingName"),
+            ServiceName = dict.GetValueOrDefault("serviceName"),
+            Field = dict.GetValueOrDefault("field"),
+            Executable = dict.GetValueOrDefault("executable"),
+            Arguments = dict.GetValueOrDefault("arguments"),
+            Display = dict.GetValueOrDefault("display"),
+            TimeoutSeconds = dict.TryGetValue("timeoutSeconds", out var ts) && int.TryParse(ts, out var tsv) ? tsv : null,
+            Parent = dict.GetValueOrDefault("parent"),
+            LogName = dict.GetValueOrDefault("logName"),
+            StoreName = dict.GetValueOrDefault("storeName"),
+            StoreLocation = dict.GetValueOrDefault("storeLocation"),
+            Drive = dict.GetValueOrDefault("drive"),
+            Expected = dict.GetValueOrDefault("expected"),
+            Operator = dict.GetValueOrDefault("operator"),
+            MissingBehavior = dict.GetValueOrDefault("missingBehavior"),
+            ExpectedStartType = dict.GetValueOrDefault("expectedStartType"),
+            Optional = dict.TryGetValue("optional", out var opt) && bool.TryParse(opt, out var optv) ? optv : null,
+        };
+    }
+
+    private static string CategorizeSoftware(string name, string? publisher)
+    {
+        var combined = $"{name} {publisher}";
+        if (combined.Contains("TeamViewer", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("AnyDesk", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("ScreenConnect", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("ConnectWise", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("LogMeIn", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("Splashtop", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("RustDesk", StringComparison.OrdinalIgnoreCase))
+            return "remote_access";
+        if (combined.Contains("Crack", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("Keygen", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("Hack", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("Torrent", StringComparison.OrdinalIgnoreCase))
+            return "suspicious";
+        if (combined.Contains("Microsoft Office", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("Adobe", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("AutoCAD", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("SQL Server", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("Veeam", StringComparison.OrdinalIgnoreCase)
+            || combined.Contains("VMware", StringComparison.OrdinalIgnoreCase))
+            return "licensed";
+        return "standard";
     }
 }
 

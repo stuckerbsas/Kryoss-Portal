@@ -15,7 +15,8 @@ public static class FeatureInventoryBuilder
         PipelineResult mailFlow,
         bool graphConnected,
         bool azureConnected,
-        bool pbiConnected)
+        bool pbiConnected,
+        Dictionary<string, string>? skuPlans = null)
     {
         var list = new List<FeatureInventoryEntry>();
 
@@ -72,6 +73,27 @@ public static class FeatureInventoryBuilder
                 idIns.DevicesTotalManaged > 0 ? Pct(idIns.DevicesCompliant, idIns.DevicesTotalManaged) : null,
                 idIns.DevicesTotalManaged > 0 ? $"{idIns.DevicesCompliant} compliant / {idIns.DevicesTotalManaged} managed" : null));
 
+            list.Add(Entry("identity", "Entra Device Join", null,
+                idIns.DeviceJoinConfigured, idIns.DeviceJoinConfigured,
+                null,
+                idIns.DeviceJoinConfigured
+                    ? $"Scope: {idIns.DeviceJoinScope ?? "unknown"}"
+                    : "Device join policy not configured"));
+
+            list.Add(Entry("identity", "SSPR", null,
+                idIns.TotalUsers > 0, idIns.SsprEnabled,
+                idIns.TotalUsers > 0 ? Pct(idIns.SsprRegisteredUsers, idIns.TotalUsers) : null,
+                idIns.SsprEnabled
+                    ? $"{idIns.SsprRegisteredUsers} / {idIns.TotalUsers} registered"
+                    : "Self-service password reset not enabled"));
+
+            list.Add(Entry("identity", "Break-Glass Accounts", null,
+                true, idIns.BreakGlassAccountCount > 0,
+                null,
+                idIns.BreakGlassAccountCount > 0
+                    ? $"{idIns.BreakGlassAccountCount} emergency access accounts detected"
+                    : "No break-glass accounts found in Global Admin role"));
+
             list.Add(Entry("identity", "Global Secure Access", null,
                 idIns.FilteringPolicies.HasValue, idIns.FilteringPolicies.GetValueOrDefault() > 0,
                 null,
@@ -119,6 +141,53 @@ public static class FeatureInventoryBuilder
                 epIns.DefenderEndpointAvailable
                     ? $"{epIns.MachinesTotal} machines ({epIns.MachinesHighRisk} high risk), {epIns.VulnCritical} critical vulns"
                     : null));
+
+            list.Add(Entry("endpoint", "Defender Antivirus Policy", "Intune",
+                epIns.IntuneAvailable, epIns.HasAntivirusPolicy,
+                null,
+                epIns.HasAntivirusPolicy ? "Antivirus policy configured" : "No antivirus policy found"));
+
+            list.Add(Entry("endpoint", "Defender Firewall Policy", "Intune",
+                epIns.IntuneAvailable, epIns.HasFirewallPolicy,
+                null,
+                epIns.HasFirewallPolicy ? "Firewall policy configured" : "No firewall policy found"));
+
+            list.Add(Entry("endpoint", "Attack Surface Reduction", "Intune",
+                epIns.IntuneAvailable, epIns.HasAsrPolicy,
+                null,
+                epIns.HasAsrPolicy ? "ASR policy configured" : "No ASR policy found"));
+
+            list.Add(Entry("endpoint", "Edge Profile", "Intune",
+                epIns.IntuneAvailable, epIns.HasEdgeProfile,
+                null,
+                epIns.HasEdgeProfile ? "Edge profile configured" : "No Edge config profile found"));
+
+            list.Add(Entry("endpoint", "OneDrive Policy", "Intune",
+                epIns.IntuneAvailable, epIns.HasOneDrivePolicy,
+                null,
+                epIns.HasOneDrivePolicy ? "OneDrive policy configured" : "No OneDrive policy found"));
+
+            list.Add(Entry("endpoint", "Windows Update Policy", "Intune",
+                epIns.IntuneAvailable, epIns.HasWindowsUpdatePolicy,
+                null,
+                epIns.HasWindowsUpdatePolicy ? "Update policy configured" : "No Windows Update policy found"));
+
+            list.Add(Entry("endpoint", "Noncompliant Notifications", "Intune",
+                epIns.IntuneAvailable, epIns.NotificationTemplateCount > 0,
+                null,
+                epIns.NotificationTemplateCount > 0
+                    ? $"{epIns.NotificationTemplateCount} notification templates"
+                    : "No noncompliant device notification templates"));
+
+            list.Add(Entry("endpoint", "Endpoint Analytics", "Intune",
+                epIns.IntuneAvailable, epIns.EndpointAnalyticsEnabled,
+                null,
+                epIns.EndpointAnalyticsEnabled ? "Endpoint Analytics enabled" : "Endpoint Analytics not enabled"));
+
+            list.Add(Entry("endpoint", "Defender Auto-Onboard", "Intune + Defender",
+                epIns.IntuneAvailable, epIns.DefenderAutoOnboard,
+                null,
+                epIns.DefenderAutoOnboard ? "Auto-onboard via Intune connector active" : "No Defender auto-onboard connector"));
         }
 
         // ── Level 2+3: Data ──
@@ -190,6 +259,27 @@ public static class FeatureInventoryBuilder
                 domainsTotal > 0, domainsWithDmarc > 0,
                 domainsTotal > 0 ? Pct(domainsWithDmarc, domainsTotal) : null,
                 domainsTotal > 0 ? $"{domainsWithSpf} SPF ok, {domainsWithDmarc} DMARC ok / {domainsTotal} domains" : null));
+
+            list.Add(Entry("mail_flow", "Unified Audit Logs", "Exchange Online",
+                mfIns.ExchangeAvailable, mfIns.UnifiedAuditLogEnabled,
+                null,
+                mfIns.ExchangeAvailable
+                    ? (mfIns.UnifiedAuditLogEnabled ? "Unified audit log ingestion enabled" : "Unified audit log NOT enabled")
+                    : null));
+
+            list.Add(Entry("mail_flow", "Safe Attachments", "Defender for Office 365",
+                mfIns.ExchangeAvailable, mfIns.HasSafeAttachmentPolicy,
+                null,
+                mfIns.ExchangeAvailable
+                    ? (mfIns.HasSafeAttachmentPolicy ? $"{mfIns.SafeAttachmentPolicyCount} safe attachment policies" : "No safe attachment policies configured")
+                    : null));
+
+            list.Add(Entry("mail_flow", "EOP/MDO Protection", "Exchange Online Protection",
+                mfIns.ExchangeAvailable, mfIns.HasEopStandardProtection,
+                null,
+                mfIns.ExchangeAvailable
+                    ? $"Standard: {(mfIns.HasEopStandardProtection ? "active" : "inactive")}, Strict: {(mfIns.HasEopStrictProtection ? "active" : "inactive")}"
+                    : null));
         }
 
         // ── Level 2+3: Azure ──
@@ -225,6 +315,17 @@ public static class FeatureInventoryBuilder
         // Mark entries whose pipeline data was absent (403/skipped) as not_licensed
         MarkSkippedAsNotLicensed(list, idIns, epIns, dataIns);
 
+        // If not implemented, adoption percentage is meaningless (e.g. default-compliant devices)
+        foreach (var entry in list)
+        {
+            if (!entry.Implemented && entry.AdoptionPct.HasValue)
+                entry.AdoptionPct = null;
+        }
+
+        // Resolve license tiers from subscribedSkus service plans
+        if (skuPlans is { Count: > 0 })
+            ResolveLicenseTiers(list, skuPlans);
+
         return list;
     }
 
@@ -253,6 +354,15 @@ public static class FeatureInventoryBuilder
             SetNotLicensed(list, "endpoint", "Config Profile Drift");
             SetNotLicensed(list, "endpoint", "App Protection");
             SetNotLicensed(list, "endpoint", "Autopilot");
+            SetNotLicensed(list, "endpoint", "Defender Antivirus Policy");
+            SetNotLicensed(list, "endpoint", "Defender Firewall Policy");
+            SetNotLicensed(list, "endpoint", "Attack Surface Reduction");
+            SetNotLicensed(list, "endpoint", "Edge Profile");
+            SetNotLicensed(list, "endpoint", "OneDrive Policy");
+            SetNotLicensed(list, "endpoint", "Windows Update Policy");
+            SetNotLicensed(list, "endpoint", "Noncompliant Notifications");
+            SetNotLicensed(list, "endpoint", "Endpoint Analytics");
+            SetNotLicensed(list, "endpoint", "Defender Auto-Onboard");
         }
         if (epIns is not null && !epIns.DefenderEndpointAvailable)
             SetNotLicensed(list, "endpoint", "Defender for Endpoint");
@@ -275,6 +385,110 @@ public static class FeatureInventoryBuilder
         }
     }
 
+    // ── License tier resolution from subscribedSkus service plans ──
+
+    private static readonly (string Feature, string[] BasicPlans, string[] PremiumPlans)[] TierRules = new[]
+    {
+        // Identity
+        ("Conditional Access",
+            new[] { "AAD_PREMIUM" },
+            new[] { "AAD_PREMIUM_P2" }),
+        ("MFA",
+            new[] { "AAD_PREMIUM", "MFA_PREMIUM" },
+            new[] { "AAD_PREMIUM_P2" }),
+        ("Risky Users",
+            Array.Empty<string>(),
+            new[] { "AAD_PREMIUM_P2" }),
+        ("PIM",
+            Array.Empty<string>(),
+            new[] { "AAD_PREMIUM_P2" }),
+        ("Access Reviews",
+            Array.Empty<string>(),
+            new[] { "AAD_PREMIUM_P2" }),
+        ("Sign-in Logs",
+            new[] { "AAD_PREMIUM" },
+            new[] { "AAD_PREMIUM_P2" }),
+        ("Device Management",
+            new[] { "INTUNE_A" },
+            new[] { "INTUNE_A_P2" }),
+        ("SSPR",
+            new[] { "AAD_PREMIUM" },
+            Array.Empty<string>()),
+        ("Global Secure Access",
+            new[] { "AAD_PREMIUM" },
+            new[] { "M365_NETWORK_ACCESS" }),
+
+        // Endpoint
+        ("Intune Compliance",
+            new[] { "INTUNE_A" },
+            new[] { "INTUNE_A_P2" }),
+        ("Config Profiles",
+            new[] { "INTUNE_A" },
+            new[] { "INTUNE_A_P2" }),
+        ("App Protection",
+            new[] { "INTUNE_A" },
+            new[] { "INTUNE_A_P2" }),
+        ("Autopilot",
+            new[] { "INTUNE_A" },
+            Array.Empty<string>()),
+        ("Defender for Endpoint",
+            new[] { "WINDEFATP" },
+            new[] { "MDE_SMB", "DEFENDER_ENDPOINT_P2" }),
+        ("Defender Antivirus Policy",
+            new[] { "INTUNE_A" },
+            Array.Empty<string>()),
+        ("Defender Firewall Policy",
+            new[] { "INTUNE_A" },
+            Array.Empty<string>()),
+        ("Attack Surface Reduction",
+            new[] { "INTUNE_A" },
+            Array.Empty<string>()),
+        ("Windows Update Policy",
+            new[] { "INTUNE_A" },
+            new[] { "INTUNE_A_P2" }),
+
+        // Data
+        ("Purview / DLP",
+            new[] { "MIP_S_CDA", "CONTENT_EXPLORER", "DLP_ANALYTICS_REPORTS_BASIC" },
+            new[] { "INFORMATION_BARRIERS", "CUSTOMER_KEY_DATACENTER", "MIP_S_CDA2", "M365_ADVANCED_AUDITING" }),
+
+        // Mail Flow / Exchange
+        ("Safe Attachments",
+            new[] { "ATP_ENTERPRISE" },
+            new[] { "THREAT_INTELLIGENCE" }),
+        ("EOP/MDO Protection",
+            new[] { "EOP_ENTERPRISE" },
+            new[] { "ATP_ENTERPRISE", "THREAT_INTELLIGENCE" }),
+
+        // Productivity
+        ("Copilot",
+            new[] { "Microsoft_365_Copilot" },
+            Array.Empty<string>()),
+    };
+
+    private static void ResolveLicenseTiers(List<FeatureInventoryEntry> list, Dictionary<string, string> plans)
+    {
+        bool Has(string planName) =>
+            plans.TryGetValue(planName, out var status) &&
+            !string.Equals(status, "Disabled", StringComparison.OrdinalIgnoreCase);
+
+        foreach (var (featureName, basicPlans, premiumPlans) in TierRules)
+        {
+            var entry = list.FirstOrDefault(e => e.Feature == featureName);
+            if (entry is null) continue;
+
+            bool hasPremium = premiumPlans.Length > 0 && premiumPlans.Any(Has);
+            bool hasBasic = basicPlans.Length > 0 && basicPlans.Any(Has);
+
+            if (hasPremium)
+                entry.LicenseTier = "premium";
+            else if (hasBasic)
+                entry.LicenseTier = "standard";
+            else if (basicPlans.Length > 0 || premiumPlans.Length > 0)
+                entry.LicenseTier = "none";
+        }
+    }
+
     private static FeatureInventoryEntry Entry(
         string area, string feature, string? licenseRequired,
         bool licensed, bool implemented,
@@ -294,6 +508,11 @@ public class FeatureInventoryEntry
     public int? AdoptionPct { get; set; }
     public string? Detail { get; set; }
     public string? LicenseRequired { get; set; }
+    /// <summary>
+    /// Detected license tier from subscribedSkus service plans.
+    /// null = not determinable, "none" = plan missing, "basic"/"standard"/"premium".
+    /// </summary>
+    public string? LicenseTier { get; set; }
 
     public FeatureInventoryEntry(string area, string feature, bool licensed, bool implemented, int? adoptionPct, string? detail)
     {

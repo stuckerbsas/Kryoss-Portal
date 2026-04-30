@@ -11,38 +11,46 @@ public static class NetworkDiagnostics
 {
     private const int PingTimeoutMs = 2000;
     private const int PingCount = 5;
-    private const int SpeedTestChunkSize = 1024 * 1024; // 1 MB chunks
+    private const int SpeedTestStreams = 12;
+    private const int SpeedTestDurationSeconds = 12;
+    private const int SpeedTestWarmupSeconds = 2;
+    private const int SpeedTestUploadPerStream = 8 * 1024 * 1024;
+    private const int SpeedTestLatencyPings = 10;
 
     public static async Task<NetworkDiagResult> RunAllAsync(
         string apiBaseUrl, bool verbose = false, CancellationToken ct = default)
     {
         var result = new NetworkDiagResult();
 
+        using var globalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        globalCts.CancelAfter(TimeSpan.FromMinutes(5));
+        var gct = globalCts.Token;
+
         var tasks = new List<Task>
         {
-            Task.Run(() => result.RouteTable = GetRouteTable(), ct),
-            Task.Run(() => result.Adapters = GetAdapterDetails(), ct),
-            Task.Run(() => result.VpnInterfaces = DetectVpnInterfaces(), ct),
+            Task.Run(() => result.RouteTable = GetRouteTable(), gct),
+            Task.Run(() => result.Adapters = GetAdapterDetails(), gct),
+            Task.Run(() => result.VpnInterfaces = DetectVpnInterfaces(), gct),
             Task.Run(async () =>
             {
-                var (down, up, latency) = await MeasureInternetSpeedAsync(apiBaseUrl, ct);
+                var (down, up, latency) = await MeasureInternetSpeedAsync(apiBaseUrl, gct);
                 result.DownloadMbps = down;
                 result.UploadMbps = up;
                 result.InternetLatencyMs = latency;
-            }, ct),
-            Task.Run(async () => result.CloudEndpointLatency = await MeasureCloudEndpointLatencyAsync(ct), ct),
-            Task.Run(async () => result.DnsResolutionMs = await MeasureDnsResolutionAsync(ct), ct),
-            Task.Run(() => result.HostsFileEntryCount = CountHostsFileEntries(), ct),
-            Task.Run(() => result.NtpConfigured = CheckNtpConfigured(), ct),
-            Task.Run(() => result.WpadEnabled = CheckWpadEnabled(), ct),
+            }, gct),
+            Task.Run(async () => result.CloudEndpointLatency = await MeasureCloudEndpointLatencyAsync(gct), gct),
+            Task.Run(async () => result.DnsResolutionMs = await MeasureDnsResolutionAsync(gct), gct),
+            Task.Run(() => result.HostsFileEntryCount = CountHostsFileEntries(), gct),
+            Task.Run(() => result.NtpConfigured = CheckNtpConfigured(), gct),
+            Task.Run(() => result.WpadEnabled = CheckWpadEnabled(), gct),
             Task.Run(() =>
             {
                 result.LlmnrEnabled = CheckLlmnrEnabled();
                 result.NetbiosEnabled = CheckNetbiosEnabled();
-            }, ct),
-            Task.Run(() => result.ListeningPortCount = CountListeningPorts(), ct),
-            Task.Run(() => result.DisconnectedWithIpCount = CountDisconnectedWithIp(), ct),
-            Task.Run(() => result.NicTeamingDetected = DetectNicTeaming(), ct),
+            }, gct),
+            Task.Run(() => result.ListeningPortCount = CountListeningPorts(), gct),
+            Task.Run(() => result.DisconnectedWithIpCount = CountDisconnectedWithIp(), gct),
+            Task.Run(() => result.NicTeamingDetected = DetectNicTeaming(), gct),
         };
 
         try { await Task.WhenAll(tasks); }
@@ -55,7 +63,7 @@ public static class NetworkDiagnostics
             if (gw != null)
             {
                 result.GatewayIp = gw;
-                var gwResult = await PingHostAsync(gw, ct);
+                var gwResult = await PingHostAsync(gw, gct);
                 if (gwResult.Reachable)
                     result.GatewayLatencyMs = gwResult.AvgMs;
             }
@@ -65,7 +73,7 @@ public static class NetworkDiagnostics
         // WAN link latency: ping unique next-hops from route table (non-local gateways)
         try
         {
-            result.LinkLatency = await MeasureLinkLatencyAsync(result.RouteTable, result.GatewayIp, ct);
+            result.LinkLatency = await MeasureLinkLatencyAsync(result.RouteTable, result.GatewayIp, gct);
         }
         catch { /* non-critical */ }
 
@@ -74,7 +82,7 @@ public static class NetworkDiagnostics
         {
             var apiHost = new Uri(apiBaseUrl).Host;
             result.TracerouteTarget = apiHost;
-            result.Traceroute = await RunTracerouteAsync(apiHost, ct);
+            result.Traceroute = await RunTracerouteAsync(apiHost, gct);
         }
         catch { /* non-critical */ }
 
@@ -92,7 +100,7 @@ public static class NetworkDiagnostics
             var arpHosts = GetArpHosts();
             result.ArpEntryCount = arpHosts.Count;
             if (arpHosts.Count > 0)
-                result.InternalLatency = await MeasureInternalLatencyAsync(arpHosts, ct);
+                result.InternalLatency = await MeasureInternalLatencyAsync(arpHosts, gct);
         }
         catch { /* non-critical */ }
 
@@ -122,47 +130,261 @@ public static class NetworkDiagnostics
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             var baseUri = new Uri(apiBaseUrl.TrimEnd('/'));
 
-            // Latency: simple HEAD request
-            var sw = Stopwatch.StartNew();
-            using var headReq = new HttpRequestMessage(HttpMethod.Head, baseUri);
-            using var headResp = await http.SendAsync(headReq, HttpCompletionOption.ResponseHeadersRead, ct);
-            sw.Stop();
-            latencyMs = Math.Round((decimal)sw.Elapsed.TotalMilliseconds, 1);
-
-            // Download test: GET a reasonable chunk from a known endpoint
-            // Use the API itself as the speed test target (GET /v1/speedtest returns random bytes)
-            var downloadUrl = new Uri(baseUri, "/v1/speedtest?size=5242880"); // 5 MB
-            sw.Restart();
-            var downloadData = await http.GetByteArrayAsync(downloadUrl, ct);
-            sw.Stop();
-            if (downloadData.Length > 0 && sw.ElapsedMilliseconds > 0)
+            // Phase 1: Latency — 10 sequential HTTP pings, trimmed mean
+            var rtts = new List<double>();
+            using (var pingHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(5) })
             {
-                var bits = (decimal)downloadData.Length * 8;
-                var seconds = (decimal)sw.ElapsedMilliseconds / 1000m;
-                downloadMbps = Math.Round(bits / seconds / 1_000_000m, 2);
+                var pingUrl = new Uri(baseUri, "/v1/speedtest/ping");
+                for (int i = 0; i < SpeedTestLatencyPings; i++)
+                {
+                    try
+                    {
+                        var sw = Stopwatch.StartNew();
+                        using var resp = await pingHttp.GetAsync(pingUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+                        sw.Stop();
+                        rtts.Add(sw.Elapsed.TotalMilliseconds);
+                    }
+                    catch { /* skip failed pings */ }
+                }
             }
 
-            // Upload test: POST random data
-            var uploadUrl = new Uri(baseUri, "/v1/speedtest");
-            var uploadData = new byte[2 * 1024 * 1024]; // 2 MB
-            Random.Shared.NextBytes(uploadData);
-            sw.Restart();
-            using var uploadContent = new ByteArrayContent(uploadData);
-            using var uploadResp = await http.PostAsync(uploadUrl, uploadContent, ct);
-            sw.Stop();
-            if (sw.ElapsedMilliseconds > 0)
+            if (rtts.Count > 0)
             {
-                var bits = (decimal)uploadData.Length * 8;
-                var seconds = (decimal)sw.ElapsedMilliseconds / 1000m;
-                uploadMbps = Math.Round(bits / seconds / 1_000_000m, 2);
+                rtts.Sort();
+                var trimmed = rtts.Count >= 4
+                    ? rtts.Skip(1).Take(rtts.Count - 2).ToList()
+                    : rtts;
+                latencyMs = Math.Round((decimal)trimmed.Average(), 1);
+            }
+
+            // Try blob-based speed test (v2.10+), fall back to legacy function-based
+            var (dlMbps, ulMbps) = await MeasureViaBlobAsync(baseUri, ct);
+            if (dlMbps > 0)
+            {
+                downloadMbps = dlMbps;
+                uploadMbps = ulMbps;
+            }
+            else
+            {
+                (downloadMbps, uploadMbps) = await MeasureViaFunctionFallbackAsync(baseUri, ct);
             }
         }
         catch { /* speed test failed — return zeros */ }
 
         return (downloadMbps, uploadMbps, latencyMs);
+    }
+
+    private static async Task<(decimal dlMbps, decimal ulMbps)> MeasureViaBlobAsync(
+        Uri baseUri, CancellationToken ct)
+    {
+        decimal dlMbps = 0, ulMbps = 0;
+
+        try
+        {
+            // Get SAS tokens from server
+            using var sasHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var sasUrl = new Uri(baseUri, "/v1/speedtest/sas");
+            var sasJson = await sasHttp.GetStringAsync(sasUrl, ct);
+
+            // Minimal JSON parse (no reflection for AOT)
+            var downloadUrl = ExtractJsonString(sasJson, "downloadUrl");
+            var uploadUrl = ExtractJsonString(sasJson, "uploadUrl");
+            if (string.IsNullOrEmpty(downloadUrl)) return (0, 0);
+
+            long downloadSizeBytes = 100 * 1024 * 1024; // 100 MB
+            var sizeStr = ExtractJsonString(sasJson, "downloadSizeBytes");
+            if (long.TryParse(sizeStr, out var parsed) && parsed > 0) downloadSizeBytes = parsed;
+
+            // Phase 2: Multi-stream download — time-based, discard warmup
+            using (var dlHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(SpeedTestDurationSeconds + 10) })
+            {
+                long totalBytes = 0;
+                var warmupBytes = new long[1];
+                var warmupDone = new TaskCompletionSource<bool>();
+                var globalSw = Stopwatch.StartNew();
+
+                // Schedule warmup marker
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(SpeedTestWarmupSeconds * 1000, ct);
+                    warmupBytes[0] = Interlocked.Read(ref totalBytes);
+                    warmupDone.TrySetResult(true);
+                }, ct);
+
+                var deadline = TimeSpan.FromSeconds(SpeedTestDurationSeconds);
+                long chunkSize = downloadSizeBytes / SpeedTestStreams;
+
+                var dlTasks = Enumerable.Range(0, SpeedTestStreams).Select(async i =>
+                {
+                    try
+                    {
+                        long from = i * chunkSize;
+                        long to = (i == SpeedTestStreams - 1) ? downloadSizeBytes - 1 : from + chunkSize - 1;
+
+                        using var request = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
+                        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(from, to);
+
+                        using var resp = await dlHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                        if (!resp.IsSuccessStatusCode) return;
+
+                        using var stream = await resp.Content.ReadAsStreamAsync(ct);
+                        var buf = new byte[256 * 1024]; // 256 KB read buffer
+                        int read;
+                        while ((read = await stream.ReadAsync(buf, ct)) > 0)
+                        {
+                            Interlocked.Add(ref totalBytes, read);
+                            if (globalSw.Elapsed >= deadline) break;
+                        }
+                    }
+                    catch { /* individual stream failure OK */ }
+                }).ToArray();
+
+                // Wait for streams or timeout
+                var allDone = Task.WhenAll(dlTasks);
+                await Task.WhenAny(allDone, Task.Delay(deadline + TimeSpan.FromSeconds(2), ct));
+                globalSw.Stop();
+
+                await warmupDone.Task.WaitAsync(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+                var warmup = warmupBytes[0];
+                var usefulBytes = Interlocked.Read(ref totalBytes) - warmup;
+                var usefulSeconds = (decimal)(globalSw.ElapsedMilliseconds - SpeedTestWarmupSeconds * 1000) / 1000m;
+
+                if (usefulBytes > 0 && usefulSeconds > 0.5m)
+                {
+                    dlMbps = Math.Round(usefulBytes * 8m / usefulSeconds / 1_000_000m, 2);
+                }
+            }
+
+            // Phase 3: Multi-stream upload — time-based against blob SAS
+            if (!string.IsNullOrEmpty(uploadUrl))
+            {
+                using var ulHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(SpeedTestDurationSeconds + 10) };
+                var uploadPayload = new byte[SpeedTestUploadPerStream];
+                Random.Shared.NextBytes(uploadPayload);
+                long totalUploaded = 0;
+                var sw3 = Stopwatch.StartNew();
+
+                var ulTasks = Enumerable.Range(0, SpeedTestStreams).Select(async i =>
+                {
+                    try
+                    {
+                        using var content = new ByteArrayContent(uploadPayload);
+                        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+                        using var request = new HttpRequestMessage(HttpMethod.Put, uploadUrl);
+                        request.Content = content;
+                        request.Headers.Add("x-ms-blob-type", "BlockBlob");
+                        using var resp = await ulHttp.SendAsync(request, ct);
+                        if (resp.IsSuccessStatusCode)
+                            Interlocked.Add(ref totalUploaded, uploadPayload.Length);
+                    }
+                    catch { /* individual stream failure OK */ }
+                }).ToArray();
+
+                try { await Task.WhenAll(ulTasks); }
+                catch { /* partial results OK */ }
+                sw3.Stop();
+
+                if (totalUploaded > 0 && sw3.ElapsedMilliseconds > 100)
+                {
+                    ulMbps = Math.Round(totalUploaded * 8m / ((decimal)sw3.ElapsedMilliseconds / 1000m) / 1_000_000m, 2);
+                }
+            }
+        }
+        catch { /* blob speed test failed, caller will try fallback */ }
+
+        return (dlMbps, ulMbps);
+    }
+
+    private static async Task<(decimal dlMbps, decimal ulMbps)> MeasureViaFunctionFallbackAsync(
+        Uri baseUri, CancellationToken ct)
+    {
+        decimal dlMbps = 0, ulMbps = 0;
+        int legacyPerStream = 10 * 1024 * 1024; // 10 MB per stream for fallback
+
+        // Download fallback
+        using (var dlHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(60) })
+        {
+            var downloadUrl = new Uri(baseUri, $"/v1/speedtest?size={legacyPerStream}");
+            long totalDownloaded = 0;
+            var sw = Stopwatch.StartNew();
+
+            var dlTasks = Enumerable.Range(0, 8).Select(async _ =>
+            {
+                try
+                {
+                    using var resp = await dlHttp.SendAsync(
+                        new HttpRequestMessage(HttpMethod.Get, downloadUrl),
+                        HttpCompletionOption.ResponseHeadersRead, ct);
+                    if (!resp.IsSuccessStatusCode) return;
+                    using var stream = await resp.Content.ReadAsStreamAsync(ct);
+                    var buf = new byte[128 * 1024];
+                    int read;
+                    while ((read = await stream.ReadAsync(buf, ct)) > 0)
+                        Interlocked.Add(ref totalDownloaded, read);
+                }
+                catch { }
+            }).ToArray();
+
+            try { await Task.WhenAll(dlTasks); } catch { }
+            sw.Stop();
+
+            if (totalDownloaded > 0 && sw.ElapsedMilliseconds > 100)
+                dlMbps = Math.Round(totalDownloaded * 8m / ((decimal)sw.ElapsedMilliseconds / 1000m) / 1_000_000m, 2);
+        }
+
+        // Upload fallback
+        using (var ulHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(60) })
+        {
+            var uploadUrl = new Uri(baseUri, "/v1/speedtest");
+            var payload = new byte[SpeedTestUploadPerStream];
+            Random.Shared.NextBytes(payload);
+            long totalUploaded = 0;
+            var sw = Stopwatch.StartNew();
+
+            var ulTasks = Enumerable.Range(0, 8).Select(async _ =>
+            {
+                try
+                {
+                    using var content = new ByteArrayContent(payload);
+                    using var resp = await ulHttp.PostAsync(uploadUrl, content, ct);
+                    if (resp.IsSuccessStatusCode)
+                        Interlocked.Add(ref totalUploaded, payload.Length);
+                }
+                catch { }
+            }).ToArray();
+
+            try { await Task.WhenAll(ulTasks); } catch { }
+            sw.Stop();
+
+            if (totalUploaded > 0 && sw.ElapsedMilliseconds > 100)
+                ulMbps = Math.Round(totalUploaded * 8m / ((decimal)sw.ElapsedMilliseconds / 1000m) / 1_000_000m, 2);
+        }
+
+        return (dlMbps, ulMbps);
+    }
+
+    private static string? ExtractJsonString(string json, string key)
+    {
+        var needle = $"\"{key}\":\"";
+        var idx = json.IndexOf(needle, StringComparison.Ordinal);
+        if (idx < 0)
+        {
+            // Try numeric value (no quotes)
+            needle = $"\"{key}\":";
+            idx = json.IndexOf(needle, StringComparison.Ordinal);
+            if (idx < 0) return null;
+            var start = idx + needle.Length;
+            var end = json.IndexOfAny(new[] { ',', '}' }, start);
+            return end > start ? json[start..end].Trim() : null;
+        }
+        else
+        {
+            var start = idx + needle.Length;
+            var end = json.IndexOf('"', start);
+            return end > start ? json[start..end] : null;
+        }
     }
 
     public static async Task<List<LatencyResult>> MeasureInternalLatencyAsync(

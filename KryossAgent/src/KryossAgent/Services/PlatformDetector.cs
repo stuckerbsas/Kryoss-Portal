@@ -207,9 +207,8 @@ public static class PlatformDetector
             {
                 info.Manufacturer = biosKey.GetValue("SystemManufacturer") as string;
                 info.Model = biosKey.GetValue("SystemProductName") as string;
-                info.SerialNumber = biosKey.GetValue("SystemSKU") as string;
+                info.SerialNumber = biosKey.GetValue("SystemSerialNumber") as string;
 
-                // SKU is often empty — try BaseBoardSerialNumber as fallback
                 if (string.IsNullOrWhiteSpace(info.SerialNumber))
                     info.SerialNumber = biosKey.GetValue("BaseBoardSerialNumber") as string;
             }

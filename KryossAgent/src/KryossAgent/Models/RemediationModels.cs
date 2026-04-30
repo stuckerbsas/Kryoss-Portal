@@ -28,6 +28,21 @@ public class HeartbeatResponse
 
     [JsonPropertyName("forceScan")]
     public bool ForceScan { get; set; }
+
+    [JsonPropertyName("latestAgentVersion")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LatestAgentVersion { get; set; }
+
+    [JsonPropertyName("minAgentVersion")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MinAgentVersion { get; set; }
+
+    [JsonPropertyName("apiVersion")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ApiVersion { get; set; }
+
+    [JsonPropertyName("modeDev")]
+    public bool ModeDev { get; set; }
 }
 
 public class AgentRemoteConfig
@@ -46,6 +61,9 @@ public class AgentRemoteConfig
 
     [JsonPropertyName("enablePassiveDiscovery")]
     public bool EnablePassiveDiscovery { get; set; } = true;
+
+    [JsonPropertyName("priorityServices")]
+    public List<string>? PriorityServices { get; set; }
 }
 
 public class PendingRemediationTask
@@ -60,10 +78,16 @@ public class PendingRemediationTask
     public string? Params { get; set; }
 
     [JsonPropertyName("controlDefId")]
-    public int ControlDefId { get; set; }
+    public int? ControlDefId { get; set; }
 
     [JsonPropertyName("controlId")]
     public string? ControlId { get; set; }
+
+    [JsonPropertyName("signature")]
+    public string? Signature { get; set; }
+
+    [JsonPropertyName("approvedAt")]
+    public DateTime? ApprovedAt { get; set; }
 }
 
 public class TaskResultPayload
@@ -85,4 +109,27 @@ public class TaskResultPayload
 
     [JsonPropertyName("executedAt")]
     public DateTime? ExecutedAt { get; set; }
+
+    [JsonPropertyName("restorePointCreated")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? RestorePointCreated { get; set; }
+
+    [JsonPropertyName("restorePointName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RestorePointName { get; set; }
+}
+
+public class ServiceInfo
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = null!;
+
+    [JsonPropertyName("displayName")]
+    public string? DisplayName { get; set; }
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = null!;
+
+    [JsonPropertyName("startupType")]
+    public string StartupType { get; set; } = null!;
 }

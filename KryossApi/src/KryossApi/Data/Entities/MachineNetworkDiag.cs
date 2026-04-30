@@ -23,18 +23,17 @@ public class MachineNetworkDiag
     public int? CloudEndpointCount { get; set; }
     public decimal? CloudEndpointAvgMs { get; set; }
     public bool TriggeredByIpChange { get; set; }
-    public string? RawData { get; set; }
     public decimal? JitterMs { get; set; }
     public decimal? PacketLossPct { get; set; }
     public int? HopCount { get; set; }
     public string? TracerouteTarget { get; set; }
-    public string? TracerouteJson { get; set; }
     public DateTime ScannedAt { get; set; }
 
     public Machine Machine { get; set; } = null!;
     public AssessmentRun? Run { get; set; }
     public ICollection<MachineNetworkLatency> LatencyPeers { get; set; } = [];
     public ICollection<MachineNetworkRoute> Routes { get; set; } = [];
+    public ICollection<MachineTracerouteHop> TracerouteHops { get; set; } = [];
 }
 
 public class MachineNetworkLatency

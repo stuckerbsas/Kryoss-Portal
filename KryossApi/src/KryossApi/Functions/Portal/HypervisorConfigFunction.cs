@@ -8,6 +8,7 @@ using KryossApi.Services.InfraAssessment.Pipelines;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KryossApi.Functions.Portal;
 
@@ -18,15 +19,17 @@ public class HypervisorConfigFunction
     private readonly IHypervisorPipeline _pipeline;
     private readonly ICryptoService _crypto;
     private readonly IActlogService _actlog;
+    private readonly ILogger<HypervisorConfigFunction> _logger;
 
     public HypervisorConfigFunction(KryossDbContext db, ICurrentUserService user,
-        IHypervisorPipeline pipeline, ICryptoService crypto, IActlogService actlog)
+        IHypervisorPipeline pipeline, ICryptoService crypto, IActlogService actlog, ILogger<HypervisorConfigFunction> logger)
     {
         _db = db;
         _user = user;
         _pipeline = pipeline;
         _crypto = crypto;
         _actlog = actlog;
+        _logger = logger;
     }
 
     private async Task<string?> GetOrgFingerprint(Guid orgId)
@@ -118,7 +121,7 @@ public class HypervisorConfigFunction
         try { await _actlog.LogAsync("INFO", "hypervisor", "config_create",
             entityType: "infra_hypervisor_configs", entityId: config.Id.ToString(),
             message: $"Created config '{config.DisplayName}' ({config.Platform})"); }
-        catch { }
+        catch (Exception ex) { _logger.LogWarning(ex, "Actlog write failed"); }
 
         var res = req.CreateResponse(HttpStatusCode.Created);
         await res.WriteAsJsonAsync(new { config.Id, config.Platform, config.HostUrl, config.DisplayName });
@@ -171,7 +174,7 @@ public class HypervisorConfigFunction
         try { await _actlog.LogAsync("INFO", "hypervisor", "config_update",
             entityType: "infra_hypervisor_configs", entityId: config.Id.ToString(),
             message: $"Updated config '{config.DisplayName}'"); }
-        catch { }
+        catch (Exception ex) { _logger.LogWarning(ex, "Actlog write failed"); }
 
         var res = req.CreateResponse(HttpStatusCode.OK);
         await res.WriteAsJsonAsync(new { config.Id, config.Platform, config.HostUrl, config.DisplayName, config.IsActive });
@@ -231,7 +234,7 @@ public class HypervisorConfigFunction
             try { await _actlog.LogAsync("WARN", "hypervisor", "ssl_relaxed",
                 entityType: "infra_hypervisor_configs", entityId: config.Id.ToString(),
                 message: $"SSL verification relaxed for '{config.DisplayName}' ({config.HostUrl})"); }
-            catch { }
+            catch (Exception ex) { _logger.LogWarning(ex, "Actlog write failed"); }
         }
 
         bool success = false;

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using KryossApi.Data;
 using KryossApi.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -14,63 +13,92 @@ public interface ICveService
 public class CveService : ICveService
 {
     private readonly KryossDbContext _db;
-    private List<CveEntry>? _cachedEntries;
 
     public CveService(KryossDbContext db) => _db = db;
 
     public async Task ScanMachineAsync(Guid machineId, Guid organizationId, Guid? runId)
     {
-        var entries = await GetCveEntriesAsync();
-        if (entries.Count == 0) return;
-
-        var run = await _db.AssessmentRuns
-            .Where(r => r.MachineId == machineId)
-            .OrderByDescending(r => r.StartedAt)
-            .Select(r => new { r.Id, r.RawPayload })
-            .FirstOrDefaultAsync();
-
-        if (run?.RawPayload is null) return;
-
-        List<SoftwareDto>? software;
-        try
-        {
-            var payload = JsonSerializer.Deserialize<PayloadDto>(run.RawPayload,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            software = payload?.Software;
-        }
-        catch { return; }
-
-        if (software is null || software.Count == 0) return;
-
-        // Remove old findings for this machine
         var old = await _db.MachineCveFindings
             .Where(f => f.MachineId == machineId)
             .ToListAsync();
         _db.MachineCveFindings.RemoveRange(old);
 
-        foreach (var sw in software)
+        // Path A: CveProductMap bridge table (populated by RebuildProductMapAsync)
+        var mappedFindings = await (
+            from msi in _db.MachineSoftware
+            join cpm in _db.CveProductMaps on msi.SoftwareId equals cpm.SoftwareId
+            join cve in _db.CveEntries on cpm.CveEntryId equals cve.Id
+            where msi.MachineId == machineId && msi.RemovedAt == null
+            select new { msi, cpm, cve, softwareName = msi.Software.Name }
+        ).ToListAsync();
+
+        foreach (var f in mappedFindings)
         {
-            if (string.IsNullOrWhiteSpace(sw.Name)) continue;
+            if (!IsVersionAffected(f.msi.Version, f.cpm.AffectedBelow, f.cpm.FixedVersion))
+                continue;
 
-            foreach (var cve in entries)
+            _db.MachineCveFindings.Add(new MachineCveFinding
             {
-                if (!MatchesProduct(sw.Name, cve.ProductPattern)) continue;
-                if (!IsVersionAffected(sw.Version, cve.AffectedBelow, cve.FixedVersion)) continue;
+                MachineId = machineId,
+                OrganizationId = organizationId,
+                RunId = runId,
+                CveId = f.cve.CveId,
+                SoftwareName = f.softwareName,
+                SoftwareVersion = f.msi.Version,
+                InstalledVersion = f.msi.Version,
+                FixedVersion = f.cpm.FixedVersion,
+                Severity = f.cve.Severity,
+                CvssScore = f.cve.CvssScore,
+                Description = f.cve.Description,
+            });
+        }
 
-                _db.MachineCveFindings.Add(new MachineCveFinding
+        // Path B: Direct matching via Software.CpeVendor/CpeProduct → cve_entries.vendor/product
+        if (mappedFindings.Count == 0)
+        {
+            var machineSw = await _db.MachineSoftware
+                .Include(ms => ms.Software)
+                .Where(ms => ms.MachineId == machineId && ms.RemovedAt == null
+                    && ms.Software.CpeVendor != null && ms.Software.CpeProduct != null)
+                .ToListAsync();
+
+            if (machineSw.Count > 0)
+            {
+                var vendors = machineSw.Select(ms => ms.Software.CpeVendor!).Distinct().ToList();
+                var cves = await _db.CveEntries
+                    .Where(c => c.Vendor != null && vendors.Contains(c.Vendor))
+                    .ToListAsync();
+
+                foreach (var ms in machineSw)
                 {
-                    MachineId = machineId,
-                    OrganizationId = organizationId,
-                    RunId = runId ?? run.Id,
-                    CveId = cve.CveId,
-                    SoftwareName = sw.Name,
-                    SoftwareVersion = sw.Version,
-                    InstalledVersion = sw.Version,
-                    FixedVersion = cve.FixedVersion,
-                    Severity = cve.Severity,
-                    CvssScore = cve.CvssScore,
-                    Description = cve.Description,
-                });
+                    var sw = ms.Software;
+                    var matched = cves.Where(c =>
+                        string.Equals(c.Vendor, sw.CpeVendor, StringComparison.OrdinalIgnoreCase)
+                        && c.Product != null
+                        && sw.CpeProduct != null
+                        && c.Product.Contains(sw.CpeProduct, StringComparison.OrdinalIgnoreCase));
+
+                    foreach (var cve in matched)
+                    {
+                        if (!IsVersionAffected(ms.Version, cve.AffectedBelow, cve.FixedVersion))
+                            continue;
+
+                        _db.MachineCveFindings.Add(new MachineCveFinding
+                        {
+                            MachineId = machineId,
+                            OrganizationId = organizationId,
+                            RunId = runId,
+                            CveId = cve.CveId,
+                            SoftwareName = sw.Name,
+                            SoftwareVersion = ms.Version,
+                            InstalledVersion = ms.Version,
+                            FixedVersion = cve.FixedVersion,
+                            Severity = cve.Severity,
+                            CvssScore = cve.CvssScore,
+                            Description = cve.Description,
+                        });
+                    }
+                }
             }
         }
 
@@ -88,34 +116,11 @@ public class CveService : ICveService
             await ScanMachineAsync(id, organizationId, null);
     }
 
-    private async Task<List<CveEntry>> GetCveEntriesAsync()
-    {
-        _cachedEntries ??= await _db.CveEntries.AsNoTracking().ToListAsync();
-        return _cachedEntries;
-    }
-
-    private static bool MatchesProduct(string softwareName, string pattern)
-    {
-        // Convert SQL LIKE pattern to simple contains matching
-        // Pattern format: %keyword1%keyword2%
-        var parts = pattern.Split('%', StringSplitOptions.RemoveEmptyEntries);
-        var remaining = softwareName;
-        foreach (var part in parts)
-        {
-            var idx = remaining.IndexOf(part, StringComparison.OrdinalIgnoreCase);
-            if (idx < 0) return false;
-            remaining = remaining[(idx + part.Length)..];
-        }
-        return true;
-    }
-
     internal static bool IsVersionAffected(string? installedVersion, string? affectedBelow, string? fixedVersion)
     {
-        if (installedVersion is null) return true; // unknown version = assume vulnerable
-
+        if (installedVersion is null) return true;
         var target = affectedBelow ?? fixedVersion;
-        if (target is null) return true; // no version constraint = all versions affected
-
+        if (target is null) return true;
         return CompareVersions(installedVersion, target) < 0;
     }
 
@@ -123,7 +128,6 @@ public class CveService : ICveService
     {
         var partsA = NormalizeVersion(a);
         var partsB = NormalizeVersion(b);
-
         var len = Math.Max(partsA.Length, partsB.Length);
         for (int i = 0; i < len; i++)
         {
@@ -137,16 +141,12 @@ public class CveService : ICveService
 
     private static long[] NormalizeVersion(string version)
     {
-        // Strip common prefixes/suffixes
         var v = version.Trim();
         if (v.StartsWith('v') || v.StartsWith('V')) v = v[1..];
-
-        // Extract numeric parts
         var parts = v.Split('.', '-', '_', ' ');
         var result = new List<long>();
         foreach (var part in parts)
         {
-            // Extract leading digits from each part
             var digits = "";
             foreach (var c in part)
             {
@@ -157,17 +157,5 @@ public class CveService : ICveService
                 result.Add(num);
         }
         return result.Count > 0 ? result.ToArray() : [0];
-    }
-
-    private class PayloadDto
-    {
-        public List<SoftwareDto>? Software { get; set; }
-    }
-
-    private class SoftwareDto
-    {
-        public string Name { get; set; } = null!;
-        public string? Version { get; set; }
-        public string? Publisher { get; set; }
     }
 }

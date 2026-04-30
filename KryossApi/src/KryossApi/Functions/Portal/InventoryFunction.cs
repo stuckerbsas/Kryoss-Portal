@@ -17,11 +17,13 @@ public class InventoryFunction
 {
     private readonly KryossDbContext _db;
     private readonly ICurrentUserService _user;
+    private readonly IBlobPayloadService? _blob;
 
-    public InventoryFunction(KryossDbContext db, ICurrentUserService user)
+    public InventoryFunction(KryossDbContext db, ICurrentUserService user, IBlobPayloadService? blob = null)
     {
         _db = db;
         _user = user;
+        _blob = blob;
     }
 
     // ── Hardware Inventory ──
@@ -169,59 +171,47 @@ public class InventoryFunction
             return bad;
         }
 
-        // Get the latest run per machine, with RawPayload
         var machineIds = await _db.Machines
             .Where(m => m.OrganizationId == orgId.Value && m.IsActive)
-            .Select(m => m.Id)
+            .Select(m => new { m.Id, m.Hostname })
             .ToListAsync();
 
-        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var machineHostnames = machineIds.ToDictionary(m => m.Id, m => m.Hostname);
+        var ids = machineIds.Select(m => m.Id).ToList();
 
-        // Map: softwareKey -> aggregated data
+        var swRows = await _db.MachineSoftware
+            .Include(ms => ms.Software)
+            .Where(ms => ids.Contains(ms.MachineId) && ms.RemovedAt == null)
+            .Select(ms => new
+            {
+                ms.MachineId,
+                ms.Software.Name,
+                ms.Software.Publisher,
+                ms.Version,
+                ms.Software.Category,
+            })
+            .ToListAsync();
+
         var softwareMap = new Dictionary<string, SoftwareAggregation>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var machineId in machineIds)
+        foreach (var row in swRows)
         {
-            var run = await _db.AssessmentRuns
-                .Where(r => r.MachineId == machineId)
-                .OrderByDescending(r => r.StartedAt)
-                .Select(r => new { r.RawPayload, r.Machine.Hostname })
-                .FirstOrDefaultAsync();
-
-            if (run?.RawPayload is null) continue;
-
-            AgentPayload? payload;
-            try
+            var key = $"{row.Name}|||{row.Publisher}|||{row.Version}";
+            if (!softwareMap.TryGetValue(key, out var agg))
             {
-                payload = JsonSerializer.Deserialize<AgentPayload>(run.RawPayload, opts);
-            }
-            catch
-            {
-                continue;
-            }
-
-            if (payload?.Software is null) continue;
-
-            foreach (var sw in payload.Software)
-            {
-                if (string.IsNullOrWhiteSpace(sw.Name)) continue;
-
-                var key = $"{sw.Name}|||{sw.Publisher}|||{sw.Version}";
-                if (!softwareMap.TryGetValue(key, out var agg))
+                agg = new SoftwareAggregation
                 {
-                    agg = new SoftwareAggregation
-                    {
-                        Name = sw.Name,
-                        Publisher = sw.Publisher,
-                        Version = sw.Version,
-                        Category = Categorize(sw.Name, sw.Publisher),
-                        Machines = []
-                    };
-                    softwareMap[key] = agg;
-                }
-                if (!agg.Machines.Contains(run.Hostname, StringComparer.OrdinalIgnoreCase))
-                    agg.Machines.Add(run.Hostname);
+                    Name = row.Name,
+                    Publisher = row.Publisher,
+                    Version = row.Version,
+                    Category = row.Category ?? Categorize(row.Name, row.Publisher),
+                    Machines = []
+                };
+                softwareMap[key] = agg;
             }
+            var hostname = machineHostnames.GetValueOrDefault(row.MachineId, "unknown");
+            if (!agg.Machines.Contains(hostname, StringComparer.OrdinalIgnoreCase))
+                agg.Machines.Add(hostname);
         }
 
         var items = softwareMap.Values

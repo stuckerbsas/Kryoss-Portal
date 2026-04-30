@@ -110,6 +110,27 @@ public class ReportData
     public List<MachineNetworkDiag> NetworkDiags { get; set; } = new();
     public bool HasNetworkData => NetworkDiags.Count > 0;
 
+    // --- Vulnerability data ---
+    public List<MachineCveFinding> CveFindings { get; set; } = new();
+    public List<MachinePatchStatus> PatchStatuses { get; set; } = new();
+    public ExternalScan? LatestExternalScan { get; set; }
+    public bool HasCveData => CveFindings.Count > 0;
+    public bool HasPatchData => PatchStatuses.Count > 0;
+    public bool HasExternalScanData => LatestExternalScan != null;
+
+    // --- DC Health ---
+    public DcHealthSnapshot? DcHealth { get; set; }
+    public bool HasDcHealthData => DcHealth != null;
+
+    // --- WAN / Sites ---
+    public List<NetworkSite> NetworkSites { get; set; } = new();
+    public List<WanFinding> WanFindings { get; set; } = new();
+    public bool HasWanData => NetworkSites.Count > 0;
+
+    // --- Remediation ---
+    public List<RemediationTask> RemediationTasks { get; set; } = new();
+    public bool HasRemediationData => RemediationTasks.Count > 0;
+
     // --- Computed convenience ---
     public decimal AvgScore => Runs.Count > 0 ? Math.Round(Runs.Average(r => r.GlobalScore ?? 0), 1) : 0;
     public int TotalMachines => Runs.Count;

@@ -26,7 +26,6 @@ public class CloudAssessmentAlertSent
     public string Severity { get; set; } = null!;
     public string RuleType { get; set; } = null!;
     public string Summary { get; set; } = null!;
-    public string? PayloadJson { get; set; }
     public string DeliveryStatus { get; set; } = "pending";
     public DateTime? DeliveredAt { get; set; }
     public string? ErrorMessage { get; set; }

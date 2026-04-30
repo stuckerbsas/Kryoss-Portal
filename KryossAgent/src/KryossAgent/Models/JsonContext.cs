@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using KryossAgent.Services;
 
 namespace KryossAgent.Models;
 
@@ -91,7 +92,19 @@ namespace KryossAgent.Models;
 [JsonSerializable(typeof(PendingRemediationTask))]
 [JsonSerializable(typeof(List<PendingRemediationTask>))]
 [JsonSerializable(typeof(TaskResultPayload))]
+[JsonSerializable(typeof(ServiceInfo))]
+[JsonSerializable(typeof(List<ServiceInfo>))]
+[JsonSerializable(typeof(AvailableUpdateItem))]
+[JsonSerializable(typeof(List<AvailableUpdateItem>))]
 [JsonSerializable(typeof(ScheduleResponse))]
+[JsonSerializable(typeof(RegistryParams))]
+[JsonSerializable(typeof(ServiceParams))]
+[JsonSerializable(typeof(ServiceStartupParams))]
+[JsonSerializable(typeof(AuditPolicyParams))]
+[JsonSerializable(typeof(AgentErrorDto))]
+[JsonSerializable(typeof(List<AgentErrorDto>))]
+[JsonSerializable(typeof(LoopStatusDto))]
+[JsonSerializable(typeof(Dictionary<string, LoopStatusDto>))]
 [JsonSourceGenerationOptions(
     PropertyNameCaseInsensitive = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

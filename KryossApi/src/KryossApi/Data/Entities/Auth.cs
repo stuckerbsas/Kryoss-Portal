@@ -99,4 +99,9 @@ public class Actlog
     public short? ResponseCode { get; set; }
     public int? DurationMs { get; set; }
     public string? Message { get; set; }
+
+    public Guid? MachineId { get; set; }
+    public Machine? Machine { get; set; }
+    public Guid? UserId { get; set; }
+    public User? User { get; set; }
 }

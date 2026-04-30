@@ -7,23 +7,22 @@ using KryossApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace KryossApi.Functions.Portal;
 
-/// <summary>
-/// CRUD for control definitions. Admin can create/edit/deactivate controls.
-/// Controls are the building blocks of assessments.
-/// </summary>
 [RequirePermission("controls:read")]
 public class ControlDefsFunction
 {
     private readonly KryossDbContext _db;
     private readonly IActlogService _actlog;
+    private readonly ILogger<ControlDefsFunction> _logger;
 
-    public ControlDefsFunction(KryossDbContext db, IActlogService actlog)
+    public ControlDefsFunction(KryossDbContext db, IActlogService actlog, ILogger<ControlDefsFunction> logger)
     {
         _db = db;
         _actlog = actlog;
+        _logger = logger;
     }
 
     [Function("ControlDefs_List")]
@@ -95,7 +94,10 @@ public class ControlDefsFunction
                 c.Name,
                 c.Type,
                 c.Severity,
-                c.CheckJson,
+                checkParams = _db.ControlCheckParams
+                    .Where(p => p.ControlDefId == c.Id)
+                    .Select(p => new { p.ParamName, p.ParamValue })
+                    .ToList(),
                 c.Remediation,
                 c.IsActive,
                 c.Version,
@@ -110,7 +112,6 @@ public class ControlDefsFunction
                     .Join(_db.Platforms, cp => cp.PlatformId, pl => pl.Id,
                         (cp, pl) => new { pl.Id, pl.Code, pl.Name })
                     .ToList(),
-                // Where this control fails most
                 failStats = _db.ControlResults
                     .Where(cr => cr.ControlDefId == c.Id && cr.Status == "fail")
                     .Count()
@@ -157,7 +158,6 @@ public class ControlDefsFunction
             Name = body.Name,
             Type = body.Type!,
             Severity = body.Severity,
-            CheckJson = body.CheckJson!,
             Remediation = body.Remediation,
             IsActive = true,
             Version = 1
@@ -165,7 +165,27 @@ public class ControlDefsFunction
         _db.ControlDefs.Add(control);
         await _db.SaveChangesAsync();
 
-        // Add framework/platform mappings
+        if (!string.IsNullOrEmpty(body.CheckJson))
+        {
+            try
+            {
+                var jsonDoc = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body.CheckJson);
+                if (jsonDoc is not null)
+                {
+                    foreach (var (key, val) in jsonDoc)
+                    {
+                        _db.ControlCheckParams.Add(new ControlCheckParam
+                        {
+                            ControlDefId = control.Id,
+                            ParamName = key,
+                            ParamValue = val.ValueKind == JsonValueKind.String ? val.GetString() : val.GetRawText()
+                        });
+                    }
+                }
+            }
+            catch (Exception ex) { _logger.LogDebug(ex, "Failed to parse check_json params"); }
+        }
+
         if (body.FrameworkIds is { Count: > 0 })
         {
             _db.ControlFrameworks.AddRange(body.FrameworkIds.Select(fid => new ControlFramework
@@ -211,11 +231,33 @@ public class ControlDefsFunction
         if (body?.Name is not null) control.Name = body.Name;
         if (body?.Type is not null) control.Type = body.Type;
         if (body?.Severity is not null) control.Severity = body.Severity;
-        if (body?.CheckJson is not null) control.CheckJson = body.CheckJson;
         if (body?.Remediation is not null) control.Remediation = body.Remediation;
         if (body?.CategoryId > 0) control.CategoryId = body.CategoryId;
         if (body?.IsActive is not null) control.IsActive = body.IsActive.Value;
         control.Version++;
+
+        if (body?.CheckJson is not null)
+        {
+            var oldParams = await _db.ControlCheckParams.Where(p => p.ControlDefId == id).ToListAsync();
+            _db.ControlCheckParams.RemoveRange(oldParams);
+            try
+            {
+                var jsonDoc = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body.CheckJson);
+                if (jsonDoc is not null)
+                {
+                    foreach (var (key, val) in jsonDoc)
+                    {
+                        _db.ControlCheckParams.Add(new ControlCheckParam
+                        {
+                            ControlDefId = id,
+                            ParamName = key,
+                            ParamValue = val.ValueKind == JsonValueKind.String ? val.GetString() : val.GetRawText()
+                        });
+                    }
+                }
+            }
+            catch (Exception ex) { _logger.LogDebug(ex, "Failed to parse check_json params"); }
+        }
 
         await _db.SaveChangesAsync();
 

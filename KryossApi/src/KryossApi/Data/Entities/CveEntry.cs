@@ -6,6 +6,7 @@ public class CveEntry
     public string CveId { get; set; } = null!;
     public string ProductPattern { get; set; } = null!;
     public string? Vendor { get; set; }
+    public string? Product { get; set; }
     public string? AffectedBelow { get; set; }
     public string? AffectedAbove { get; set; }
     public string? FixedVersion { get; set; }
@@ -15,6 +16,14 @@ public class CveEntry
     public string? CweId { get; set; }
     public DateTime? PublishedAt { get; set; }
     public string Source { get; set; } = "builtin";
+    public bool IsKnownExploited { get; set; }
+    public decimal? EpssScore { get; set; }
+    public decimal? EpssPercentile { get; set; }
+    public string? CpeMatchString { get; set; }
+    public string? ReferencesUrl { get; set; }
+    public string? ProductClass { get; set; }
+    public DateTime? KevDueDate { get; set; }
+    public DateTime? KevAddedDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
@@ -50,4 +59,5 @@ public class CveSyncLog
     public string Source { get; set; } = "nvd";
     public string Status { get; set; } = "success";
     public string? ErrorMessage { get; set; }
+    public string? Progress { get; set; }
 }
