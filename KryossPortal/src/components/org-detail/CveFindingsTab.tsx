@@ -231,17 +231,34 @@ export function CveFindingsTab() {
     );
   }
 
-  if (!data || data.totalFindings === 0) {
+  if (!data) {
     return (
       <EmptyState
         icon={<Shield className="size-10" />}
-        title="No CVE Findings"
-        description="No known vulnerabilities detected in installed software. Run a rescan to check against the latest CVE database."
+        title="Failed to load CVE data"
+        description="Could not retrieve vulnerability findings. Try again later."
+      />
+    );
+  }
+
+  if (data.totalFindings === 0) {
+    const noMachines = data.totalMachines === 0;
+    return (
+      <EmptyState
+        icon={noMachines ? <Monitor className="size-10" /> : <CheckCircle className="size-10 text-green-600" />}
+        title={noMachines ? 'No machines enrolled' : 'No known vulnerabilities'}
+        description={
+          noMachines
+            ? 'Deploy agents to start CVE monitoring. Scans run automatically after each assessment.'
+            : `${data.totalMachines} machines scanned — no known vulnerabilities detected in installed software.`
+        }
         action={
-          <Button onClick={handleRescan} disabled={rescan.isPending}>
-            {rescan.isPending && <Loader2 className="size-4 mr-1 animate-spin" />}
-            Scan Now
-          </Button>
+          noMachines ? undefined : (
+            <Button variant="outline" onClick={handleRescan} disabled={rescan.isPending}>
+              {rescan.isPending && <Loader2 className="size-4 mr-1 animate-spin" />}
+              Rescan
+            </Button>
+          )
         }
       />
     );
