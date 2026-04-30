@@ -1,16 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   AlertTriangle,
   Bug,
   CheckCircle,
+  ChevronDown,
+  ChevronRight,
   Loader2,
   Monitor,
+  Package,
   RefreshCw,
   Shield,
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useCveFindings, useCveStats, useCveRescan, useDismissCve } from '@/api/cveFindings';
+import { useCveFindings, useCveRescan, useDismissCve } from '@/api/cveFindings';
 import type { CveFinding } from '@/api/cveFindings';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -34,6 +37,50 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+const SEV_ORDER: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+interface SoftwareGroup {
+  softwareName: string;
+  version: string;
+  maxCvss: number | null;
+  maxSeverity: string;
+  machines: { id: string; name: string; foundAt: string }[];
+  cves: { cveId: string; severity: string; cvssScore: number | null; fixedVersion: string | null; description: string | null; findingIds: number[] }[];
+}
+
+function buildGroups(findings: CveFinding[]): SoftwareGroup[] {
+  const map = new Map<string, SoftwareGroup>();
+
+  for (const f of findings) {
+    const key = `${f.softwareName}\0${f.installedVersion ?? ''}`;
+    let g = map.get(key);
+    if (!g) {
+      g = { softwareName: f.softwareName, version: f.installedVersion ?? '--', maxCvss: null, maxSeverity: 'low', machines: [], cves: [] };
+      map.set(key, g);
+    }
+
+    if (!g.machines.some((m) => m.id === f.machineId))
+      g.machines.push({ id: f.machineId, name: f.machineName, foundAt: f.foundAt });
+
+    const existing = g.cves.find((c) => c.cveId === f.cveId);
+    if (existing) {
+      existing.findingIds.push(f.id);
+    } else {
+      g.cves.push({ cveId: f.cveId, severity: f.severity, cvssScore: f.cvssScore, fixedVersion: f.fixedVersion, description: f.description, findingIds: [f.id] });
+    }
+
+    if (f.cvssScore != null && (g.maxCvss == null || f.cvssScore > g.maxCvss))
+      g.maxCvss = f.cvssScore;
+    if ((SEV_ORDER[f.severity] ?? 0) > (SEV_ORDER[g.maxSeverity] ?? 0))
+      g.maxSeverity = f.severity;
+  }
+
+  for (const g of map.values())
+    g.cves.sort((a, b) => (b.cvssScore ?? 0) - (a.cvssScore ?? 0));
+
+  return [...map.values()].sort((a, b) => (b.maxCvss ?? 0) - (a.maxCvss ?? 0));
+}
+
 function severityBadge(severity: string) {
   const styles: Record<string, string> = {
     critical: 'bg-red-100 text-red-800',
@@ -41,11 +88,7 @@ function severityBadge(severity: string) {
     medium: 'bg-amber-100 text-amber-800',
     low: 'bg-blue-100 text-blue-800',
   };
-  return (
-    <Badge className={styles[severity] ?? 'bg-gray-100 text-gray-800'}>
-      {severity}
-    </Badge>
-  );
+  return <Badge className={styles[severity] ?? 'bg-gray-100 text-gray-800'}>{severity}</Badge>;
 }
 
 function cvssColor(score: number | null) {
@@ -56,13 +99,113 @@ function cvssColor(score: number | null) {
   return 'text-blue-600';
 }
 
+function sevBorderColor(severity: string) {
+  const colors: Record<string, string> = {
+    critical: 'border-l-red-500',
+    high: 'border-l-orange-500',
+    medium: 'border-l-amber-400',
+    low: 'border-l-blue-400',
+  };
+  return colors[severity] ?? 'border-l-gray-300';
+}
+
+function SoftwareGroupCard({ group, onDismiss, dismissPending }: {
+  group: SoftwareGroup;
+  onDismiss: (findingId: number, cveId: string) => void;
+  dismissPending: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Card className={`border-l-4 ${sevBorderColor(group.maxSeverity)}`}>
+      <CardHeader className="pb-2">
+        <div
+          className="flex items-center justify-between cursor-pointer select-none"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <Package className="size-5 text-muted-foreground shrink-0" />
+            <div className="min-w-0">
+              <span className="font-semibold truncate block">{group.softwareName}</span>
+              <span className="text-sm text-muted-foreground">v{group.version}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {severityBadge(group.maxSeverity)}
+            <span className={`text-sm font-mono ${cvssColor(group.maxCvss)}`}>
+              {group.maxCvss?.toFixed(1) ?? '--'}
+            </span>
+            <span className="text-xs text-muted-foreground">{group.cves.length} CVEs</span>
+            <span className="text-xs text-muted-foreground">{group.machines.length} {group.machines.length === 1 ? 'machine' : 'machines'}</span>
+            {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="pt-0">
+        {/* Machines always visible */}
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {group.machines.map((m) => (
+            <Badge key={m.id} variant="outline" className="text-xs font-normal">
+              {m.name}
+            </Badge>
+          ))}
+        </div>
+
+        {/* CVE table — collapsible */}
+        {expanded && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-20">Severity</TableHead>
+                <TableHead>CVE</TableHead>
+                <TableHead className="w-16">CVSS</TableHead>
+                <TableHead className="w-24">Fix</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="w-16"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {group.cves.map((c) => (
+                <TableRow key={c.cveId}>
+                  <TableCell>{severityBadge(c.severity)}</TableCell>
+                  <TableCell className="font-mono text-sm">{c.cveId}</TableCell>
+                  <TableCell className={cvssColor(c.cvssScore)}>
+                    {c.cvssScore?.toFixed(1) ?? '--'}
+                  </TableCell>
+                  <TableCell className="text-sm text-green-700">{c.fixedVersion ?? '--'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-sm truncate">
+                    {c.description ?? ''}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => onDismiss(c.findingIds[0], c.cveId)}
+                      disabled={dismissPending}
+                    >
+                      Dismiss
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CveFindingsTab() {
   const { orgId } = useOrgParam();
   const [severityFilter, setSeverityFilter] = useState<string | undefined>(undefined);
   const { data, isLoading } = useCveFindings(orgId, severityFilter);
-  const { data: stats } = useCveStats(orgId);
   const rescan = useCveRescan(orgId);
   const dismiss = useDismissCve(orgId);
+
+  const groups = useMemo(() => (data ? buildGroups(data.findings) : []), [data]);
 
   const handleRescan = () => {
     rescan.mutate(undefined, {
@@ -71,9 +214,9 @@ export function CveFindingsTab() {
     });
   };
 
-  const handleDismiss = (finding: CveFinding) => {
-    dismiss.mutate(finding.id, {
-      onSuccess: () => toast.success(`${finding.cveId} dismissed`),
+  const handleDismiss = (findingId: number, cveId: string) => {
+    dismiss.mutate(findingId, {
+      onSuccess: () => toast.success(`${cveId} dismissed`),
     });
   };
 
@@ -111,19 +254,36 @@ export function CveFindingsTab() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">CVE Findings</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRescan}
-          disabled={rescan.isPending}
-        >
-          {rescan.isPending ? (
-            <Loader2 className="size-4 mr-1 animate-spin" />
-          ) : (
-            <RefreshCw className="size-4 mr-1" />
-          )}
-          Rescan
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select
+            value={severityFilter ?? 'all'}
+            onValueChange={(v) => setSeverityFilter(v === 'all' ? undefined : v)}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="critical">Critical</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRescan}
+            disabled={rescan.isPending}
+          >
+            {rescan.isPending ? (
+              <Loader2 className="size-4 mr-1 animate-spin" />
+            ) : (
+              <RefreshCw className="size-4 mr-1" />
+            )}
+            Rescan
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -187,101 +347,20 @@ export function CveFindingsTab() {
         </Card>
       </div>
 
-      {/* Top vulnerable software */}
-      {stats && stats.topSoftware.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Most Vulnerable Software</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {stats.topSoftware.slice(0, 8).map((sw) => (
-                <div key={sw.softwareName} className="border rounded-lg p-3">
-                  <p className="text-sm font-medium truncate">{sw.softwareName}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-muted-foreground">{sw.cveCount} CVEs</span>
-                    <span className="text-xs text-muted-foreground">{sw.machineCount} machines</span>
-                    {sw.maxCvss != null && (
-                      <span className={`text-xs ${cvssColor(sw.maxCvss)}`}>
-                        CVSS {sw.maxCvss.toFixed(1)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Findings table */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium">Findings</CardTitle>
-            <Select
-              value={severityFilter ?? 'all'}
-              onValueChange={(v) => setSeverityFilter(v === 'all' ? undefined : v)}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Severity</TableHead>
-                <TableHead>CVE</TableHead>
-                <TableHead>CVSS</TableHead>
-                <TableHead>Software</TableHead>
-                <TableHead>Installed</TableHead>
-                <TableHead>Fix</TableHead>
-                <TableHead>Machine</TableHead>
-                <TableHead>Found</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.findings.map((f) => (
-                <TableRow key={f.id}>
-                  <TableCell>{severityBadge(f.severity)}</TableCell>
-                  <TableCell className="font-mono text-sm">{f.cveId}</TableCell>
-                  <TableCell className={cvssColor(f.cvssScore)}>
-                    {f.cvssScore?.toFixed(1) ?? '--'}
-                  </TableCell>
-                  <TableCell className="font-medium max-w-48 truncate">{f.softwareName}</TableCell>
-                  <TableCell className="text-sm">{f.installedVersion ?? '--'}</TableCell>
-                  <TableCell className="text-sm text-green-700">{f.fixedVersion ?? '--'}</TableCell>
-                  <TableCell className="text-sm">{f.machineName}</TableCell>
-                  <TableCell className="text-sm">
-                    {new Date(f.foundAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDismiss(f)}
-                      disabled={dismiss.isPending}
-                    >
-                      Dismiss
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* Software groups */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          {groups.length} vulnerable {groups.length === 1 ? 'software' : 'software packages'}
+        </h3>
+        {groups.map((g) => (
+          <SoftwareGroupCard
+            key={`${g.softwareName}\0${g.version}`}
+            group={g}
+            onDismiss={handleDismiss}
+            dismissPending={dismiss.isPending}
+          />
+        ))}
+      </div>
     </div>
   );
 }
