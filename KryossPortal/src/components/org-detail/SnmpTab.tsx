@@ -159,7 +159,7 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
             {device.machineId && <span title="Kryoss Agent"><Monitor className="h-3 w-3 text-green-600" /></span>}
           </div>
         </TableCell>
-        <TableCell className="font-medium text-sm">{device.sysName ?? '—'}</TableCell>
+        <TableCell className="font-medium text-sm">{device.sysName ?? device.machineName ?? '—'}</TableCell>
         <TableCell>{deviceTypeBadge(device.deviceType)}</TableCell>
         <TableCell className="text-xs text-muted-foreground">{device.vendor ?? '—'}</TableCell>
         <TableCell>
@@ -418,12 +418,19 @@ function SnmpConfigCard({ orgId }: { orgId: string }) {
   );
 }
 
+function isUnidentified(d: SnmpDevice) {
+  return !d.sysName && !d.machineName && (!d.deviceType || d.deviceType === 'unknown');
+}
+
 export function SnmpTab() {
   const { orgId } = useOrgParam();
   const { data: devices, isLoading } = useSnmpDevices(orgId);
+  const [showUnidentified, setShowUnidentified] = useState(false);
 
   const active = devices?.filter(d => !d.isStale) ?? [];
   const stale = devices?.filter(d => d.isStale) ?? [];
+  const identified = active.filter(d => !isUnidentified(d));
+  const unidentified = active.filter(isUnidentified);
   const totalNeighbors = devices?.reduce((s, d) => s + (d.lldpNeighborCount ?? 0) + (d.cdpNeighborCount ?? 0), 0) ?? 0;
   const withCpu = active.filter(d => d.cpuLoadPct != null);
   const avgCpu = withCpu.length > 0 ? Math.round(withCpu.reduce((s, d) => s + d.cpuLoadPct!, 0) / withCpu.length) : null;
@@ -529,7 +536,21 @@ export function SnmpTab() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {active.map((d) => <DeviceRow key={d.id} device={d} />)}
+                    {identified.map((d) => <DeviceRow key={d.id} device={d} />)}
+                    {unidentified.length > 0 && (
+                      <TableRow
+                        className="cursor-pointer hover:bg-muted/50 bg-muted/20"
+                        onClick={() => setShowUnidentified(!showUnidentified)}
+                      >
+                        <TableCell colSpan={10} className="text-sm text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            {showUnidentified ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            Unidentified Devices ({unidentified.length})
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {showUnidentified && unidentified.map((d) => <DeviceRow key={d.id} device={d} />)}
                     {stale.map((d) => <DeviceRow key={d.id} device={d} />)}
                   </TableBody>
                 </Table>

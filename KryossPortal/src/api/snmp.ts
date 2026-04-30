@@ -92,6 +92,7 @@ export interface SnmpDevice {
   firstSeenAt: string | null;
   isStale: boolean;
   machineId: string | null;
+  machineName: string | null;
   scanSource: string | null;
   secondaryIps: string | null;
   scannedAt: string;
