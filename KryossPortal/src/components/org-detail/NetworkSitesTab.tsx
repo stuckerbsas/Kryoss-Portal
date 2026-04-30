@@ -261,13 +261,18 @@ export function NetworkSitesTab() {
   }
 
   if (!sites || sites.length === 0) {
+    const hasIpData = history && history.length > 0;
     return (
       <EmptyState
         icon={<Globe className="size-10" />}
         title="No Network Sites Detected"
-        description="Sites are auto-derived from agent public IPs. Run an assessment first, then rebuild sites."
+        description={
+          hasIpData
+            ? `${history.length} IP records collected from agents. Click Rebuild to create sites.`
+            : 'Sites are auto-derived from agent public IPs. Agents report IPs on each heartbeat — data will appear within minutes of enrollment.'
+        }
         action={
-          <Button onClick={handleRebuild} disabled={rebuild.isPending}>
+          <Button onClick={handleRebuild} disabled={rebuild.isPending || !hasIpData}>
             {rebuild.isPending && <Loader2 className="size-4 mr-1 animate-spin" />}
             Rebuild Sites
           </Button>

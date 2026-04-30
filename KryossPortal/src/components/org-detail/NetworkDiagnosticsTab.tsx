@@ -236,7 +236,7 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
 
 export function NetworkDiagnosticsTab() {
   const { orgId } = useOrgParam();
-  const { data, isLoading } = useNetworkDiagnostics(orgId);
+  const { data, isLoading, error } = useNetworkDiagnostics(orgId);
 
   if (isLoading) {
     return (
@@ -251,6 +251,16 @@ export function NetworkDiagnosticsTab() {
         </div>
         <Skeleton className="h-48" />
       </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <EmptyState
+        icon={<Wifi className="size-10" />}
+        title="Failed to load diagnostics"
+        description={`Error: ${error.message}`}
+      />
     );
   }
 
