@@ -296,7 +296,7 @@ function OverviewTabContent({ machine, chartData, machineId }: { machine: any; c
         <SectionCard icon={<Building2 className="size-4" />} title="Domain">
           <InfoRow label="Status" value={
             machine.domainStatus ? <Badge variant="outline" className="text-xs">{
-              { DomainJoined: 'Domain Joined', AzureADJoined: 'Azure AD Joined', HybridJoined: 'Hybrid Joined', Workgroup: 'Workgroup' }[machine.domainStatus] ?? machine.domainStatus
+              ({ DomainJoined: 'Domain Joined', AzureADJoined: 'Azure AD Joined', HybridJoined: 'Hybrid Joined', Workgroup: 'Workgroup' } as Record<string, string>)[machine.domainStatus] ?? machine.domainStatus
             }</Badge> : null
           } />
           <InfoRow label="Domain" value={machine.domainName} />
