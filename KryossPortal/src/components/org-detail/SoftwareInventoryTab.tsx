@@ -248,7 +248,7 @@ export function SoftwareInventoryTab() {
                   <TableRow key={`${key}-detail`}>
                     <TableCell />
                     <TableCell colSpan={5}>
-                      <div className="py-1 text-sm text-muted-foreground">
+                      <div className="py-1 text-sm text-muted-foreground max-h-32 overflow-y-auto">
                         <span className="font-medium text-foreground">
                           Installed on:{' '}
                         </span>

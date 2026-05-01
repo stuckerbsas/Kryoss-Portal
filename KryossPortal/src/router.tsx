@@ -18,6 +18,7 @@ import { ActivityLogPage } from './pages/ActivityLogPage';
 import { UsersPage } from './pages/UsersPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { CveDatabasePage } from './pages/CveDatabasePage';
+import { SoftwareCatalogPage } from './pages/SoftwareCatalogPage';
 
 export const router = createBrowserRouter([
   {
@@ -105,6 +106,15 @@ export const router = createBrowserRouter([
         element: (
           <RequirePermission slug="admin:read">
             <CveDatabasePage />
+          </RequirePermission>
+        ),
+      },
+      {
+        path: 'software-catalog',
+        handle: { crumb: () => 'Software Catalog' },
+        element: (
+          <RequirePermission slug="admin:read">
+            <SoftwareCatalogPage />
           </RequirePermission>
         ),
       },
