@@ -34,13 +34,13 @@ export function useSoftwareCatalog(search: string, category: string, page: numbe
   });
 }
 
-export function useToggleCommercial() {
+export function useUpdateCategory() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, isCommercial }: { id: number; isCommercial: boolean }) =>
+    mutationFn: ({ id, category }: { id: number; category: string | null }) =>
       apiFetch(`/v2/software-catalog/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ isCommercial }),
+        body: JSON.stringify({ category }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['software-catalog'] });

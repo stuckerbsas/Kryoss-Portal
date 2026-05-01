@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { Search, Package, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useSoftwareCatalog, useToggleCommercial, useAutoDetect } from '@/api/softwareCatalog';
+import { useSoftwareCatalog, useUpdateCategory, useAutoDetect } from '@/api/softwareCatalog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
 const categoryOptions = [
@@ -29,7 +28,7 @@ export function SoftwareCatalogPage() {
   const [page, setPage] = useState(1);
 
   const { data, isLoading } = useSoftwareCatalog(search, category, page);
-  const toggle = useToggleCommercial();
+  const updateCat = useUpdateCategory();
   const autoDetect = useAutoDetect();
 
   const handleAutoDetect = () => {
@@ -121,33 +120,33 @@ export function SoftwareCatalogPage() {
                   <th className="py-2.5 px-3">Publisher</th>
                   <th className="py-2.5 px-3 text-center">Machines</th>
                   <th className="py-2.5 px-3">Category</th>
-                  <th className="py-2.5 px-3 text-center">Licensed</th>
                 </tr>
               </thead>
               <tbody>
-                {data?.items.map((sw) => {
-                  const badge = categoryBadge[sw.category ?? ''];
-                  return (
+                {data?.items.map((sw) => (
                     <tr key={sw.id} className="border-b last:border-0 hover:bg-muted/30">
                       <td className="py-2 px-3 font-medium">{sw.name}</td>
                       <td className="py-2 px-3 text-muted-foreground">{sw.publisher ?? '—'}</td>
                       <td className="py-2 px-3 text-center">{sw.machineCount}</td>
                       <td className="py-2 px-3">
-                        {badge ? (
-                          <Badge variant="secondary" className={badge.className}>{badge.label}</Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 flex justify-center">
-                        <Switch
-                          checked={sw.isCommercial}
-                          onCheckedChange={(val) => toggle.mutate({ id: sw.id, isCommercial: val })}
-                        />
+                        <Select
+                          value={sw.category ?? '_none'}
+                          onValueChange={(val) => updateCat.mutate({ id: sw.id, category: val === '_none' ? null : val })}
+                        >
+                          <SelectTrigger className="w-36 h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Uncategorized</SelectItem>
+                            <SelectItem value="licensed">Licensed</SelectItem>
+                            <SelectItem value="remote_access">Remote Access</SelectItem>
+                            <SelectItem value="suspicious">Suspicious</SelectItem>
+                            <SelectItem value="standard">Standard</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </td>
                     </tr>
-                  );
-                })}
+                  ))}
                 {data?.items.length === 0 && (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-muted-foreground">No software found</td>
