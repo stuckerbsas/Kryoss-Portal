@@ -1299,6 +1299,7 @@ function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId
         <div className="flex justify-between items-center py-1">
           <span className="text-sm text-muted-foreground">Network scan</span>
           <div className="flex items-center gap-2">
+            <Switch checked={local.enableNetworkScan} onCheckedChange={(v) => update({ enableNetworkScan: v })} />
             {local.enableNetworkScan && (
               <Select value={String(local.networkScanIntervalHours)} onValueChange={(v) => update({ networkScanIntervalHours: Number(v) })}>
                 <SelectTrigger className="w-20 h-8 text-xs"><SelectValue /></SelectTrigger>
@@ -1309,7 +1310,6 @@ function AgentConfigCard({ config, machineId }: { config: AgentConfig; machineId
                 </SelectContent>
               </Select>
             )}
-            <Switch checked={local.enableNetworkScan} onCheckedChange={(v) => update({ enableNetworkScan: v })} />
           </div>
         </div>
         <div className="flex justify-between items-center py-1">
