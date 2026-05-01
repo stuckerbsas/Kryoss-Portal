@@ -28,10 +28,10 @@ export function useMachineServices(machineId: string | undefined) {
 export function useServiceAction(machineId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ serviceName, action }: { serviceName: string; action: 'start' | 'stop' | 'restart' }) =>
+    mutationFn: ({ serviceName, action, startupType }: { serviceName: string; action: 'start' | 'stop' | 'restart' | 'set_startup'; startupType?: string }) =>
       apiFetch<{ taskId: number }>(`/v2/machines/${machineId}/services/${encodeURIComponent(serviceName)}/action`, {
         method: 'POST',
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...(startupType && { startupType }) }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['machine-services', machineId] });

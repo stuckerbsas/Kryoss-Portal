@@ -23,6 +23,14 @@ export interface ExternalScanSummary {
   infoPorts: number;
 }
 
+export interface ExternalScanFindingItem {
+  severity: string;
+  title: string;
+  description: string | null;
+  remediation: string | null;
+  port: number | null;
+}
+
 export interface ExternalScanDetail {
   id: string;
   target: string;
@@ -32,6 +40,7 @@ export interface ExternalScanDetail {
   createdAt: string;
   summary: ExternalScanSummary;
   results: ExternalScanResultItem[];
+  findings?: ExternalScanFindingItem[];
 }
 
 export interface StartScanResponse {

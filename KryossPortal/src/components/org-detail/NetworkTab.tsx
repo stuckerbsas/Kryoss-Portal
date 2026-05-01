@@ -8,12 +8,14 @@ import { NetworkSitesTab } from './NetworkSitesTab';
 import { ProtocolUsageTab } from './ProtocolUsageTab';
 import { TopologyTab } from './TopologyTab';
 import { WanHealthTab } from './WanHealthTab';
+import { NetworkPortsTab } from '@/components/network/NetworkPortsTab';
 
 const sections = [
   { value: 'topology', label: 'Topology' },
   { value: 'wan-health', label: 'WAN Health' },
   { value: 'diagnostics', label: 'Diagnostics' },
   { value: 'ports', label: 'Ports' },
+  { value: 'consolidated-ports', label: 'Ports (All)' },
   { value: 'sites', label: 'Sites' },
   { value: 'external-scan', label: 'External Scan' },
   { value: 'snmp', label: 'SNMP Devices' },
@@ -48,6 +50,9 @@ export function NetworkTab() {
       </TabsContent>
       <TabsContent value="ports">
         <PortsTab />
+      </TabsContent>
+      <TabsContent value="consolidated-ports">
+        <NetworkPortsTab />
       </TabsContent>
       <TabsContent value="sites">
         <NetworkSitesTab />

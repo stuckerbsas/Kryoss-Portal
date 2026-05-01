@@ -129,6 +129,7 @@ export interface SoftwareItem {
   version: string | null;
   publisher: string | null;
   category: string;
+  uninstallString: string | null;
 }
 
 interface SoftwareListResponse {
@@ -187,5 +188,48 @@ export function useOrgLocalAdmins(orgId: string | undefined) {
     queryKey: ['local-admins', orgId],
     queryFn: () => apiFetch<LocalAdminsResponse>(`/v2/local-admins?organizationId=${orgId}`),
     enabled: !!orgId,
+  });
+}
+
+export function useUninstallSoftware(machineId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ displayName, uninstallString }: { displayName: string; uninstallString: string }) =>
+      apiFetch<{ taskId: number; status: string }>(
+        `/v2/machines/${machineId}/software/${encodeURIComponent(displayName)}/uninstall`,
+        { method: 'POST', body: JSON.stringify({ uninstallString }) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['machine-software', machineId] });
+      qc.invalidateQueries({ queryKey: ['remediation-tasks', machineId] });
+    },
+  });
+}
+
+export function useLocalAdminAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ machineId, accountName, action }: { machineId: string; accountName: string; action: 'remove' | 'disable' }) =>
+      apiFetch<{ taskId: number; actionType: string; status: string }>(
+        `/v2/machines/${machineId}/local-admins/action`,
+        { method: 'POST', body: JSON.stringify({ accountName, action }) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['local-admins'] });
+    },
+  });
+}
+
+export function useAdUserAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { organizationId: string; machineId: string; accountName: string; distinguishedName: string; action: string }) =>
+      apiFetch<{ taskId: number; actionType: string; status: string }>(
+        '/v2/ad-users/action',
+        { method: 'POST', body: JSON.stringify(params) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hygiene'] });
+    },
   });
 }

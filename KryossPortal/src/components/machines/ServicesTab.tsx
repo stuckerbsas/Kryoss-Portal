@@ -7,6 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
   Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '@/components/ui/table';
 import {
@@ -24,7 +27,7 @@ export function ServicesTab({ machineId, hostname }: Props) {
   const serviceAction = useServiceAction(machineId);
   const togglePriority = useTogglePriority(machineId);
   const [search, setSearch] = useState('');
-  const [confirm, setConfirm] = useState<{ name: string; displayName: string | null; action: 'start' | 'stop' | 'restart' } | null>(null);
+  const [confirm, setConfirm] = useState<{ name: string; displayName: string | null; action: 'start' | 'stop' | 'restart' | 'set_startup'; startupType?: string } | null>(null);
 
   const items = data?.items ?? [];
   const filtered = items.filter(s =>
@@ -43,9 +46,12 @@ export function ServicesTab({ machineId, hostname }: Props) {
   function executeAction() {
     if (!confirm) return;
     serviceAction.mutate(
-      { serviceName: confirm.name, action: confirm.action },
+      { serviceName: confirm.name, action: confirm.action, startupType: confirm.startupType },
       {
-        onSuccess: () => toast.success(`${confirm.action} queued for ${confirm.displayName ?? confirm.name}`),
+        onSuccess: () => {
+          const label = confirm.action === 'set_startup' ? `set startup → ${confirm.startupType}` : confirm.action;
+          toast.success(`${label} queued for ${confirm.displayName ?? confirm.name}`);
+        },
         onError: (e: any) => toast.error(e?.message ?? 'Failed'),
       }
     );
@@ -101,7 +107,26 @@ export function ServicesTab({ machineId, hostname }: Props) {
                     {s.status}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-sm">{s.startupType}</TableCell>
+                <TableCell className="text-sm">
+                  {s.isProtected ? s.startupType : (
+                    <Select
+                      value={s.startupType?.toLowerCase() ?? ''}
+                      onValueChange={(val) => {
+                        if (val !== (s.startupType?.toLowerCase() ?? ''))
+                          setConfirm({ name: s.name, displayName: s.displayName, action: 'set_startup', startupType: val });
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-[120px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="automatic">Automatic</SelectItem>
+                        <SelectItem value="manual">Manual</SelectItem>
+                        <SelectItem value="disabled">Disabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </TableCell>
                 <TableCell>
                   {s.isProtected ? (
                     <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Protected</Badge>
@@ -151,7 +176,10 @@ export function ServicesTab({ machineId, hostname }: Props) {
           <DialogHeader>
             <DialogTitle>Confirm Service Action</DialogTitle>
             <DialogDescription>
-              {confirm?.action} service <strong>{confirm?.displayName ?? confirm?.name}</strong> on <strong>{hostname}</strong>?
+              {confirm?.action === 'set_startup'
+                ? <>Set startup type to <strong>{confirm?.startupType}</strong> for </>
+                : <>{confirm?.action} </>}
+              service <strong>{confirm?.displayName ?? confirm?.name}</strong> on <strong>{hostname}</strong>?
               This action will be queued and executed on the next agent heartbeat.
             </DialogDescription>
           </DialogHeader>

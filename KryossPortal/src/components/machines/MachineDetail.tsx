@@ -49,10 +49,12 @@ import {
   Loader2,
   CircleAlert,
   CircleCheck,
+  Trash2,
 } from 'lucide-react';
-import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan } from '@/api/machines';
+import { useMachine, useMachineSoftware, useRunDetail, useUpdateAgentConfig, useTriggerScan, useUninstallSoftware } from '@/api/machines';
 import { useMachineTasks, useCancelTask, useRescheduleTask } from '@/api/remediation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { ServicesTab } from './ServicesTab';
 import { ActivityTab } from './ActivityTab';
 import type { AgentConfig, LoopStatus } from '@/api/machines';
@@ -377,6 +379,8 @@ const categoryBadge: Record<string, { label: string; className: string }> = {
 function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
   const [search, setSearch] = useState('');
   const { data: softwareData, isLoading } = useMachineSoftware(machineId);
+  const uninstallMutation = useUninstallSoftware(machineId);
+  const [uninstallTarget, setUninstallTarget] = useState<{ name: string; uninstallString: string } | null>(null);
 
   if (isLoading) return <TabSkeleton rows={10} />;
 
@@ -404,6 +408,7 @@ function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
               <TableHead>Version</TableHead>
               <TableHead>Publisher</TableHead>
               <TableHead>Category</TableHead>
+              <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -415,12 +420,42 @@ function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
                   <TableCell className="text-sm text-muted-foreground font-mono">{s.version ?? '—'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.publisher ?? '—'}</TableCell>
                   <TableCell><span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span></TableCell>
+                  <TableCell>
+                    {s.uninstallString && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-destructive hover:text-destructive"
+                        onClick={() => setUninstallTarget({ name: s.name, uninstallString: s.uninstallString! })}
+                      >
+                        <Trash2 className="size-3.5 mr-1" /> Uninstall
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
       </div>
+      <ConfirmActionDialog
+        open={!!uninstallTarget}
+        onClose={() => setUninstallTarget(null)}
+        onConfirm={(reason) => {
+          if (!uninstallTarget) return;
+          uninstallMutation.mutate(
+            { displayName: uninstallTarget.name, uninstallString: uninstallTarget.uninstallString },
+            {
+              onSuccess: () => { toast.success(`Uninstall task queued for ${uninstallTarget.name}`); setUninstallTarget(null); },
+              onError: () => toast.error('Failed to queue uninstall task'),
+            },
+          );
+        }}
+        title={`Uninstall ${uninstallTarget?.name ?? ''}?`}
+        description="This will queue a silent uninstall on the remote machine. The software will be removed on the next agent check-in."
+        destructive
+        confirmLabel="Uninstall"
+      />
     </div>
   );
 }

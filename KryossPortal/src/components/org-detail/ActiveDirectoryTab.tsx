@@ -17,6 +17,7 @@ import { useHygiene, type HygieneFinding } from '@/api/hygiene';
 import { useDcHealth } from '@/api/dcHealth';
 import type { DcReplPartner } from '@/api/dcHealth';
 import { useOrgParam } from '@/hooks/useOrgParam';
+import { AdObjectsTab } from './AdObjectsTab';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -513,6 +514,7 @@ export function ActiveDirectoryTab() {
           <TabsTrigger value="hygiene">Hygiene</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="health">Health</TabsTrigger>
+          <TabsTrigger value="directory">Directory</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hygiene" className="mt-4">
@@ -525,6 +527,10 @@ export function ActiveDirectoryTab() {
 
         <TabsContent value="health" className="mt-4">
           {orgId ? <HealthSection orgId={orgId} /> : null}
+        </TabsContent>
+
+        <TabsContent value="directory" className="mt-4">
+          <AdObjectsTab />
         </TabsContent>
       </Tabs>
     </div>

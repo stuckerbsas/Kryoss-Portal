@@ -60,9 +60,15 @@ export function qs(params: Record<string, string | number | boolean | undefined 
   return sp.toString() ? `?${sp}` : '';
 }
 
-export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = await getAccessToken();
+async function getFreshAccessToken(): Promise<string> {
+  const response = await msalInstance.acquireTokenPopup({
+    ...loginRequest,
+    prompt: 'login',
+  });
+  return response.accessToken;
+}
 
+async function apiFetchWithToken<T>(path: string, token: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
@@ -80,6 +86,9 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const traceId = (body as Record<string, unknown>)?.traceId as string | undefined;
+    const errorField = (body as Record<string, unknown>)?.error as string | undefined;
+    if (res.status === 403 && errorField === 'fresh_auth_required')
+      throw new ApiError('Re-authentication required', 403);
     const msg = genericMessages[res.status] || 'Request failed';
     throw new ApiError(
       traceId ? `${msg} — ref: ${traceId}` : msg,
@@ -88,9 +97,18 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     );
   }
 
-  // 204 No Content has no body
   if (res.status === 204) return undefined as T;
 
   const data = await res.json();
   return toCamelCase(data) as T;
+}
+
+export async function apiFetchFresh<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getFreshAccessToken();
+  return apiFetchWithToken<T>(path, token, options);
+}
+
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getAccessToken();
+  return apiFetchWithToken<T>(path, token, options);
 }

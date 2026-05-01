@@ -7,13 +7,16 @@ import {
   Wifi,
   Loader2,
   Info,
+  Lock,
+  Mail,
+  ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useLatestExternalScan,
   useStartExternalScan,
 } from '@/api/externalScan';
-import type { ExternalScanResultItem } from '@/api/externalScan';
+import type { ExternalScanResultItem, ExternalScanFindingItem } from '@/api/externalScan';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Badge } from '@/components/ui/badge';
@@ -275,6 +278,50 @@ export function ExternalScanTab() {
               </Card>
             )
           )}
+
+          {/* Domain findings (TLS, headers, mail) */}
+          {scan.findings && scan.findings.length > 0 && (() => {
+            const portFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.port != null && f.port > 0 && !f.title.startsWith('TLS') && !f.title.startsWith('Missing') && !f.title.startsWith('No SPF') && !f.title.startsWith('SPF') && !f.title.startsWith('No DMARC') && !f.title.startsWith('DMARC'));
+            const tlsFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('TLS') || f.title.includes('Certificate'));
+            const headerFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('Missing') && (f.title.includes('HSTS') || f.title.includes('CSP') || f.title.includes('Frame') || f.title.includes('Content-Type') || f.title.includes('Referrer')));
+            const mailFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('SPF') || f.title.includes('DMARC'));
+            const otherFindings = scan.findings!.filter((f: ExternalScanFindingItem) => !tlsFindings.includes(f) && !headerFindings.includes(f) && !mailFindings.includes(f));
+
+            const renderFindingGroup = (title: string, icon: React.ReactNode, items: ExternalScanFindingItem[]) => {
+              if (items.length === 0) return null;
+              return (
+                <Card key={title}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      {icon}
+                      {title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {items.map((f: ExternalScanFindingItem, i: number) => (
+                      <div key={i} className="border rounded-md p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          {riskBadge(f.severity)}
+                          <span className="font-medium text-sm">{f.title}</span>
+                        </div>
+                        {f.description && <p className="text-xs text-muted-foreground">{f.description}</p>}
+                        {f.remediation && <p className="text-xs text-blue-600 mt-1">{f.remediation}</p>}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            };
+
+            return (
+              <>
+                {renderFindingGroup('TLS / Certificate', <Lock className="h-4 w-4 text-muted-foreground" />, tlsFindings)}
+                {renderFindingGroup('HTTP Security Headers', <ShieldCheck className="h-4 w-4 text-muted-foreground" />, headerFindings)}
+                {renderFindingGroup('Email Authentication', <Mail className="h-4 w-4 text-muted-foreground" />, mailFindings)}
+                {renderFindingGroup('Port Findings', <AlertTriangle className="h-4 w-4 text-muted-foreground" />, otherFindings)}
+              </>
+            );
+          })()}
         </>
       )}
     </div>

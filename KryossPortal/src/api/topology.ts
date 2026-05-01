@@ -25,6 +25,7 @@ export interface TopologyEdge {
   source: number | string;
   target: number | string;
   protocol: string;
+  type?: 'lldp' | 'cdp' | 'inferred';
   sourcePort: string | null;
   targetPort: string | null;
   trafficInBps: number | null;

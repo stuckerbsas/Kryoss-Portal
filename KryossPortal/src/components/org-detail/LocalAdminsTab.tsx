@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { ShieldAlert, Monitor, Search, ChevronDown, ChevronRight, Users } from 'lucide-react';
-import { useOrgLocalAdmins } from '@/api/machines';
+import { toast } from 'sonner';
+import { ShieldAlert, Monitor, Search, ChevronDown, ChevronRight, Users, UserMinus, Ban } from 'lucide-react';
+import { useOrgLocalAdmins, useLocalAdminAction } from '@/api/machines';
 import type { LocalAdminEntry } from '@/api/machines';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import {
   Table,
   TableBody,
@@ -24,6 +27,8 @@ export function LocalAdminsTab() {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
+  const [actionTarget, setActionTarget] = useState<{ machineId: string; accountName: string; action: 'remove' | 'disable' } | null>(null);
+  const adminAction = useLocalAdminAction();
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!data || data.admins.length === 0) {
@@ -107,7 +112,9 @@ export function LocalAdminsTab() {
         expanded={expanded}
         onToggle={toggle}
         onNavigate={(id) => navigate(`/machines/${id}`)}
+        onAction={(machineId, accountName, action) => setActionTarget({ machineId, accountName, action })}
         badgeClass="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+        showActions
       />
 
       <AdminTable
@@ -116,7 +123,30 @@ export function LocalAdminsTab() {
         expanded={expanded}
         onToggle={toggle}
         onNavigate={(id) => navigate(`/machines/${id}`)}
+        onAction={(machineId, accountName, action) => setActionTarget({ machineId, accountName, action })}
         badgeClass="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+        showActions
+      />
+
+      <ConfirmActionDialog
+        open={!!actionTarget}
+        onClose={() => setActionTarget(null)}
+        onConfirm={(reason) => {
+          if (!actionTarget) return;
+          adminAction.mutate(
+            { machineId: actionTarget.machineId, accountName: actionTarget.accountName, action: actionTarget.action },
+            {
+              onSuccess: () => { toast.success(`${actionTarget.action === 'remove' ? 'Remove admin' : 'Disable account'} task queued for ${actionTarget.accountName}`); setActionTarget(null); },
+              onError: () => toast.error('Failed to queue action'),
+            },
+          );
+        }}
+        title={actionTarget?.action === 'remove' ? `Remove ${actionTarget?.accountName} from Administrators?` : `Disable account ${actionTarget?.accountName}?`}
+        description={actionTarget?.action === 'remove'
+          ? 'This will remove the account from the local Administrators group on the target machine.'
+          : 'This will disable the local account on the target machine. The account will not be deleted.'}
+        destructive
+        confirmLabel={actionTarget?.action === 'remove' ? 'Remove from Admins' : 'Disable Account'}
       />
     </div>
   );
@@ -128,14 +158,18 @@ function AdminTable({
   expanded,
   onToggle,
   onNavigate,
+  onAction,
   badgeClass,
+  showActions,
 }: {
   title: string;
   admins: LocalAdminEntry[];
   expanded: Set<string>;
   onToggle: (name: string) => void;
   onNavigate: (machineId: string) => void;
+  onAction: (machineId: string, accountName: string, action: 'remove' | 'disable') => void;
   badgeClass: string;
+  showActions: boolean;
 }) {
   if (admins.length === 0) return null;
 
@@ -180,17 +214,28 @@ function AdminTable({
                 {expanded.has(admin.name) && admin.machines.map((m) => (
                   <TableRow
                     key={`${admin.name}-${m.machineId}`}
-                    className="bg-muted/30 cursor-pointer hover:bg-muted/60"
-                    onClick={() => onNavigate(m.machineId)}
+                    className="bg-muted/30 hover:bg-muted/60"
                   >
                     <TableCell />
-                    <TableCell colSpan={2} className="text-sm text-muted-foreground pl-8">
+                    <TableCell className="text-sm text-muted-foreground pl-8 cursor-pointer" onClick={() => onNavigate(m.machineId)}>
                       <div className="flex items-center gap-2">
                         <Monitor className="h-3.5 w-3.5" />
                         {m.hostname}
                       </div>
                     </TableCell>
                     <TableCell />
+                    <TableCell className="text-right">
+                      {showActions && (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'remove'); }}>
+                            <UserMinus className="h-3 w-3 mr-1" /> Remove Admin
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-destructive" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'disable'); }}>
+                            <Ban className="h-3 w-3 mr-1" /> Disable
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </>

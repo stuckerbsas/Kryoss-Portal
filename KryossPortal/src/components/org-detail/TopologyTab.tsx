@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { Network, Router, Server, Monitor, Printer, Wifi, Shield, Phone, HelpCircle, X } from 'lucide-react';
+import { Network, Router, Server, Monitor, Printer, Wifi, Shield, Phone, HelpCircle, X, Circle } from 'lucide-react';
 
 const DEVICE_COLORS: Record<string, string> = {
   switch: '#3B82F6',
@@ -17,6 +17,7 @@ const DEVICE_COLORS: Record<string, string> = {
   firewall: '#EF4444',
   phone: '#06B6D4',
   workstation: '#6366F1',
+  subnet: '#6D28D9',
   unknown: '#9CA3AF',
 };
 
@@ -29,6 +30,7 @@ const DEVICE_ICONS: Record<string, typeof Network> = {
   firewall: Shield,
   phone: Phone,
   workstation: Monitor,
+  subnet: Circle,
   unknown: HelpCircle,
 };
 
@@ -63,6 +65,9 @@ const DEVICE_SVG_PATHS: Record<string, string[]> = {
     'M20 3H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z',
     'M8 21h8', 'M12 15v6',
   ],
+  subnet: [
+    'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z',
+  ],
   unknown: [
     'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z',
     'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3', 'M12 17h.01',
@@ -87,6 +92,7 @@ interface SimNode extends d3.SimulationNodeDatum {
 
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
   protocol: string;
+  type?: 'lldp' | 'cdp' | 'inferred';
   sourcePort: string | null;
   targetPort: string | null;
   trafficInBps: number | null;
@@ -164,6 +170,7 @@ export function TopologyTab() {
         source: nodeMap.get(e.source)!,
         target: nodeMap.get(e.target)!,
         protocol: e.protocol,
+        type: e.type,
         sourcePort: e.sourcePort,
         targetPort: e.targetPort,
         trafficInBps: e.trafficInBps,
@@ -191,9 +198,10 @@ export function TopologyTab() {
       .selectAll('line')
       .data(simLinks)
       .join('line')
-      .attr('stroke', d => d.protocol === 'lldp' ? '#93C5FD' : '#FCD34D')
+      .attr('stroke', d => d.type === 'inferred' ? '#A78BFA' : d.protocol === 'lldp' ? '#93C5FD' : '#FCD34D')
       .attr('stroke-width', linkWidth)
-      .attr('stroke-opacity', 0.6);
+      .attr('stroke-opacity', d => d.type === 'inferred' ? 0.45 : 0.6)
+      .attr('stroke-dasharray', d => d.type === 'inferred' ? '6,3' : 'none');
 
     // Link labels — show traffic rate if available, else port names
     const linkLabel = g.append('g')
@@ -374,6 +382,7 @@ export function TopologyTab() {
         ))}
         <div className="flex items-center gap-1"><div className="w-4 h-0.5 bg-blue-300" /> LLDP</div>
         <div className="flex items-center gap-1"><div className="w-4 h-0.5 bg-yellow-300" /> CDP</div>
+        <div className="flex items-center gap-1"><div className="w-4 h-0.5 border-t-2 border-dashed border-purple-400" /> Inferred</div>
         <div className="flex items-center gap-1"><div className="w-3 h-3 rounded border-2 border-[#008852]" /> Agent</div>
         <div className="flex items-center gap-1"><div className="w-3 h-3 rounded border-2 border-dashed border-amber-500" /> Phantom</div>
       </div>
