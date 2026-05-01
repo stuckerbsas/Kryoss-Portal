@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { ShieldAlert, Monitor, Search, ChevronDown, ChevronRight, Users, UserMinus, Ban } from 'lucide-react';
+import { ShieldAlert, Monitor, Search, ChevronDown, ChevronRight, Users, UserMinus, Ban, AlertTriangle } from 'lucide-react';
 import { useOrgLocalAdmins, useLocalAdminAction } from '@/api/machines';
 import type { LocalAdminEntry } from '@/api/machines';
 import { useOrgParam } from '@/hooks/useOrgParam';
@@ -164,7 +164,7 @@ function AdminTable({
 }: {
   title: string;
   admins: LocalAdminEntry[];
-  expanded: Set<string>;
+  expanded: Set<string>
   onToggle: (name: string) => void;
   onNavigate: (machineId: string) => void;
   onAction: (machineId: string, accountName: string, action: 'remove' | 'disable') => void;
@@ -185,6 +185,7 @@ function AdminTable({
               <TableHead className="w-8" />
               <TableHead>Account</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="text-right">Machines</TableHead>
             </TableRow>
           </TableHeader>
@@ -205,6 +206,13 @@ function AdminTable({
                   <TableCell>
                     <Badge className={badgeClass}>{admin.type}</Badge>
                   </TableCell>
+                  <TableCell>
+                    {admin.machines.some(m => m.passwordNeverExpires) && (
+                      <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                        <AlertTriangle className="h-3 w-3 mr-1" />Pwd Never Expires
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Badge variant={admin.machineCount > 5 ? 'destructive' : 'secondary'}>
                       {admin.machineCount}
@@ -223,7 +231,16 @@ function AdminTable({
                         {m.hostname}
                       </div>
                     </TableCell>
-                    <TableCell />
+                    <TableCell>
+                      {m.isEnabled === false
+                        ? <Badge variant="outline" className="text-xs text-red-600">Disabled</Badge>
+                        : m.isEnabled === true
+                        ? <Badge variant="outline" className="text-xs text-green-600">Active</Badge>
+                        : <span className="text-xs text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {m.lastLogon ? new Date(m.lastLogon).toLocaleDateString() : '—'}
+                    </TableCell>
                     <TableCell className="text-right">
                       {showActions && (
                         <div className="flex items-center justify-end gap-1">

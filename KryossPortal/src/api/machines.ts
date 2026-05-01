@@ -37,7 +37,7 @@ export interface MachineDetail extends Machine {
   // Disks
   disks: { driveLetter: string; label: string | null; diskType: string | null; totalGb: number | null; freeGb: number | null; fileSystem: string | null; }[];
   // Local administrators (per-machine, from agent)
-  localAdmins: { name: string; type: string; source: string; }[] | null;
+  localAdmins: { name: string; type: string; source: string; isEnabled: boolean | null; passwordNeverExpires: boolean | null; lastLogon: string | null; }[] | null;
   // Agent config (portal-controlled)
   agentConfig: AgentConfig;
   // Scan trigger
@@ -174,7 +174,7 @@ export interface LocalAdminEntry {
   type: string;
   source: string;
   machineCount: number;
-  machines: { machineId: string; hostname: string }[];
+  machines: { machineId: string; hostname: string; isEnabled: boolean | null; passwordNeverExpires: boolean | null; lastLogon: string | null }[];
 }
 
 interface LocalAdminsResponse {

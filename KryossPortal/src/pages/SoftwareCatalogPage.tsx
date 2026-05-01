@@ -24,7 +24,7 @@ export function SoftwareCatalogPage() {
   const [licenseType, setLicenseType] = useState('');
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useSoftwareCatalog(search, licenseType, page);
+  const { data, isLoading, isError } = useSoftwareCatalog(search, licenseType, page);
   const reclassify = useReclassify();
   const updateType = useUpdateLicenseType();
 
@@ -111,9 +111,11 @@ export function SoftwareCatalogPage() {
 
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
+      ) : isError ? (
+        <div className="text-sm text-red-600">Failed to load software catalog. Check that classification tables exist in the database.</div>
       ) : (
         <>
-          <div className="border rounded-lg overflow-hidden">
+          <div className="border rounded-lg overflow-visible">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 border-b">
                 <tr className="text-left text-xs text-muted-foreground">
@@ -133,12 +135,15 @@ export function SoftwareCatalogPage() {
                     <td className="py-2 px-3">
                       <Select
                         value={sw.licenseType}
-                        onValueChange={(val) => updateType.mutate({ id: sw.id, licenseType: val })}
+                        onValueChange={(val) => updateType.mutate({ id: sw.id, licenseType: val }, {
+                          onSuccess: () => toast.success('License type updated'),
+                          onError: () => toast.error('Failed to update license type'),
+                        })}
                       >
                         <SelectTrigger className="w-40 h-8 text-xs">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent position="popper" className="max-h-60">
                           <SelectItem value="Commercial">Commercial</SelectItem>
                           <SelectItem value="Free">Free</SelectItem>
                           <SelectItem value="OpenSource">Open Source</SelectItem>

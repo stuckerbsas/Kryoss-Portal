@@ -307,9 +307,13 @@ function OverviewTabContent({ machine, chartData, machineId }: { machine: any; c
 
         {machine.localAdmins && machine.localAdmins.length > 0 && (
           <SectionCard icon={<Users className="size-4" />} title="Local Administrators">
-            {machine.localAdmins.map((a: { name: string; type: string; source: string }, i: number) => (
+            {machine.localAdmins.map((a: { name: string; type: string; source: string; isEnabled: boolean | null; passwordNeverExpires: boolean | null; lastLogon: string | null }, i: number) => (
               <div key={i} className="flex justify-between items-center py-1.5 border-b border-border/50 last:border-0">
-                <span className="text-sm">{a.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{a.name}</span>
+                  {a.isEnabled === false && <Badge variant="outline" className="text-xs text-red-600 border-red-300">Disabled</Badge>}
+                  {a.passwordNeverExpires && <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Pwd Never Expires</Badge>}
+                </div>
                 <Badge variant="secondary" className={
                   a.source === 'Domain' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                 }>
