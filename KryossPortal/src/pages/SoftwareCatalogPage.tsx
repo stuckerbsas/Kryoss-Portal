@@ -15,13 +15,6 @@ const categoryOptions = [
   { value: 'uncategorized', label: 'Uncategorized' },
 ];
 
-const categoryBadge: Record<string, { label: string; className: string }> = {
-  licensed: { label: 'Licensed', className: 'bg-blue-100 text-blue-800' },
-  remote_access: { label: 'Remote Access', className: 'bg-amber-100 text-amber-800' },
-  suspicious: { label: 'Suspicious', className: 'bg-red-100 text-red-800' },
-  standard: { label: 'Standard', className: 'bg-gray-100 text-gray-600' },
-};
-
 export function SoftwareCatalogPage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
