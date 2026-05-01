@@ -28,6 +28,7 @@ export function ServicesTab({ machineId, hostname }: Props) {
   const togglePriority = useTogglePriority(machineId);
   const [search, setSearch] = useState('');
   const [confirm, setConfirm] = useState<{ name: string; displayName: string | null; action: 'start' | 'stop' | 'restart' | 'set_startup'; startupType?: string } | null>(null);
+  const [pendingStartup, setPendingStartup] = useState<Record<string, string>>({});
 
   const items = data?.items ?? [];
   const filtered = items.filter(s =>
@@ -51,6 +52,8 @@ export function ServicesTab({ machineId, hostname }: Props) {
         onSuccess: () => {
           const label = confirm.action === 'set_startup' ? `set startup → ${confirm.startupType}` : confirm.action;
           toast.success(`${label} queued for ${confirm.displayName ?? confirm.name}`);
+          if (confirm.action === 'set_startup' && confirm.startupType)
+            setPendingStartup(prev => ({ ...prev, [confirm.name]: confirm.startupType! }));
         },
         onError: (e: any) => toast.error(e?.message ?? 'Failed'),
       }
@@ -108,24 +111,31 @@ export function ServicesTab({ machineId, hostname }: Props) {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-sm">
-                  {s.isProtected ? s.startupType : (
-                    <Select
-                      value={s.startupType?.toLowerCase() ?? ''}
-                      onValueChange={(val) => {
-                        if (val !== (s.startupType?.toLowerCase() ?? ''))
-                          setConfirm({ name: s.name, displayName: s.displayName, action: 'set_startup', startupType: val });
-                      }}
-                    >
-                      <SelectTrigger className="h-7 w-[120px] text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="automatic">Automatic</SelectItem>
-                        <SelectItem value="manual">Manual</SelectItem>
-                        <SelectItem value="disabled">Disabled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
+                  {s.isProtected ? s.startupType : (() => {
+                    const effective = pendingStartup[s.name] ?? s.startupType?.toLowerCase() ?? '';
+                    const hasPending = s.name in pendingStartup && pendingStartup[s.name] !== s.startupType?.toLowerCase();
+                    return (
+                      <div className="flex items-center gap-1">
+                        <Select
+                          value={effective}
+                          onValueChange={(val) => {
+                            if (val !== effective)
+                              setConfirm({ name: s.name, displayName: s.displayName, action: 'set_startup', startupType: val });
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-[120px] text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="automatic">Automatic</SelectItem>
+                            <SelectItem value="manual">Manual</SelectItem>
+                            <SelectItem value="disabled">Disabled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {hasPending && <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Pending</Badge>}
+                      </div>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell>
                   {s.isProtected ? (
