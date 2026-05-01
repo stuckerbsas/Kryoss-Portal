@@ -32,6 +32,20 @@ export function useSoftwareCatalog(search: string, licenseType: string, page: nu
   });
 }
 
+export function useUpdateLicenseType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, licenseType }: { id: number; licenseType: string }) =>
+      apiFetch(`/v2/software-catalog/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ licenseType }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['software-catalog'] });
+    },
+  });
+}
+
 export function useReclassify() {
   const qc = useQueryClient();
   return useMutation({

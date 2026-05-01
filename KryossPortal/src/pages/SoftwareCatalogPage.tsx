@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Search, Package, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useSoftwareCatalog, useReclassify } from '@/api/softwareCatalog';
+import { useSoftwareCatalog, useReclassify, useUpdateLicenseType } from '@/api/softwareCatalog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 
 const licenseTypeOptions = [
@@ -17,16 +19,6 @@ const licenseTypeOptions = [
   { value: 'Unknown', label: 'Unknown' },
 ];
 
-const TYPE_STYLES: Record<string, string> = {
-  Commercial: 'bg-red-100 text-red-800',
-  Free: 'bg-green-100 text-green-800',
-  OpenSource: 'bg-emerald-100 text-emerald-800',
-  Freemium: 'bg-amber-100 text-amber-800',
-  Bundled: 'bg-blue-100 text-blue-800',
-  'Likely Commercial': 'bg-orange-100 text-orange-800',
-  Unknown: 'bg-gray-100 text-gray-600',
-};
-
 export function SoftwareCatalogPage() {
   const [search, setSearch] = useState('');
   const [licenseType, setLicenseType] = useState('');
@@ -34,6 +26,7 @@ export function SoftwareCatalogPage() {
 
   const { data, isLoading } = useSoftwareCatalog(search, licenseType, page);
   const reclassify = useReclassify();
+  const updateType = useUpdateLicenseType();
 
   const handleReclassify = () => {
     reclassify.mutate(undefined, {
@@ -138,9 +131,23 @@ export function SoftwareCatalogPage() {
                     <td className="py-2 px-3 text-muted-foreground">{sw.publisher ?? '—'}</td>
                     <td className="py-2 px-3 text-center">{sw.machineCount}</td>
                     <td className="py-2 px-3">
-                      <Badge className={TYPE_STYLES[sw.licenseType] ?? 'bg-gray-100 text-gray-600'}>
-                        {sw.licenseType}
-                      </Badge>
+                      <Select
+                        value={sw.licenseType}
+                        onValueChange={(val) => updateType.mutate({ id: sw.id, licenseType: val })}
+                      >
+                        <SelectTrigger className="w-40 h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Commercial">Commercial</SelectItem>
+                          <SelectItem value="Free">Free</SelectItem>
+                          <SelectItem value="OpenSource">Open Source</SelectItem>
+                          <SelectItem value="Freemium">Freemium</SelectItem>
+                          <SelectItem value="Bundled">Bundled</SelectItem>
+                          <SelectItem value="Likely Commercial">Likely Commercial</SelectItem>
+                          <SelectItem value="Unknown">Unknown</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </td>
                     <td className="py-2 px-3">
                       {sw.confidence > 0 ? `${(sw.confidence * 100).toFixed(0)}%` : '—'}
