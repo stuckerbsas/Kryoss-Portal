@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, DollarSign, HelpCircle, Loader2, RefreshCw, Shield } from 'lucide-react';
+import { DollarSign, HelpCircle, Loader2, RefreshCw, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSoftwareLicenses, useClassifyLicenses, useOverrideLicense } from '@/api/softwareLicenses';
 import type { LicenseItem } from '@/api/softwareLicenses';
