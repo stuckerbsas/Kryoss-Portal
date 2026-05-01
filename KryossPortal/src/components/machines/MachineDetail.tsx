@@ -369,11 +369,14 @@ function OverviewTabContent({ machine, chartData, machineId }: { machine: any; c
 
 // ── Tab: Software ──
 
-const categoryBadge: Record<string, { label: string; className: string }> = {
-  licensed: { label: 'Licensed', className: 'bg-blue-100 text-blue-800' },
-  remote_access: { label: 'Remote Access', className: 'bg-amber-100 text-amber-800' },
-  suspicious: { label: 'Suspicious', className: 'bg-red-100 text-red-800' },
-  standard: { label: 'Standard', className: 'bg-gray-100 text-gray-600' },
+const licenseTypeBadge: Record<string, { label: string; className: string }> = {
+  Commercial: { label: 'Commercial', className: 'bg-red-100 text-red-800' },
+  'Likely Commercial': { label: 'Likely Commercial', className: 'bg-orange-100 text-orange-800' },
+  Free: { label: 'Free', className: 'bg-green-100 text-green-800' },
+  OpenSource: { label: 'Open Source', className: 'bg-emerald-100 text-emerald-800' },
+  Freemium: { label: 'Freemium', className: 'bg-amber-100 text-amber-800' },
+  Bundled: { label: 'Bundled', className: 'bg-blue-100 text-blue-800' },
+  Unknown: { label: 'Unknown', className: 'bg-gray-100 text-gray-600' },
 };
 
 function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
@@ -407,13 +410,13 @@ function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
               <TableHead>Name</TableHead>
               <TableHead>Version</TableHead>
               <TableHead>Publisher</TableHead>
-              <TableHead>Category</TableHead>
+              <TableHead>License Type</TableHead>
               <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((s, i) => {
-              const badge = categoryBadge[s.category] ?? categoryBadge.standard;
+              const badge = licenseTypeBadge[s.licenseType] ?? licenseTypeBadge.Unknown;
               return (
                 <TableRow key={i}>
                   <TableCell className="font-medium text-sm">{s.name}</TableCell>

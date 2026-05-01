@@ -128,7 +128,7 @@ export interface SoftwareItem {
   name: string;
   version: string | null;
   publisher: string | null;
-  category: string;
+  licenseType: string;
   uninstallString: string | null;
 }
 

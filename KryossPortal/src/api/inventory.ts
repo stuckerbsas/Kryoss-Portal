@@ -56,15 +56,15 @@ export interface SoftwareInventoryItem {
   publisher: string | null;
   version: string | null;
   machineCount: number;
-  category: string;
+  licenseType: string;
   machines: string[];
 }
 
 export interface SoftwareInventoryResponse {
   total: number;
-  licensed: number;
-  remoteAccess: number;
-  suspicious: number;
+  commercial: number;
+  free: number;
+  unknown: number;
   items: SoftwareInventoryItem[];
 }
 
