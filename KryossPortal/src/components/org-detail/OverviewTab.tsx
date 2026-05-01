@@ -2,7 +2,6 @@ import { Monitor, ScanSearch, BarChart3, Award, AlertTriangle, ShieldCheck } fro
 import { useFleetDashboard } from '@/api/dashboard';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { GradeBadge } from '@/components/shared/GradeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -81,8 +80,17 @@ export function OverviewTab() {
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              <GradeBadge grade={topGrade} score={dashboard.avgScore} />
+            <div className="flex items-baseline gap-2">
+              <span className={`text-3xl font-bold ${
+                topGrade?.startsWith('A') ? 'text-green-600' :
+                topGrade?.startsWith('B') ? 'text-lime-600' :
+                topGrade === 'C' ? 'text-amber-600' :
+                topGrade === 'D' || topGrade === 'F' ? 'text-red-600' :
+                'text-muted-foreground'
+              }`}>{topGrade ?? 'N/A'}</span>
+              {dashboard.avgScore != null && (
+                <span className="text-sm text-muted-foreground">{Math.round(dashboard.avgScore)}%</span>
+              )}
             </div>
           </CardContent>
         </Card>
