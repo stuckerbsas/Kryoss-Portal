@@ -19,6 +19,7 @@ import { UsersPage } from './pages/UsersPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { CveDatabasePage } from './pages/CveDatabasePage';
 import { SoftwareCatalogPage } from './pages/SoftwareCatalogPage';
+import { LicensesTab } from './components/org-detail/LicensesTab';
 
 export const router = createBrowserRouter([
   {
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
               { path: 'security', element: <SecurityTab /> },
               { path: 'network', element: <NetworkTab /> },
               { path: 'cloud-assessment', element: <CloudAssessmentTab /> },
+              { path: 'licenses', element: <LicensesTab /> },
               // Legacy redirects
               { path: 'fleet', element: <Navigate to="../devices" replace /> },
               { path: 'hardware', element: <Navigate to="../devices?section=hardware" replace /> },
