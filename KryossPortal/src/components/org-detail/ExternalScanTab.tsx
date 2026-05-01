@@ -281,7 +281,6 @@ export function ExternalScanTab() {
 
           {/* Domain findings (TLS, headers, mail) */}
           {scan.findings && scan.findings.length > 0 && (() => {
-            const portFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.port != null && f.port > 0 && !f.title.startsWith('TLS') && !f.title.startsWith('Missing') && !f.title.startsWith('No SPF') && !f.title.startsWith('SPF') && !f.title.startsWith('No DMARC') && !f.title.startsWith('DMARC'));
             const tlsFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('TLS') || f.title.includes('Certificate'));
             const headerFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('Missing') && (f.title.includes('HSTS') || f.title.includes('CSP') || f.title.includes('Frame') || f.title.includes('Content-Type') || f.title.includes('Referrer')));
             const mailFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('SPF') || f.title.includes('DMARC'));

@@ -131,7 +131,7 @@ export function LocalAdminsTab() {
       <ConfirmActionDialog
         open={!!actionTarget}
         onClose={() => setActionTarget(null)}
-        onConfirm={(reason) => {
+        onConfirm={() => {
           if (!actionTarget) return;
           adminAction.mutate(
             { machineId: actionTarget.machineId, accountName: actionTarget.accountName, action: actionTarget.action },

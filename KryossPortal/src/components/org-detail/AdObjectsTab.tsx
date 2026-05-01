@@ -190,7 +190,7 @@ export function AdObjectsTab() {
       <ConfirmActionDialog
         open={!!actionTarget}
         onClose={() => setActionTarget(null)}
-        onConfirm={(reason) => {
+        onConfirm={() => {
           if (!actionTarget || !orgId) return;
           adAction.mutate(
             {

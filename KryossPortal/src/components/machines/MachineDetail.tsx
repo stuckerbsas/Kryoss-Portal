@@ -441,7 +441,7 @@ function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
       <ConfirmActionDialog
         open={!!uninstallTarget}
         onClose={() => setUninstallTarget(null)}
-        onConfirm={(reason) => {
+        onConfirm={() => {
           if (!uninstallTarget) return;
           uninstallMutation.mutate(
             { displayName: uninstallTarget.name, uninstallString: uninstallTarget.uninstallString },
