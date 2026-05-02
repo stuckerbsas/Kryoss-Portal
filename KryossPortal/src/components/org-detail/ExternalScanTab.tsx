@@ -255,6 +255,7 @@ export function ExternalScanTab() {
   const autoScan = useAutoExternalScan();
   const [target, setTarget] = useState('');
   const [selectedScanId, setSelectedScanId] = useState<string>();
+  const [selectedTarget, setSelectedTarget] = useState<string>();
   const [needsConsent, setNeedsConsent] = useState(false);
 
   const targets = targetsData?.targets ?? [];
@@ -265,10 +266,28 @@ export function ExternalScanTab() {
     for (const item of history) {
       if (!map.has(item.target)) map.set(item.target, item);
     }
-    return Array.from(map.values());
+    return map;
   }, [history]);
 
-  const activeScanId = selectedScanId ?? latestByTarget[0]?.id;
+  const allTargets = useMemo(() => {
+    const result: Array<{ value: string; source: string; label: string | null; scan?: ScanHistoryItem }> = [];
+    const seen = new Set<string>();
+    for (const t of targets) {
+      seen.add(t.value.toLowerCase());
+      result.push({ ...t, scan: latestByTarget.get(t.value) });
+    }
+    for (const [tgt, scan] of latestByTarget) {
+      if (!seen.has(tgt.toLowerCase())) {
+        seen.add(tgt.toLowerCase());
+        result.push({ value: tgt, source: 'manual', label: null, scan });
+      }
+    }
+    return result;
+  }, [targets, latestByTarget]);
+
+  const activeTarget = selectedTarget ?? allTargets[0]?.value;
+  const activeTargetScan = allTargets.find(t => t.value === activeTarget)?.scan;
+  const activeScanId = selectedScanId ?? activeTargetScan?.id;
   const { data: selectedScan, isLoading: detailLoading } = useExternalScanDetail(activeScanId);
 
   const handleEnableConsent = async () => {
@@ -289,6 +308,8 @@ export function ExternalScanTab() {
     try {
       const result = await startScan.mutateAsync({ organizationId: orgId, target: target.trim() });
       setSelectedScanId(result.scanId);
+      setSelectedTarget(target.trim());
+      setTarget('');
       toast.success('Scan complete');
     } catch (err: any) {
       if (isConsentError(err.message)) { setNeedsConsent(true); return; }
@@ -374,56 +395,48 @@ export function ExternalScanTab() {
         )}
       </div>
 
-      {targets.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {targets.map((t, i) => (
-            <Badge key={i} variant="outline" className="text-xs font-mono">
-              {t.source === 'network_site' ? <Globe className="h-3 w-3 mr-1" /> : <Mail className="h-3 w-3 mr-1" />}
-              {t.value}{t.label ? ` (${t.label})` : ''}
-            </Badge>
-          ))}
-        </div>
-      )}
-
-      {latestByTarget.length === 0 && !startScan.isPending && !autoScan.isPending && (
-        <EmptyState
-          icon={<Globe className="size-10" />}
-          title="No external scans yet"
-          description={targets.length > 0
-            ? `${targets.length} targets discovered. Click "Auto-Scan" to scan all, or enter a target manually.`
-            : 'Enter a domain or IP address above to run your first external scan.'}
-        />
-      )}
-
-      {latestByTarget.length === 1 && selectedScan && <ScanDetail scan={selectedScan} />}
-
-      {latestByTarget.length > 1 && (
-        <Tabs value={activeScanId} onValueChange={setSelectedScanId}>
+      {allTargets.length > 0 ? (
+        <Tabs value={activeTarget} onValueChange={(v) => { setSelectedTarget(v); setSelectedScanId(undefined); }}>
           <TabsList className="w-full overflow-x-auto flex-wrap h-auto">
-            {latestByTarget.map((s) => (
-              <TabsTrigger key={s.id} value={s.id} className="text-xs font-mono gap-1.5">
-                {s.overallGrade && <GradeBadge grade={s.overallGrade} size="sm" />}
-                {s.target}
-                {s.totalFindings > 0 && (
+            {allTargets.map((t) => (
+              <TabsTrigger key={t.value} value={t.value} className="text-xs font-mono gap-1.5">
+                {t.source === 'network_site' ? <Globe className="h-3 w-3" /> : t.source === 'cloud_domain' ? <Mail className="h-3 w-3" /> : <Search className="h-3 w-3" />}
+                {t.scan?.overallGrade && <GradeBadge grade={t.scan.overallGrade} size="sm" />}
+                {t.value}
+                {t.label && <span className="text-[10px] text-muted-foreground">({t.label})</span>}
+                {t.scan && t.scan.totalFindings > 0 && (
                   <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                    {s.totalFindings}
+                    {t.scan.totalFindings}
                   </Badge>
                 )}
               </TabsTrigger>
             ))}
           </TabsList>
-          {latestByTarget.map((s) => (
-            <TabsContent key={s.id} value={s.id}>
-              {activeScanId === s.id && detailLoading && (
+          {allTargets.map((t) => (
+            <TabsContent key={t.value} value={t.value}>
+              {activeTarget === t.value && detailLoading && (
                 <div className="space-y-4 py-4">
                   <Skeleton className="h-24" />
                   {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
                 </div>
               )}
-              {activeScanId === s.id && selectedScan && <ScanDetail scan={selectedScan} />}
+              {activeTarget === t.value && selectedScan && <ScanDetail scan={selectedScan} />}
+              {activeTarget === t.value && !detailLoading && !selectedScan && (
+                <EmptyState
+                  icon={<Search className="size-8" />}
+                  title="Not scanned yet"
+                  description={`Click "Auto-Scan" or run a manual scan to assess ${t.value}.`}
+                />
+              )}
             </TabsContent>
           ))}
         </Tabs>
+      ) : !startScan.isPending && !autoScan.isPending && (
+        <EmptyState
+          icon={<Globe className="size-10" />}
+          title="No external scans yet"
+          description="Enter a domain or IP address above to run your first external scan."
+        />
       )}
     </div>
   );
