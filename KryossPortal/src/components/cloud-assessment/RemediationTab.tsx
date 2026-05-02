@@ -463,18 +463,36 @@ export function RemediationTab({ orgId, scanId }: RemediationTabProps) {
               tabs.
             </div>
           ) : (
+            <>
+            {/* Mobile cards */}
+            <div className="space-y-3 p-4 sm:hidden">
+              {findings.map((f) => (
+                <div key={f.id} className="rounded-lg border p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm truncate capitalize">{f.area} / {SERVICE_LABELS[f.service.toLowerCase()] ?? f.service}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground truncate">{f.feature}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <InlineStatusSelect finding={f} orgId={orgId} />
+                    <span className="text-xs text-muted-foreground">{formatDate(f.updatedAt)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Area</TableHead>
                   <TableHead>Service</TableHead>
                   <TableHead>Feature</TableHead>
-                  <TableHead>Recommended Action</TableHead>
+                  <TableHead className="hidden lg:table-cell">Recommended Action</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHead className="hidden lg:table-cell">Owner</TableHead>
+                  <TableHead className="hidden lg:table-cell">Notes</TableHead>
                   <TableHead>Last Updated</TableHead>
-                  <TableHead className="w-24">Actions</TableHead>
+                  <TableHead className="w-24 hidden lg:table-cell">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -483,7 +501,7 @@ export function RemediationTab({ orgId, scanId }: RemediationTabProps) {
                     <TableCell className="text-sm capitalize whitespace-nowrap">{f.area}</TableCell>
                     <TableCell className="text-sm whitespace-nowrap">{SERVICE_LABELS[f.service.toLowerCase()] ?? f.service}</TableCell>
                     <TableCell className="text-sm">{f.feature}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[240px]">
+                    <TableCell className="text-sm text-muted-foreground max-w-[240px] hidden lg:table-cell">
                       <div className="truncate" title={recommendationMap.get(`${f.area}|${f.service}|${f.feature}`) ?? undefined}>
                         {recommendationMap.get(`${f.area}|${f.service}|${f.feature}`) ?? '—'}
                       </div>
@@ -491,11 +509,11 @@ export function RemediationTab({ orgId, scanId }: RemediationTabProps) {
                     <TableCell>
                       <InlineStatusSelect finding={f} orgId={orgId} />
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground font-mono">
+                    <TableCell className="text-sm text-muted-foreground font-mono hidden lg:table-cell">
                       {f.ownerUserId ? f.ownerUserId.slice(0, 8) : '—'}
                     </TableCell>
                     <TableCell
-                      className="text-sm text-muted-foreground max-w-[160px]"
+                      className="text-sm text-muted-foreground max-w-[160px] hidden lg:table-cell"
                       title={f.notes ?? undefined}
                     >
                       {truncate(f.notes, 40)}
@@ -503,7 +521,7 @@ export function RemediationTab({ orgId, scanId }: RemediationTabProps) {
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {formatDate(f.updatedAt)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       <Button
                         size="sm"
                         variant="outline"
@@ -519,6 +537,8 @@ export function RemediationTab({ orgId, scanId }: RemediationTabProps) {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            </>
           )}
         </CardContent>
       </Card>

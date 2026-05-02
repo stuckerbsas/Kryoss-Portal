@@ -179,86 +179,149 @@ function AdminTable({
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-8" />
-              <TableHead>Account</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Machines</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {admins.map((admin) => (
-              <>
-                <TableRow
-                  key={admin.name}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => onToggle(admin.name)}
-                >
-                  <TableCell className="w-8 px-2">
+        {/* Mobile cards */}
+        <div className="space-y-3 sm:hidden p-4">
+          {admins.map((admin) => (
+            <div key={admin.name}>
+              <div
+                className="rounded-lg border p-4 cursor-pointer"
+                onClick={() => onToggle(admin.name)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
                     {expanded.has(admin.name)
-                      ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                  </TableCell>
-                  <TableCell className="font-medium">{admin.name}</TableCell>
-                  <TableCell>
-                    <Badge className={badgeClass}>{admin.type}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {admin.machines.some(m => m.passwordNeverExpires) && (
-                      <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-                        <AlertTriangle className="h-3 w-3 mr-1" />Pwd Never Expires
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant={admin.machineCount > 5 ? 'destructive' : 'secondary'}>
-                      {admin.machineCount}
+                      ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                      : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                    <span className="font-medium text-sm truncate">{admin.name}</span>
+                  </div>
+                  <Badge variant={admin.machineCount > 5 ? 'destructive' : 'secondary'}>
+                    {admin.machineCount}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground ml-6">
+                  <Badge className={badgeClass}>{admin.type}</Badge>
+                  {admin.machines.some(m => m.passwordNeverExpires) && (
+                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                      <AlertTriangle className="h-3 w-3 mr-1" />Pwd Never Expires
                     </Badge>
-                  </TableCell>
-                </TableRow>
-                {expanded.has(admin.name) && admin.machines.map((m) => (
-                  <TableRow
-                    key={`${admin.name}-${m.machineId}`}
-                    className="bg-muted/30 hover:bg-muted/60"
-                  >
-                    <TableCell />
-                    <TableCell className="text-sm text-muted-foreground pl-8 cursor-pointer" onClick={() => onNavigate(m.machineId)}>
-                      <div className="flex items-center gap-2">
-                        <Monitor className="h-3.5 w-3.5" />
-                        {m.hostname}
+                  )}
+                </div>
+              </div>
+              {expanded.has(admin.name) && admin.machines.map((m) => (
+                <div key={`${admin.name}-${m.machineId}`} className="rounded-lg border p-3 ml-4 mt-2 bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 cursor-pointer min-w-0" onClick={() => onNavigate(m.machineId)}>
+                      <Monitor className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="text-sm truncate">{m.hostname}</span>
+                    </div>
+                    {m.isEnabled === false
+                      ? <Badge variant="outline" className="text-xs text-red-600">Disabled</Badge>
+                      : m.isEnabled === true
+                      ? <Badge variant="outline" className="text-xs text-green-600">Active</Badge>
+                      : null}
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-muted-foreground">{m.lastLogon ? new Date(m.lastLogon).toLocaleDateString() : '—'}</span>
+                    {showActions && (
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'remove'); }}>
+                          <UserMinus className="h-3 w-3 mr-1" /> Remove
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-destructive" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'disable'); }}>
+                          <Ban className="h-3 w-3 mr-1" /> Disable
+                        </Button>
                       </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden sm:block">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>Account</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="hidden lg:table-cell">Status</TableHead>
+                <TableHead className="text-right">Machines</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {admins.map((admin) => (
+                <>
+                  <TableRow
+                    key={admin.name}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => onToggle(admin.name)}
+                  >
+                    <TableCell className="w-8 px-2">
+                      {expanded.has(admin.name)
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                     </TableCell>
+                    <TableCell className="font-medium">{admin.name}</TableCell>
                     <TableCell>
-                      {m.isEnabled === false
-                        ? <Badge variant="outline" className="text-xs text-red-600">Disabled</Badge>
-                        : m.isEnabled === true
-                        ? <Badge variant="outline" className="text-xs text-green-600">Active</Badge>
-                        : <span className="text-xs text-muted-foreground">—</span>}
+                      <Badge className={badgeClass}>{admin.type}</Badge>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {m.lastLogon ? new Date(m.lastLogon).toLocaleDateString() : '—'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {showActions && (
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'remove'); }}>
-                            <UserMinus className="h-3 w-3 mr-1" /> Remove Admin
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-destructive" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'disable'); }}>
-                            <Ban className="h-3 w-3 mr-1" /> Disable
-                          </Button>
-                        </div>
+                    <TableCell className="hidden lg:table-cell">
+                      {admin.machines.some(m => m.passwordNeverExpires) && (
+                        <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                          <AlertTriangle className="h-3 w-3 mr-1" />Pwd Never Expires
+                        </Badge>
                       )}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant={admin.machineCount > 5 ? 'destructive' : 'secondary'}>
+                        {admin.machineCount}
+                      </Badge>
+                    </TableCell>
                   </TableRow>
-                ))}
-              </>
-            ))}
-          </TableBody>
-        </Table>
+                  {expanded.has(admin.name) && admin.machines.map((m) => (
+                    <TableRow
+                      key={`${admin.name}-${m.machineId}`}
+                      className="bg-muted/30 hover:bg-muted/60"
+                    >
+                      <TableCell />
+                      <TableCell className="text-sm text-muted-foreground pl-8 cursor-pointer" onClick={() => onNavigate(m.machineId)}>
+                        <div className="flex items-center gap-2">
+                          <Monitor className="h-3.5 w-3.5" />
+                          {m.hostname}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {m.isEnabled === false
+                          ? <Badge variant="outline" className="text-xs text-red-600">Disabled</Badge>
+                          : m.isEnabled === true
+                          ? <Badge variant="outline" className="text-xs text-green-600">Active</Badge>
+                          : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                        {m.lastLogon ? new Date(m.lastLogon).toLocaleDateString() : '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {showActions && (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'remove'); }}>
+                              <UserMinus className="h-3 w-3 mr-1" /> Remove Admin
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-destructive" onClick={(e) => { e.stopPropagation(); onAction(m.machineId, admin.name, 'disable'); }}>
+                              <Ban className="h-3 w-3 mr-1" /> Disable
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );

@@ -161,22 +161,22 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
         </TableCell>
         <TableCell className="font-medium text-sm">{device.sysName ?? device.machineName ?? '—'}</TableCell>
         <TableCell>{deviceTypeBadge(device.deviceType)}</TableCell>
-        <TableCell className="text-xs text-muted-foreground">{device.vendor ?? '—'}</TableCell>
-        <TableCell>
+        <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{device.vendor ?? '—'}</TableCell>
+        <TableCell className="hidden lg:table-cell">
           {device.cpuLoadPct != null ? (
             <div className="w-16">
               <UsageBar used={device.cpuLoadPct} total={100} unit="%" />
             </div>
           ) : '—'}
         </TableCell>
-        <TableCell>
+        <TableCell className="hidden lg:table-cell">
           {device.memoryTotalMb != null && device.memoryUsedMb != null ? (
             <div className="w-20">
               <UsageBar used={Math.round(device.memoryUsedMb / 1024)} total={Math.round(device.memoryTotalMb / 1024)} unit="GB" />
             </div>
           ) : '—'}
         </TableCell>
-        <TableCell>
+        <TableCell className="hidden lg:table-cell">
           {device.diskTotalGb != null && device.diskUsedGb != null ? (
             <div className="w-20">
               <UsageBar used={device.diskUsedGb} total={device.diskTotalGb} unit="GB" />
@@ -184,7 +184,7 @@ function DeviceRow({ device }: { device: SnmpDevice }) {
           ) : '—'}
         </TableCell>
         <TableCell className="text-center text-xs">{device.interfaceCount}</TableCell>
-        <TableCell className="text-center">
+        <TableCell className="text-center hidden lg:table-cell">
           {neighborCount > 0 ? (
             <Badge variant="secondary" className="bg-blue-100 text-blue-700">{neighborCount}</Badge>
           ) : '—'}
@@ -461,7 +461,7 @@ export function SnmpTab() {
       ) : (
         <>
           {/* KPI cards */}
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-1"><CardTitle className="text-xs text-muted-foreground">Devices</CardTitle><Server className="h-4 w-4 text-muted-foreground" /></CardHeader>
               <CardContent><p className="text-2xl font-bold">{active.length}</p>{stale.length > 0 && <p className="text-xs text-amber-500">{stale.length} stale</p>}</CardContent>
@@ -519,19 +519,74 @@ export function SnmpTab() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              {/* Mobile cards */}
+              <div className="space-y-3 sm:hidden">
+                {identified.map((d) => (
+                  <div key={d.id} className={`rounded-lg border p-4 ${d.isStale ? 'opacity-50' : ''}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm truncate">{d.sysName ?? d.machineName ?? d.ipAddress}</span>
+                      {deviceTypeBadge(d.deviceType)}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>IP: <span className="font-mono">{d.ipAddress}</span></span>
+                      <span>Vendor: {d.vendor ?? '—'}</span>
+                      <span>IFs: {d.interfaceCount}</span>
+                      <span>Uptime: {d.uptimeDays != null ? `${Math.floor(d.uptimeDays)}d` : '—'}</span>
+                    </div>
+                    {d.cpuLoadPct != null && (
+                      <div className="mt-2 w-full"><UsageBar used={d.cpuLoadPct} total={100} unit="% CPU" /></div>
+                    )}
+                  </div>
+                ))}
+                {unidentified.length > 0 && (
+                  <div
+                    className="rounded-lg border p-3 cursor-pointer bg-muted/20 text-sm text-muted-foreground"
+                    onClick={() => setShowUnidentified(!showUnidentified)}
+                  >
+                    <div className="flex items-center gap-2">
+                      {showUnidentified ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      Unidentified Devices ({unidentified.length})
+                    </div>
+                  </div>
+                )}
+                {showUnidentified && unidentified.map((d) => (
+                  <div key={d.id} className="rounded-lg border p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs">{d.ipAddress}</span>
+                      {deviceTypeBadge(d.deviceType)}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      IFs: {d.interfaceCount} | Uptime: {d.uptimeDays != null ? `${Math.floor(d.uptimeDays)}d` : '—'}
+                    </div>
+                  </div>
+                ))}
+                {stale.map((d) => (
+                  <div key={d.id} className="rounded-lg border p-4 opacity-50">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm truncate">{d.sysName ?? d.machineName ?? d.ipAddress}</span>
+                      {deviceTypeBadge(d.deviceType)}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <AlertTriangle className="h-3 w-3 inline text-amber-500 mr-1" />Stale | IFs: {d.interfaceCount}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>IP Address</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>CPU</TableHead>
-                      <TableHead>Memory</TableHead>
-                      <TableHead>Disk</TableHead>
+                      <TableHead className="hidden lg:table-cell">Vendor</TableHead>
+                      <TableHead className="hidden lg:table-cell">CPU</TableHead>
+                      <TableHead className="hidden lg:table-cell">Memory</TableHead>
+                      <TableHead className="hidden lg:table-cell">Disk</TableHead>
                       <TableHead className="text-center">IFs</TableHead>
-                      <TableHead className="text-center">Neighbors</TableHead>
+                      <TableHead className="text-center hidden lg:table-cell">Neighbors</TableHead>
                       <TableHead>Uptime</TableHead>
                     </TableRow>
                   </TableHeader>

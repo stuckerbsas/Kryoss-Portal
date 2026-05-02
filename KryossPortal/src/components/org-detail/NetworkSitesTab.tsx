@@ -129,98 +129,151 @@ function SitesTable({
   onSiteClick: (site: NetworkSite) => void;
 }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Site</TableHead>
-          <TableHead>Public IP</TableHead>
-          <TableHead>Location</TableHead>
-          <TableHead>ISP</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead className="text-right">Agents</TableHead>
-          <TableHead className="text-right">Down</TableHead>
-          <TableHead className="text-right">Up</TableHead>
-          <TableHead className="text-right">Latency</TableHead>
-          <TableHead className="text-right">SLA</TableHead>
-          <TableHead className="text-right">IP Changes (90d)</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <>
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
         {sites.map((s) => (
-          <TableRow
+          <div
             key={s.id}
-            className="cursor-pointer hover:bg-muted/50"
+            className="rounded-lg border p-4 cursor-pointer active:bg-muted/50"
             onClick={() => onSiteClick(s)}
           >
-            <TableCell className="font-medium">{s.siteName}</TableCell>
-            <TableCell className="font-mono text-sm">{s.publicIp ?? '—'}</TableCell>
-            <TableCell>
-              {s.geoCity && s.geoCountry
-                ? `${s.geoCity}, ${s.geoCountry}`
-                : s.geoCountry ?? '—'}
-            </TableCell>
-            <TableCell>{s.isp ?? '—'}</TableCell>
-            <TableCell>{connBadge(s.connType)}</TableCell>
-            <TableCell className="text-right">{s.agentCount}</TableCell>
-            <TableCell className={`text-right ${speedColor(s.avgDownMbps)}`}>
-              {s.avgDownMbps != null ? `${s.avgDownMbps.toFixed(1)} Mbps` : '—'}
-            </TableCell>
-            <TableCell className={`text-right ${speedColor(s.avgUpMbps)}`}>
-              {s.avgUpMbps != null ? `${s.avgUpMbps.toFixed(1)} Mbps` : '—'}
-            </TableCell>
-            <TableCell className={`text-right ${latencyColor(s.avgLatencyMs)}`}>
-              {s.avgLatencyMs != null ? `${s.avgLatencyMs.toFixed(1)} ms` : '—'}
-            </TableCell>
-            <TableCell className="text-right">{slaBadge(s) ?? '—'}</TableCell>
-            <TableCell className="text-right">
-              {s.ipChanges90d > 3 ? (
-                <span className="text-amber-600 font-medium flex items-center justify-end gap-1">
-                  <AlertTriangle className="size-3" />
-                  {s.ipChanges90d}
-                </span>
-              ) : (
-                s.ipChanges90d
-              )}
-            </TableCell>
-          </TableRow>
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-sm truncate">{s.siteName}</span>
+              <div className="flex items-center gap-1.5">
+                {connBadge(s.connType)}
+                {slaBadge(s)}
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>IP: <span className="font-mono">{s.publicIp ?? '—'}</span></span>
+              <span>Agents: {s.agentCount}</span>
+              <span>Down: <span className={speedColor(s.avgDownMbps)}>{s.avgDownMbps != null ? `${s.avgDownMbps.toFixed(1)} Mbps` : '—'}</span></span>
+              <span>Latency: <span className={latencyColor(s.avgLatencyMs)}>{s.avgLatencyMs != null ? `${s.avgLatencyMs.toFixed(1)} ms` : '—'}</span></span>
+            </div>
+          </div>
         ))}
-      </TableBody>
-    </Table>
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden sm:block overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Site</TableHead>
+              <TableHead>Public IP</TableHead>
+              <TableHead className="hidden lg:table-cell">Location</TableHead>
+              <TableHead className="hidden lg:table-cell">ISP</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead className="text-right">Agents</TableHead>
+              <TableHead className="text-right">Down</TableHead>
+              <TableHead className="text-right hidden lg:table-cell">Up</TableHead>
+              <TableHead className="text-right">Latency</TableHead>
+              <TableHead className="text-right hidden lg:table-cell">SLA</TableHead>
+              <TableHead className="text-right hidden lg:table-cell">IP Changes (90d)</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sites.map((s) => (
+              <TableRow
+                key={s.id}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => onSiteClick(s)}
+              >
+                <TableCell className="font-medium">{s.siteName}</TableCell>
+                <TableCell className="font-mono text-sm">{s.publicIp ?? '—'}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {s.geoCity && s.geoCountry
+                    ? `${s.geoCity}, ${s.geoCountry}`
+                    : s.geoCountry ?? '—'}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">{s.isp ?? '—'}</TableCell>
+                <TableCell>{connBadge(s.connType)}</TableCell>
+                <TableCell className="text-right">{s.agentCount}</TableCell>
+                <TableCell className={`text-right ${speedColor(s.avgDownMbps)}`}>
+                  {s.avgDownMbps != null ? `${s.avgDownMbps.toFixed(1)} Mbps` : '—'}
+                </TableCell>
+                <TableCell className={`text-right hidden lg:table-cell ${speedColor(s.avgUpMbps)}`}>
+                  {s.avgUpMbps != null ? `${s.avgUpMbps.toFixed(1)} Mbps` : '—'}
+                </TableCell>
+                <TableCell className={`text-right ${latencyColor(s.avgLatencyMs)}`}>
+                  {s.avgLatencyMs != null ? `${s.avgLatencyMs.toFixed(1)} ms` : '—'}
+                </TableCell>
+                <TableCell className="text-right hidden lg:table-cell">{slaBadge(s) ?? '—'}</TableCell>
+                <TableCell className="text-right hidden lg:table-cell">
+                  {s.ipChanges90d > 3 ? (
+                    <span className="text-amber-600 font-medium flex items-center justify-end gap-1">
+                      <AlertTriangle className="size-3" />
+                      {s.ipChanges90d}
+                    </span>
+                  ) : (
+                    s.ipChanges90d
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
 
 function IpHistoryTable({ history }: { history: IpHistoryEntry[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Machine</TableHead>
-          <TableHead>Public IP</TableHead>
-          <TableHead>ISP</TableHead>
-          <TableHead>Location</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>First Seen</TableHead>
-          <TableHead>Last Seen</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <>
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
         {history.map((h) => (
-          <TableRow key={h.id}>
-            <TableCell className="font-medium">{h.machineName}</TableCell>
-            <TableCell className="font-mono text-sm">{h.publicIp}</TableCell>
-            <TableCell>{h.isp ?? '—'}</TableCell>
-            <TableCell>
-              {h.geoCity && h.geoCountry
-                ? `${h.geoCity}, ${h.geoCountry}`
-                : h.geoCountry ?? '—'}
-            </TableCell>
-            <TableCell>{connBadge(h.connType)}</TableCell>
-            <TableCell className="text-sm">{new Date(h.firstSeen).toLocaleDateString()}</TableCell>
-            <TableCell className="text-sm">{new Date(h.lastSeen).toLocaleDateString()}</TableCell>
-          </TableRow>
+          <div key={h.id} className="rounded-lg border p-4">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-sm truncate">{h.machineName}</span>
+              {connBadge(h.connType)}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>IP: <span className="font-mono">{h.publicIp}</span></span>
+              <span>ISP: {h.isp ?? '—'}</span>
+              <span>First: {new Date(h.firstSeen).toLocaleDateString()}</span>
+              <span>Last: {new Date(h.lastSeen).toLocaleDateString()}</span>
+            </div>
+          </div>
         ))}
-      </TableBody>
-    </Table>
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden sm:block overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Machine</TableHead>
+              <TableHead>Public IP</TableHead>
+              <TableHead className="hidden lg:table-cell">ISP</TableHead>
+              <TableHead className="hidden lg:table-cell">Location</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>First Seen</TableHead>
+              <TableHead>Last Seen</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {history.map((h) => (
+              <TableRow key={h.id}>
+                <TableCell className="font-medium">{h.machineName}</TableCell>
+                <TableCell className="font-mono text-sm">{h.publicIp}</TableCell>
+                <TableCell className="hidden lg:table-cell">{h.isp ?? '—'}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {h.geoCity && h.geoCountry
+                    ? `${h.geoCity}, ${h.geoCountry}`
+                    : h.geoCountry ?? '—'}
+                </TableCell>
+                <TableCell>{connBadge(h.connType)}</TableCell>
+                <TableCell className="text-sm">{new Date(h.firstSeen).toLocaleDateString()}</TableCell>
+                <TableCell className="text-sm">{new Date(h.lastSeen).toLocaleDateString()}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
 
@@ -251,7 +304,7 @@ export function NetworkSitesTab() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-24" />
           ))}
@@ -314,7 +367,7 @@ export function NetworkSitesTab() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard icon={MapPin} label="Sites" value={sites.length} />
         <KpiCard icon={Wifi} label="Agents" value={totalAgents} />
         <KpiCard

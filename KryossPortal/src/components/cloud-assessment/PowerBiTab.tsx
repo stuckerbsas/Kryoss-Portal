@@ -189,14 +189,28 @@ function PowerBiDashboard({
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Power BI Findings</CardTitle>
               </CardHeader>
-              <CardContent className="p-0 overflow-x-auto">
+              <CardContent className="p-0">
+                {/* Mobile cards */}
+                <div className="space-y-3 p-4 sm:hidden">
+                  {findings.map((f, i) => (
+                    <div key={`${f.feature}-${i}`} className="rounded-lg border p-4 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-sm truncate">{f.feature}</span>
+                        <StatusBadge status={f.status} />
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate" title={f.observation ?? undefined}>{f.observation ?? '—'}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden sm:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Feature</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Observation</TableHead>
-                      <TableHead>Recommendation</TableHead>
+                      <TableHead className="hidden lg:table-cell">Recommendation</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -209,13 +223,14 @@ function PowerBiDashboard({
                         <TableCell className="text-sm text-muted-foreground max-w-xs">
                           <div className="truncate" title={f.observation ?? undefined}>{f.observation ?? '—'}</div>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-xs">
+                        <TableCell className="text-sm text-muted-foreground max-w-xs hidden lg:table-cell">
                           <div className="truncate" title={f.recommendation ?? undefined}>{f.recommendation ?? '—'}</div>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
           )}

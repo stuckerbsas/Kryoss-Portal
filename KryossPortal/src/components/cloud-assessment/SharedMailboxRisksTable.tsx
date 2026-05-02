@@ -27,6 +27,27 @@ export function SharedMailboxRisksTable({ mailboxes }: { mailboxes: SharedMailbo
               Heuristic: enabled users without assigned licenses that own a mailbox.
               Verify sign-in is blocked via Exchange Online PowerShell.
             </p>
+            {/* Mobile cards */}
+            <div className="space-y-3 p-4 sm:hidden">
+              {mailboxes.map((m) => (
+                <div key={m.mailboxUpn} className="rounded-lg border p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm truncate">{m.displayName ?? m.mailboxUpn}</span>
+                    {m.hasPasswordEnabled ? (
+                      <Badge variant="secondary" className="bg-red-100 text-red-800">Enabled</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="bg-gray-100 text-gray-600">Unknown</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate font-mono">{m.mailboxUpn}</p>
+                  {m.lastActivity && (
+                    <p className="text-xs text-muted-foreground">Last activity: {new Date(m.lastActivity).toLocaleDateString()}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -55,6 +76,7 @@ export function SharedMailboxRisksTable({ mailboxes }: { mailboxes: SharedMailbo
                 ))}
               </TableBody>
             </Table>
+            </div>
           </>
         )}
       </CardContent>

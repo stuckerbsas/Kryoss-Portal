@@ -16,6 +16,7 @@ import {
   type MetricComparison,
 } from '@/api/cloudAssessment';
 import { useMe } from '@/api/me';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -274,7 +275,25 @@ export function BenchmarksTab({ orgId, scanId }: BenchmarksTabProps) {
                 </Button>
               )}
             </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
+            <CardContent className="p-0">
+              {/* Mobile cards */}
+              <div className="space-y-3 p-4 sm:hidden">
+                {visible.map(m => (
+                  <div key={m.metricKey} className="rounded-lg border p-4 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-sm truncate">{m.displayName ?? m.metricKey}</span>
+                      {m.verdict && <Badge variant="secondary" className="text-xs">{m.verdict}</Badge>}
+                    </div>
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      <span>You: <span className="font-semibold text-foreground">{m.orgValue?.toFixed(1) ?? '—'}</span></span>
+                      {availability.franchiseBenchmarkAvailable && <span>Franchise: {m.franchiseAvg?.toFixed(1) ?? '—'}</span>}
+                      {availability.industryBenchmarkAvailable && <span>Industry: {m.industryP50?.toFixed(1) ?? '—'}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-xs text-muted-foreground">
@@ -298,6 +317,7 @@ export function BenchmarksTab({ orgId, scanId }: BenchmarksTabProps) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </CardContent>
           </Card>
         );
@@ -377,7 +397,27 @@ function FranchiseLeaderboard({ franchiseId }: { franchiseId: string }) {
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 overflow-x-auto">
+      <CardContent className="p-0">
+        {/* Mobile cards */}
+        <div className="space-y-3 p-4 sm:hidden">
+          {data.rows.map((r, i) => (
+            <div key={r.organizationId} className="rounded-lg border p-4 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate flex items-center gap-1.5">
+                  {i === 0 ? <Medal className="h-4 w-4 text-amber-500" /> : <span className="text-muted-foreground">#{i + 1}</span>}
+                  {r.organizationName}
+                </span>
+                <span className="font-semibold text-sm tabular-nums">{r.overallScore !== null ? r.overallScore.toFixed(1) : '—'}</span>
+              </div>
+              <div className="flex gap-3 text-xs text-muted-foreground">
+                {r.topArea && <span>Top: {areaLabel(r.topArea.replace('area.', ''))}</span>}
+                {r.weakestArea && <span>Weak: {areaLabel(r.weakestArea.replace('area.', ''))}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-xs text-muted-foreground">
@@ -430,6 +470,7 @@ function FranchiseLeaderboard({ franchiseId }: { franchiseId: string }) {
             ))}
           </tbody>
         </table>
+        </div>
       </CardContent>
     </Card>
   );

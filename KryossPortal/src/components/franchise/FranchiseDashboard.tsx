@@ -49,7 +49,7 @@ export function FranchiseDashboard() {
   return (
     <div className="space-y-6">
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={<Building2 className="h-4 w-4" />} label="Organizations" value={totalOrgs} />
         <StatCard icon={<Monitor className="h-4 w-4" />} label="Total Machines" value={totalMachines} />
         <StatCard icon={<ScanSearch className="h-4 w-4" />} label="Assessed" value={totalAssessed} />
@@ -93,8 +93,36 @@ export function FranchiseDashboard() {
         </Card>
       )}
 
-      {/* Org comparison table */}
-      <Card>
+      {/* Org comparison - mobile cards */}
+      <div className="space-y-3 sm:hidden">
+        {orgs.map((o) => {
+          const scoreColor =
+            o.avgScore >= 90 ? 'text-green-700'
+            : o.avgScore >= 70 ? 'text-lime-700'
+            : o.avgScore >= 50 ? 'text-amber-700'
+            : o.avgScore > 0 ? 'text-red-700'
+            : 'text-muted-foreground';
+          return (
+            <div
+              key={o.id}
+              className="rounded-lg border p-4 cursor-pointer hover:bg-muted/20 transition-colors"
+              onClick={() => navigate(`/organizations/${slugify(o.name)}`)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{o.name}</span>
+                <GradeBadge grade={scoreToGrade(o.avgScore)} />
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                <span>{o.machineCount} machines</span>
+                <span>{o.assessedMachines} assessed</span>
+                <span className={cn('font-semibold', scoreColor)}>{o.avgScore > 0 ? `${o.avgScore}%` : '—'}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Org comparison table - desktop */}
+      <Card className="hidden sm:block">
         <CardHeader>
           <CardTitle className="text-base">Organization Comparison</CardTitle>
         </CardHeader>
@@ -105,10 +133,10 @@ export function FranchiseDashboard() {
                 <tr className="border-b bg-muted/30">
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Organization</th>
                   <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Machines</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Assessed</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground hidden lg:table-cell">Assessed</th>
                   <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Score</th>
                   <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Grade</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Last Scan</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground hidden lg:table-cell">Last Scan</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,14 +155,14 @@ export function FranchiseDashboard() {
                     >
                       <td className="px-4 py-3 font-medium">{o.name}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{o.machineCount}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{o.assessedMachines}</td>
+                      <td className="px-4 py-3 text-right tabular-nums hidden lg:table-cell">{o.assessedMachines}</td>
                       <td className={cn('px-4 py-3 text-center tabular-nums font-semibold', scoreColor)}>
                         {o.avgScore > 0 ? `${o.avgScore}%` : '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <GradeBadge grade={scoreToGrade(o.avgScore)} />
                       </td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">
+                      <td className="px-4 py-3 text-right text-muted-foreground hidden lg:table-cell">
                         {timeAgo(o.lastAssessment)}
                       </td>
                     </tr>

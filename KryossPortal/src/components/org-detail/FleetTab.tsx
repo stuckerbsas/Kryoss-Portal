@@ -55,6 +55,9 @@ export function FleetTab() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
+  const goToMachine = (hostname: string) =>
+    navigate(`/organizations/${orgSlug}/machines/${hostname}`);
+
   return (
     <div className="space-y-4">
       <div className="relative max-w-sm">
@@ -84,75 +87,103 @@ export function FleetTab() {
         />
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Hostname</TableHead>
-                <TableHead>OS</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>CPU / RAM</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Agent</TableHead>
-                <TableHead>Last Seen</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.items.map((m) => (
-                <TableRow
-                  key={m.id}
-                  className="cursor-pointer"
-                  onClick={() =>
-                    navigate(`/organizations/${orgSlug}/machines/${m.hostname}`)
-                  }
-                >
-                  <TableCell className="font-medium flex items-center gap-2">
+          {/* Mobile: cards */}
+          <div className="space-y-3 sm:hidden">
+            {data.items.map((m) => (
+              <div
+                key={m.id}
+                className="rounded-lg border p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => goToMachine(m.hostname)}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className={`inline-block size-2.5 rounded-full ${
+                      className={`inline-block size-2.5 rounded-full shrink-0 ${
                         isOnline(m.lastHeartbeatAt) ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
                       }`}
-                      title={isOnline(m.lastHeartbeatAt) ? 'Online' : 'Offline'}
                     />
-                    {m.hostname}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {m.osName ?? 'Unknown'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs font-mono">
-                    {m.ipAddress ?? '—'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {m.cpuName ?? 'N/A'}
-                    {m.ramGb != null ? ` / ${m.ramGb} GB` : ''}
-                  </TableCell>
-                  <TableCell>
-                    <GradeBadge
-                      grade={m.latestScore?.grade}
-                      score={m.latestScore?.globalScore}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="secondary"
-                      className={
-                        m.isActive
-                          ? 'bg-green-100 text-green-800 hover:bg-green-100'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-100'
-                      }
-                    >
-                      {m.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs font-mono">
-                    {m.agentVersion ? `v${m.agentVersion}` : '—'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatRelativeTime(m.lastSeenAt)}
-                  </TableCell>
+                    <span className="font-medium text-sm truncate">{m.hostname}</span>
+                  </div>
+                  <GradeBadge grade={m.latestScore?.grade} score={m.latestScore?.globalScore} />
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{m.osName ?? 'Unknown'}</span>
+                  <span>{formatRelativeTime(m.lastSeenAt)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Hostname</TableHead>
+                  <TableHead>OS</TableHead>
+                  <TableHead className="hidden lg:table-cell">IP</TableHead>
+                  <TableHead className="hidden lg:table-cell">CPU / RAM</TableHead>
+                  <TableHead>Score</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Agent</TableHead>
+                  <TableHead>Last Seen</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {data.items.map((m) => (
+                  <TableRow
+                    key={m.id}
+                    className="cursor-pointer"
+                    onClick={() => goToMachine(m.hostname)}
+                  >
+                    <TableCell className="font-medium flex items-center gap-2">
+                      <span
+                        className={`inline-block size-2.5 rounded-full ${
+                          isOnline(m.lastHeartbeatAt) ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+                        }`}
+                        title={isOnline(m.lastHeartbeatAt) ? 'Online' : 'Offline'}
+                      />
+                      {m.hostname}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {m.osName ?? 'Unknown'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs font-mono hidden lg:table-cell">
+                      {m.ipAddress ?? '—'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden lg:table-cell">
+                      {m.cpuName ?? 'N/A'}
+                      {m.ramGb != null ? ` / ${m.ramGb} GB` : ''}
+                    </TableCell>
+                    <TableCell>
+                      <GradeBadge
+                        grade={m.latestScore?.grade}
+                        score={m.latestScore?.globalScore}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          m.isActive
+                            ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-100'
+                        }
+                      >
+                        {m.isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs font-mono hidden lg:table-cell">
+                      {m.agentVersion ? `v${m.agentVersion}` : '—'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatRelativeTime(m.lastSeenAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
           <div className="flex items-center justify-between pt-2">
             <p className="text-sm text-muted-foreground">

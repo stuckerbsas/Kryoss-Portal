@@ -73,14 +73,83 @@ export function ServicesTab({ machineId, hostname }: Props) {
         <Badge variant="outline">{items.length} services</Badge>
       </div>
 
-      <div className="rounded-md border">
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
+        {sorted.map(s => (
+          <div key={s.name} className="rounded-lg border p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                {s.isProtected && <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                <span className="font-medium text-sm truncate">{s.displayName ?? s.name}</span>
+              </div>
+              <Badge variant="outline" className={
+                s.status === 'Running' ? 'bg-green-100 text-green-800' :
+                s.status === 'Stopped' ? 'bg-red-100 text-red-800' :
+                'bg-amber-100 text-amber-800'
+              }>
+                <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${
+                  s.status === 'Running' ? 'bg-green-500' :
+                  s.status === 'Stopped' ? 'bg-red-500' :
+                  'bg-amber-500'
+                }`} />
+                {s.status}
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">{s.name}</div>
+            {s.isProtected ? (
+              <div className="mt-2">
+                <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Protected</Badge>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2 mt-2">
+                <Select
+                  value={pendingStartup[s.name] ?? s.startupType?.toLowerCase() ?? ''}
+                  onValueChange={(val) => {
+                    const effective = pendingStartup[s.name] ?? s.startupType?.toLowerCase() ?? '';
+                    if (val !== effective)
+                      setConfirm({ name: s.name, displayName: s.displayName, action: 'set_startup', startupType: val });
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[120px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="automatic">Automatic</SelectItem>
+                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-1">
+                  {s.status === 'Stopped' && (
+                    <Button size="sm" variant="outline" onClick={() => setConfirm({ name: s.name, displayName: s.displayName, action: 'start' })}>
+                      <Play className="h-3.5 w-3.5 mr-1" />Start
+                    </Button>
+                  )}
+                  {s.status === 'Running' && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => setConfirm({ name: s.name, displayName: s.displayName, action: 'restart' })}>
+                        <RotateCw className="h-3.5 w-3.5 mr-1" />Restart
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setConfirm({ name: s.name, displayName: s.displayName, action: 'stop' })}>
+                        <Square className="h-3.5 w-3.5 mr-1" />Stop
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* Desktop table */}
+      <div className="hidden sm:block rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Startup</TableHead>
-              <TableHead>Priority</TableHead>
+              <TableHead className="hidden lg:table-cell">Priority</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -137,7 +206,7 @@ export function ServicesTab({ machineId, hostname }: Props) {
                     );
                   })()}
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden lg:table-cell">
                   {s.isProtected ? (
                     <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Protected</Badge>
                   ) : (

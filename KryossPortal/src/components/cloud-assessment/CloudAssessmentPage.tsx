@@ -190,7 +190,33 @@ export function AreaFindingsTab({ area, scanId }: { area: string; scanId: string
 
   return (
     <Card>
-      <CardContent className="p-0 overflow-x-auto">
+      <CardContent className="p-0">
+        {/* Mobile cards */}
+        <div className="space-y-3 p-4 sm:hidden">
+          {findings.map((f, i) => (
+            <div key={`${f.service}-${f.feature}-${i}`} className="rounded-lg border p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{serviceLabel(f.service)}</span>
+                {statusBadge(f.status)}
+              </div>
+              <p className="text-sm text-muted-foreground truncate">{f.feature}</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {priorityBadge(f.priority)}
+                {f.linkUrl && (
+                  <a href={f.linkUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                    <ExternalLink className="h-3 w-3" />
+                    {f.linkText ?? 'Docs'}
+                  </a>
+                )}
+              </div>
+              {orgId && !['success', 'not_licensed'].includes(f.status.toLowerCase()) && (
+                <AreaInlineStatusSelect finding={f} orgId={orgId} />
+              )}
+            </div>
+          ))}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -198,8 +224,8 @@ export function AreaFindingsTab({ area, scanId }: { area: string; scanId: string
               <TableHead>Feature</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
-              <TableHead>Observation</TableHead>
-              <TableHead>Recommendation</TableHead>
+              <TableHead className="hidden lg:table-cell">Observation</TableHead>
+              <TableHead className="hidden lg:table-cell">Recommendation</TableHead>
               <TableHead className="w-20">Link</TableHead>
               <TableHead>Remediation</TableHead>
             </TableRow>
@@ -211,10 +237,10 @@ export function AreaFindingsTab({ area, scanId }: { area: string; scanId: string
                 <TableCell className="text-sm">{f.feature}</TableCell>
                 <TableCell>{statusBadge(f.status)}</TableCell>
                 <TableCell>{priorityBadge(f.priority)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-sm">
+                <TableCell className="text-sm text-muted-foreground max-w-sm hidden lg:table-cell">
                   <div className="truncate" title={f.observation ?? undefined}>{f.observation ?? '—'}</div>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-sm">
+                <TableCell className="text-sm text-muted-foreground max-w-sm hidden lg:table-cell">
                   <div className="truncate" title={f.recommendation ?? undefined}>{f.recommendation ?? '—'}</div>
                 </TableCell>
                 <TableCell>
@@ -234,6 +260,7 @@ export function AreaFindingsTab({ area, scanId }: { area: string; scanId: string
             ))}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -519,6 +546,7 @@ export function CloudAssessmentPage() {
         initialStep={wizardStep}
       />
       <Tabs defaultValue="overview" className="space-y-4">
+        <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0 scrollbar-hide"><div className="min-w-max">
         <TabsList>
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="identity">Identity</TabsTrigger>
@@ -531,6 +559,7 @@ export function CloudAssessmentPage() {
         <TabsTrigger value="compliance">Compliance</TabsTrigger>
         <TabsTrigger value="remediation">Remediation</TabsTrigger>
       </TabsList>
+        </div></div>
       <TabsContent value="overview"><OverviewTab orgId={orgId} /></TabsContent>
       <TabsContent value="identity"><AreaFindingsTab area="identity" scanId={latestScanId} /></TabsContent>
       <TabsContent value="endpoint"><AreaFindingsTab area="endpoint" scanId={latestScanId} /></TabsContent>

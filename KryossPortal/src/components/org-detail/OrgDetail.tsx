@@ -114,29 +114,34 @@ export function OrgDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* ── Header: stacked 3-row layout ── */}
+      <div className="space-y-4 animate-fade-in-up">
+        {/* Row 1: Title + badge */}
         <div className="flex items-center gap-3">
-          <Building2 className="h-6 w-6 text-muted-foreground" />
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Building2 className="h-5 w-5 text-primary" />
+          </div>
           <h1 className="text-2xl font-bold tracking-tight">{org.name}</h1>
           <StatusBadge status={org.status} />
         </div>
+
         {!isClient && (
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            {/* Enrollment code */}
             <Can permission="enrollment:create">
-              <div className="flex items-center gap-2 rounded-md border px-3 py-1.5 bg-muted/50">
-                <Key className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center gap-2 rounded-lg border px-3 py-2 bg-card">
+                <Key className="h-3.5 w-3.5 text-muted-foreground" />
                 {activeCode ? (
                   <>
-                    <code className="font-mono text-sm font-semibold tracking-wider select-all">
+                    <code className="font-mono text-sm font-semibold tracking-wider select-all text-primary">
                       {activeCode.code}
                     </code>
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopyCode}>
-                      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied ? <Check className="h-3.5 w-3.5 text-pass" /> : <Copy className="h-3.5 w-3.5" />}
                     </Button>
                   </>
                 ) : (
-                  <span className="text-sm text-muted-foreground">No code</span>
+                  <span className="text-sm text-muted-foreground">No active code</span>
                 )}
                 <Button
                   variant="ghost"
@@ -149,64 +154,69 @@ export function OrgDetail() {
                 </Button>
               </div>
             </Can>
-            <Can permission="assessment:export">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={downloading}
-                onClick={handleDownloadAgent}
-              >
-                {downloading ? (
-                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="mr-1.5 h-4 w-4" />
-                )}
-                Download Agent
-              </Button>
-            </Can>
-            <Can permission="organizations:update">
-              <Button variant="outline" size="sm">
-                <Pencil className="mr-1.5 h-4 w-4" />
-                Edit
-              </Button>
-            </Can>
-            <Can permission="organizations:delete">
-              <Button variant="outline" size="sm" className="text-destructive">
-                <Trash2 className="mr-1.5 h-4 w-4" />
-                Delete
-              </Button>
-            </Can>
+
+            {/* Actions */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Can permission="assessment:export">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={downloading}
+                  onClick={handleDownloadAgent}
+                >
+                  {downloading ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-1.5 h-4 w-4" />
+                  )}
+                  Download Agent
+                </Button>
+              </Can>
+              <Can permission="organizations:update">
+                <Button variant="outline" size="sm">
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  Edit
+                </Button>
+              </Can>
+              <Can permission="organizations:delete">
+                <Button variant="outline" size="sm" className="text-destructive">
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Delete
+                </Button>
+              </Can>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Tab navigation — hidden for client roles (they use sidebar) */}
+      {/* Tab navigation */}
       {!isClient && (
-        <nav className="flex border-b">
-          {tabs.map(
-            (tab) =>
-              has(tab.permission) && (
-                <NavLink
-                  key={tab.to}
-                  to={tab.to}
-                  end={tab.end}
-                  className={({ isActive }) =>
-                    [
-                      'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-                      isActive
-                        ? 'border-primary text-primary'
-                        : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/40',
-                    ].join(' ')
-                  }
-                >
-                  {tab.label}
-                </NavLink>
-              ),
-          )}
+        <nav className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0 scrollbar-hide">
+          <div className="flex border-b min-w-max">
+            {tabs.map(
+              (tab) =>
+                has(tab.permission) && (
+                  <NavLink
+                    key={tab.to}
+                    to={tab.to}
+                    end={tab.end}
+                    className={({ isActive }) =>
+                      [
+                        'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+                        isActive
+                          ? 'border-primary text-primary'
+                          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/40',
+                      ].join(' ')
+                    }
+                  >
+                    {tab.label}
+                  </NavLink>
+                ),
+            )}
+          </div>
         </nav>
       )}
 
-      {/* Tab content */}
       <Outlet />
     </div>
   );

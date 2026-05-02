@@ -132,7 +132,26 @@ function DrilldownView({
       </div>
 
       <Card>
-        <CardContent className="p-0 overflow-x-auto">
+        <CardContent className="p-0">
+          {/* Mobile cards */}
+          <div className="space-y-3 p-4 sm:hidden">
+            {controls.map((ctrl) => (
+              <div key={ctrl.controlCode} className="rounded-lg border p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm font-mono">{ctrl.controlCode}</span>
+                  <Badge variant="secondary" className={CONTROL_STATUS_BADGE[ctrl.status] ?? ''}>
+                    {ctrl.status.replace('_', ' ')}
+                  </Badge>
+                </div>
+                <p className="text-sm truncate" title={ctrl.title}>{ctrl.title}</p>
+                {ctrl.category && (
+                  <p className="text-xs text-muted-foreground">{ctrl.category}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -140,7 +159,7 @@ function DrilldownView({
                 <TableHead>Title</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Mapped Findings</TableHead>
+                <TableHead className="hidden lg:table-cell">Mapped Findings</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -163,7 +182,7 @@ function DrilldownView({
                       {ctrl.status.replace('_', ' ')}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-sm">
+                  <TableCell className="text-xs text-muted-foreground max-w-sm hidden lg:table-cell">
                     {ctrl.mappedFindings.length === 0
                       ? '—'
                       : ctrl.mappedFindings.map((mf, i) => (
@@ -178,6 +197,7 @@ function DrilldownView({
               ))}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -62,7 +62,7 @@ export function AdObjectsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
         <div className="flex gap-2">
           <Button
             variant={type === 'user' ? 'default' : 'outline'}
@@ -84,7 +84,7 @@ export function AdObjectsTab() {
           </Button>
         </div>
 
-        <div className="relative w-72">
+        <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search name, DN..."
@@ -107,16 +107,62 @@ export function AdObjectsTab() {
         />
       ) : (
         <>
-          <div className="rounded-md border">
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {data.items.map((obj: AdObjectItem) => (
+              <div key={obj.id} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm font-mono truncate">{obj.samAccountName}</span>
+                  {obj.enabled
+                    ? <Badge className="bg-green-100 text-green-800">Enabled</Badge>
+                    : <Badge className="bg-red-100 text-red-800">Disabled</Badge>
+                  }
+                </div>
+                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                  {obj.displayName && <span className="truncate">{obj.displayName}</span>}
+                  <span>{timeAgo(obj.lastLogon)}</span>
+                  <span>{memberOfCount(obj.memberOf)} groups</span>
+                </div>
+                {type === 'user' && (
+                  <div className="mt-2 flex justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">Actions</Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setActionTarget({ obj, action: 'reset_password' })}>
+                          <KeyRound className="mr-2 h-3.5 w-3.5" /> Reset Password
+                        </DropdownMenuItem>
+                        {obj.enabled && (
+                          <DropdownMenuItem onClick={() => setActionTarget({ obj, action: 'disable' })}>
+                            <Ban className="mr-2 h-3.5 w-3.5" /> Disable
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => setActionTarget({ obj, action: 'unlock' })}>
+                          <Unlock className="mr-2 h-3.5 w-3.5" /> Unlock
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive" onClick={() => setActionTarget({ obj, action: 'delete' })}>
+                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Display Name</TableHead>
+                  <TableHead className="hidden lg:table-cell">Display Name</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Logon</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>OU</TableHead>
+                  <TableHead className="hidden lg:table-cell">Created</TableHead>
+                  <TableHead className="hidden lg:table-cell">OU</TableHead>
                   <TableHead>Groups</TableHead>
                   {type === 'user' && <TableHead className="w-20" />}
                 </TableRow>
@@ -125,7 +171,7 @@ export function AdObjectsTab() {
                 {data.items.map((obj: AdObjectItem) => (
                   <TableRow key={obj.id}>
                     <TableCell className="font-mono text-sm font-medium">{obj.samAccountName}</TableCell>
-                    <TableCell className="text-sm">{obj.displayName ?? '—'}</TableCell>
+                    <TableCell className="hidden lg:table-cell text-sm">{obj.displayName ?? '—'}</TableCell>
                     <TableCell>
                       {obj.enabled
                         ? <Badge className="bg-green-100 text-green-800">Enabled</Badge>
@@ -135,8 +181,8 @@ export function AdObjectsTab() {
                     <TableCell className="text-sm text-muted-foreground" title={obj.lastLogon ?? undefined}>
                       {timeAgo(obj.lastLogon)}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{formatDate(obj.whenCreated)}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground" title={obj.organizationalUnit ?? undefined}>
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{formatDate(obj.whenCreated)}</TableCell>
+                    <TableCell className="hidden lg:table-cell max-w-[200px] truncate text-xs text-muted-foreground" title={obj.organizationalUnit ?? undefined}>
                       {obj.organizationalUnit ?? '—'}
                     </TableCell>
                     <TableCell className="tabular-nums text-sm">{memberOfCount(obj.memberOf)}</TableCell>

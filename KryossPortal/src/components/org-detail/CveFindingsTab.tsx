@@ -120,14 +120,14 @@ function SoftwareGroupCard({ group, onDismiss, dismissPending }: {
     <Card className={`border-l-4 ${sevBorderColor(group.maxSeverity)}`}>
       <CardHeader className="pb-2">
         <div
-          className="flex items-center justify-between cursor-pointer select-none"
+          className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none"
           onClick={() => setExpanded(!expanded)}
         >
           <div className="flex items-center gap-3 min-w-0">
             <Package className="size-5 text-muted-foreground shrink-0" />
             <div className="min-w-0">
-              <span className="font-semibold truncate block">{group.softwareName}</span>
-              <span className="text-sm text-muted-foreground">v{group.version}</span>
+              <span className="font-semibold break-words">{group.softwareName}</span>
+              <span className="text-sm text-muted-foreground block">v{group.version}</span>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
@@ -136,15 +136,15 @@ function SoftwareGroupCard({ group, onDismiss, dismissPending }: {
               {group.maxCvss?.toFixed(1) ?? '--'}
             </span>
             <span className="text-xs text-muted-foreground">{group.cves.length} CVEs</span>
-            <span className="text-xs text-muted-foreground">{group.machines.length} {group.machines.length === 1 ? 'machine' : 'machines'}</span>
+            <span className="hidden sm:inline text-xs text-muted-foreground">{group.machines.length} {group.machines.length === 1 ? 'machine' : 'machines'}</span>
             {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="pt-0">
-        {/* Machines always visible */}
-        <div className="flex flex-wrap gap-1.5 mb-2">
+        {/* Machines — hidden on mobile */}
+        <div className="hidden sm:flex flex-wrap gap-1.5 mb-2">
           {group.machines.map((m) => (
             <Badge key={m.id} variant="outline" className="text-xs font-normal">
               {m.name}
@@ -152,46 +152,67 @@ function SoftwareGroupCard({ group, onDismiss, dismissPending }: {
           ))}
         </div>
 
-        {/* CVE table — collapsible */}
+        {/* CVE list — collapsible */}
         {expanded && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-20">Severity</TableHead>
-                <TableHead>CVE</TableHead>
-                <TableHead className="w-16">CVSS</TableHead>
-                <TableHead className="w-24">Fix</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="w-16"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            {/* Mobile card view */}
+            <div className="space-y-3 sm:hidden">
               {group.cves.map((c) => (
-                <TableRow key={c.cveId}>
-                  <TableCell>{severityBadge(c.severity)}</TableCell>
-                  <TableCell className="font-mono text-sm">{c.cveId}</TableCell>
-                  <TableCell className={cvssColor(c.cvssScore)}>
-                    {c.cvssScore?.toFixed(1) ?? '--'}
-                  </TableCell>
-                  <TableCell className="text-sm text-green-700">{c.fixedVersion ?? '--'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-sm truncate">
-                    {c.description ?? ''}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => onDismiss(c.findingIds[0], c.cveId)}
-                      disabled={dismissPending}
-                    >
-                      Dismiss
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <div key={c.cveId} className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-medium text-sm">{c.cveId}</span>
+                    {severityBadge(c.severity)}
+                  </div>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className={cvssColor(c.cvssScore)}>CVSS {c.cvssScore?.toFixed(1) ?? '--'}</span>
+                    {c.fixedVersion && <span className="text-green-700">Fix: {c.fixedVersion}</span>}
+                  </div>
+                </div>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+
+            {/* Desktop table view */}
+            <div className="hidden sm:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-20">Severity</TableHead>
+                    <TableHead>CVE</TableHead>
+                    <TableHead className="w-16">CVSS</TableHead>
+                    <TableHead className="w-24">Fix</TableHead>
+                    <TableHead className="hidden lg:table-cell">Description</TableHead>
+                    <TableHead className="w-16"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {group.cves.map((c) => (
+                    <TableRow key={c.cveId}>
+                      <TableCell>{severityBadge(c.severity)}</TableCell>
+                      <TableCell className="font-mono text-sm">{c.cveId}</TableCell>
+                      <TableCell className={cvssColor(c.cvssScore)}>
+                        {c.cvssScore?.toFixed(1) ?? '--'}
+                      </TableCell>
+                      <TableCell className="text-sm text-green-700">{c.fixedVersion ?? '--'}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground max-w-sm truncate">
+                        {c.description ?? ''}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          onClick={() => onDismiss(c.findingIds[0], c.cveId)}
+                          disabled={dismissPending}
+                        >
+                          Dismiss
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -224,7 +245,7 @@ export function CveFindingsTab() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
         </div>
       </div>
@@ -269,7 +290,7 @@ export function CveFindingsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold">CVE Findings</h2>
         <div className="flex items-center gap-2">
           <Select
@@ -303,7 +324,7 @@ export function CveFindingsTab() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Findings</CardTitle>

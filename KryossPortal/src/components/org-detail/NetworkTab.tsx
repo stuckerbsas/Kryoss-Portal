@@ -1,6 +1,12 @@
 import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PortsTab } from './PortsTab';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { NetworkDiagnosticsTab } from './NetworkDiagnosticsTab';
 import { SnmpTab } from './SnmpTab';
 import { ExternalScanTab } from './ExternalScanTab';
@@ -15,7 +21,6 @@ const sections = [
   { value: 'wan-health', label: 'WAN Health' },
   { value: 'diagnostics', label: 'Diagnostics' },
   { value: 'ports', label: 'Ports' },
-  { value: 'consolidated-ports', label: 'Ports (All)' },
   { value: 'sites', label: 'Sites' },
   { value: 'external-scan', label: 'External Scan' },
   { value: 'snmp', label: 'SNMP Devices' },
@@ -24,14 +29,31 @@ const sections = [
 
 export function NetworkTab() {
   const [params, setParams] = useSearchParams();
-  const active = params.get('section') ?? 'topology';
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const active = params.get('section') ?? (isMobile ? 'wan-health' : 'topology');
+
+  const handleChange = (v: string) => setParams({ section: v }, { replace: true });
+
+  const mobileSections = sections.filter((s) => s.value !== 'topology');
 
   return (
-    <Tabs
-      value={active}
-      onValueChange={(v) => setParams({ section: v }, { replace: true })}
-    >
-      <TabsList>
+    <Tabs value={active} onValueChange={handleChange}>
+      {/* Mobile: select (no topology) */}
+      <div className="sm:hidden">
+        <Select value={active} onValueChange={handleChange}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {mobileSections.map((s) => (
+              <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Desktop: tabs */}
+      <TabsList className="hidden sm:inline-flex">
         {sections.map((s) => (
           <TabsTrigger key={s.value} value={s.value}>
             {s.label}
@@ -49,9 +71,6 @@ export function NetworkTab() {
         <NetworkDiagnosticsTab />
       </TabsContent>
       <TabsContent value="ports">
-        <PortsTab />
-      </TabsContent>
-      <TabsContent value="consolidated-ports">
         <NetworkPortsTab />
       </TabsContent>
       <TabsContent value="sites">

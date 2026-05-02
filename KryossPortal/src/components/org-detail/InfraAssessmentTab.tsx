@@ -258,52 +258,78 @@ function ConfigsList({ orgId }: { orgId: string | undefined }) {
 
 function VmTable({ vms }: { vms: HypervisorVm[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>VM Name</TableHead>
-          <TableHead>OS</TableHead>
-          <TableHead>Power</TableHead>
-          <TableHead className="text-right">vCPU</TableHead>
-          <TableHead className="text-right">RAM</TableHead>
-          <TableHead className="text-right">Disk</TableHead>
-          <TableHead className="text-right">CPU Avg</TableHead>
-          <TableHead className="text-right">RAM Avg</TableHead>
-          <TableHead className="text-right">Snapshots</TableHead>
-          <TableHead>IP</TableHead>
-          <TableHead>Flags</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <>
+      {/* Mobile cards */}
+      <div className="space-y-3 p-4 sm:hidden">
         {vms.map((v) => (
-          <TableRow key={v.id} className={v.isIdle ? 'bg-amber-50/50' : ''}>
-            <TableCell className="font-medium">{v.vmName}</TableCell>
-            <TableCell className="text-sm">{v.os ?? '—'}</TableCell>
-            <TableCell>{powerBadge(v.powerState)}</TableCell>
-            <TableCell className="text-right">{v.cpuCores ?? '—'}</TableCell>
-            <TableCell className="text-right">{v.ramGb != null ? `${v.ramGb} GB` : '—'}</TableCell>
-            <TableCell className="text-right">{v.diskGb != null ? `${v.diskGb} GB` : '—'}</TableCell>
-            <TableCell className="text-right">{usageBadge(v.cpuAvgPct)}</TableCell>
-            <TableCell className="text-right">{usageBadge(v.ramAvgPct)}</TableCell>
-            <TableCell className="text-right">
-              {v.snapshotCount > 0 ? (
-                <span className={v.oldestSnapshotDays && v.oldestSnapshotDays > 7 ? 'text-amber-600 font-medium' : ''}>
-                  {v.snapshotCount}{v.oldestSnapshotDays ? ` (${v.oldestSnapshotDays}d)` : ''}
-                </span>
-              ) : '—'}
-            </TableCell>
-            <TableCell className="font-mono text-xs">{v.ipAddress ?? '—'}</TableCell>
-            <TableCell>
-              <div className="flex gap-1">
-                {v.isIdle && <Badge className="bg-amber-100 text-amber-800 text-xs">idle</Badge>}
-                {v.isTemplate && <Badge className="bg-blue-100 text-blue-800 text-xs">template</Badge>}
-                {v.notes && <Badge className="bg-gray-100 text-gray-600 text-xs">{v.notes}</Badge>}
-              </div>
-            </TableCell>
-          </TableRow>
+          <div key={v.id} className={`rounded-lg border p-4 space-y-2 ${v.isIdle ? 'bg-amber-50/50' : ''}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-sm truncate">{v.vmName}</span>
+              {powerBadge(v.powerState)}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>{v.os ?? '—'}</span>
+              <span>CPU: {usageBadge(v.cpuAvgPct)}</span>
+              <span>RAM: {usageBadge(v.ramAvgPct)}</span>
+              {v.ipAddress && <span className="font-mono">{v.ipAddress}</span>}
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {v.isIdle && <Badge className="bg-amber-100 text-amber-800 text-xs">idle</Badge>}
+              {v.snapshotCount > 0 && <Badge className="bg-gray-100 text-gray-600 text-xs">{v.snapshotCount} snap</Badge>}
+            </div>
+          </div>
         ))}
-      </TableBody>
-    </Table>
+      </div>
+      {/* Desktop table */}
+      <div className="hidden sm:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>VM Name</TableHead>
+              <TableHead className="hidden lg:table-cell">OS</TableHead>
+              <TableHead>Power</TableHead>
+              <TableHead className="text-right hidden lg:table-cell">vCPU</TableHead>
+              <TableHead className="text-right hidden lg:table-cell">RAM</TableHead>
+              <TableHead className="text-right hidden lg:table-cell">Disk</TableHead>
+              <TableHead className="text-right">CPU Avg</TableHead>
+              <TableHead className="text-right">RAM Avg</TableHead>
+              <TableHead className="text-right hidden lg:table-cell">Snapshots</TableHead>
+              <TableHead className="hidden lg:table-cell">IP</TableHead>
+              <TableHead className="hidden lg:table-cell">Flags</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {vms.map((v) => (
+              <TableRow key={v.id} className={v.isIdle ? 'bg-amber-50/50' : ''}>
+                <TableCell className="font-medium">{v.vmName}</TableCell>
+                <TableCell className="text-sm hidden lg:table-cell">{v.os ?? '—'}</TableCell>
+                <TableCell>{powerBadge(v.powerState)}</TableCell>
+                <TableCell className="text-right hidden lg:table-cell">{v.cpuCores ?? '—'}</TableCell>
+                <TableCell className="text-right hidden lg:table-cell">{v.ramGb != null ? `${v.ramGb} GB` : '—'}</TableCell>
+                <TableCell className="text-right hidden lg:table-cell">{v.diskGb != null ? `${v.diskGb} GB` : '—'}</TableCell>
+                <TableCell className="text-right">{usageBadge(v.cpuAvgPct)}</TableCell>
+                <TableCell className="text-right">{usageBadge(v.ramAvgPct)}</TableCell>
+                <TableCell className="text-right hidden lg:table-cell">
+                  {v.snapshotCount > 0 ? (
+                    <span className={v.oldestSnapshotDays && v.oldestSnapshotDays > 7 ? 'text-amber-600 font-medium' : ''}>
+                      {v.snapshotCount}{v.oldestSnapshotDays ? ` (${v.oldestSnapshotDays}d)` : ''}
+                    </span>
+                  ) : '—'}
+                </TableCell>
+                <TableCell className="font-mono text-xs hidden lg:table-cell">{v.ipAddress ?? '—'}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  <div className="flex gap-1">
+                    {v.isIdle && <Badge className="bg-amber-100 text-amber-800 text-xs">idle</Badge>}
+                    {v.isTemplate && <Badge className="bg-blue-100 text-blue-800 text-xs">template</Badge>}
+                    {v.notes && <Badge className="bg-gray-100 text-gray-600 text-xs">{v.notes}</Badge>}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
 
@@ -318,7 +344,7 @@ function ServersVmsTab({ orgId }: { orgId: string | undefined }) {
 
       {scanResult && scanResult.hosts.length > 0 && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Hosts</CardTitle>
@@ -374,48 +400,68 @@ function ServersVmsTab({ orgId }: { orgId: string | undefined }) {
             <CardHeader>
               <CardTitle className="text-base">Hypervisor Hosts</CardTitle>
             </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Host</TableHead>
-                    <TableHead>Platform</TableHead>
-                    <TableHead>Cluster</TableHead>
-                    <TableHead className="text-right">CPU Cores</TableHead>
-                    <TableHead className="text-right">RAM</TableHead>
-                    <TableHead className="text-right">CPU Usage</TableHead>
-                    <TableHead className="text-right">RAM Usage</TableHead>
-                    <TableHead className="text-right">VMs</TableHead>
-                    <TableHead>HA</TableHead>
-                    <TableHead>State</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {scanResult.hosts.map((h) => (
-                    <TableRow key={h.id}>
-                      <TableCell className="font-medium">{h.hostFqdn}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {platformIcon(h.platform)}
-                          <span className="text-sm">{h.platform}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{h.clusterName ?? '—'}</TableCell>
-                      <TableCell className="text-right">{h.cpuCoresTotal ?? '—'}</TableCell>
-                      <TableCell className="text-right">{h.ramGbTotal != null ? `${h.ramGbTotal} GB` : '—'}</TableCell>
-                      <TableCell className="text-right">{usageBadge(h.cpuUsagePct)}</TableCell>
-                      <TableCell className="text-right">{usageBadge(h.ramUsagePct)}</TableCell>
-                      <TableCell className="text-right">{h.vmCount} ({h.vmRunning} on)</TableCell>
-                      <TableCell>
-                        {h.haEnabled === true && <CheckCircle className="size-4 text-green-600" />}
-                        {h.haEnabled === false && <XCircle className="size-4 text-red-500" />}
-                        {h.haEnabled == null && <span className="text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell>{powerBadge(h.powerState)}</TableCell>
+            <CardContent className="p-0">
+              {/* Mobile cards */}
+              <div className="space-y-3 p-4 sm:hidden">
+                {scanResult.hosts.map((h) => (
+                  <div key={h.id} className="rounded-lg border p-4 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-sm truncate">{h.hostFqdn}</span>
+                      {powerBadge(h.powerState)}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">{platformIcon(h.platform)} {h.platform}</span>
+                      <span>VMs: {h.vmCount} ({h.vmRunning} on)</span>
+                      <span>CPU: {usageBadge(h.cpuUsagePct)}</span>
+                      <span>RAM: {usageBadge(h.ramUsagePct)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Host</TableHead>
+                      <TableHead>Platform</TableHead>
+                      <TableHead className="hidden lg:table-cell">Cluster</TableHead>
+                      <TableHead className="text-right hidden lg:table-cell">CPU Cores</TableHead>
+                      <TableHead className="text-right hidden lg:table-cell">RAM</TableHead>
+                      <TableHead className="text-right">CPU Usage</TableHead>
+                      <TableHead className="text-right">RAM Usage</TableHead>
+                      <TableHead className="text-right">VMs</TableHead>
+                      <TableHead className="hidden lg:table-cell">HA</TableHead>
+                      <TableHead>State</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {scanResult.hosts.map((h) => (
+                      <TableRow key={h.id}>
+                        <TableCell className="font-medium">{h.hostFqdn}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {platformIcon(h.platform)}
+                            <span className="text-sm">{h.platform}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">{h.clusterName ?? '—'}</TableCell>
+                        <TableCell className="text-right hidden lg:table-cell">{h.cpuCoresTotal ?? '—'}</TableCell>
+                        <TableCell className="text-right hidden lg:table-cell">{h.ramGbTotal != null ? `${h.ramGbTotal} GB` : '—'}</TableCell>
+                        <TableCell className="text-right">{usageBadge(h.cpuUsagePct)}</TableCell>
+                        <TableCell className="text-right">{usageBadge(h.ramUsagePct)}</TableCell>
+                        <TableCell className="text-right">{h.vmCount} ({h.vmRunning} on)</TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          {h.haEnabled === true && <CheckCircle className="size-4 text-green-600" />}
+                          {h.haEnabled === false && <XCircle className="size-4 text-red-500" />}
+                          {h.haEnabled == null && <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell>{powerBadge(h.powerState)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
 
@@ -483,7 +529,7 @@ export function InfraAssessmentTab() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-24" />
           ))}
@@ -539,7 +585,7 @@ export function InfraAssessmentTab() {
 
         <TabsContent value="overview">
           <div className="space-y-6">
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">Sites</CardTitle>

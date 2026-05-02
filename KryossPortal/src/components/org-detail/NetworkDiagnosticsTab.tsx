@@ -102,12 +102,12 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
           </span>
           <span className="text-muted-foreground text-xs"> ms</span>
         </TableCell>
-        <TableCell>
+        <TableCell className="hidden lg:table-cell">
           <span className="font-mono tabular-nums" style={{ color: diag.dnsResolutionMs != null ? latencyColor(diag.dnsResolutionMs) : undefined }}>
             {diag.dnsResolutionMs != null ? `${fmt(diag.dnsResolutionMs, 0)} ms` : '--'}
           </span>
         </TableCell>
-        <TableCell>
+        <TableCell className="hidden lg:table-cell">
           <span className="font-mono tabular-nums" style={{ color: diag.cloudEndpointAvgMs != null ? latencyColor(diag.cloudEndpointAvgMs) : undefined }}>
             {diag.cloudEndpointAvgMs != null ? `${fmt(diag.cloudEndpointAvgMs, 0)} ms` : '--'}
           </span>
@@ -134,8 +134,8 @@ function MachineRow({ diag }: { diag: NetworkDiag }) {
             )}
           </div>
         </TableCell>
-        <TableCell className="text-center font-mono tabular-nums">{diag.routeCount}</TableCell>
-        <TableCell className="text-muted-foreground text-xs">
+        <TableCell className="text-center font-mono tabular-nums hidden lg:table-cell">{diag.routeCount}</TableCell>
+        <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
           {new Date(diag.scannedAt).toLocaleString()}
         </TableCell>
       </TableRow>
@@ -295,7 +295,7 @@ export function NetworkDiagnosticsTab() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Avg Download</CardTitle>
@@ -373,7 +373,33 @@ export function NetworkDiagnosticsTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {data.map((d) => (
+              <div key={d.id} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm truncate">{d.machineName}</span>
+                  <div className="flex items-center gap-1">
+                    {d.ethCount > 0 && <Network className="h-3.5 w-3.5 text-blue-600" />}
+                    {d.wifiCount > 0 && <Wifi className="h-3.5 w-3.5 text-green-600" />}
+                    {d.vpnDetected && <Shield className="h-3.5 w-3.5 text-purple-600" />}
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>Down: <span className="font-mono tabular-nums" style={{ color: speedColor(d.downloadMbps) }}>{fmt(d.downloadMbps)} Mbps</span></span>
+                  <span>Up: <span className="font-mono tabular-nums" style={{ color: speedColor(d.uploadMbps) }}>{fmt(d.uploadMbps)} Mbps</span></span>
+                  <span>Gateway: <span className="font-mono tabular-nums" style={{ color: latencyColor(d.gatewayLatencyMs ?? d.internetLatencyMs) }}>{fmt(d.gatewayLatencyMs ?? d.internetLatencyMs, 0)} ms</span></span>
+                  <span>Internet: <span className="font-mono tabular-nums" style={{ color: latencyColor(d.internetLatencyMs) }}>{fmt(d.internetLatencyMs, 0)} ms</span></span>
+                </div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {new Date(d.scannedAt).toLocaleString()}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -382,11 +408,11 @@ export function NetworkDiagnosticsTab() {
                   <TableHead>Up</TableHead>
                   <TableHead>Gateway</TableHead>
                   <TableHead>Internet</TableHead>
-                  <TableHead>DNS</TableHead>
-                  <TableHead>M365</TableHead>
+                  <TableHead className="hidden lg:table-cell">DNS</TableHead>
+                  <TableHead className="hidden lg:table-cell">M365</TableHead>
                   <TableHead className="text-center">NICs</TableHead>
-                  <TableHead className="text-center">Routes</TableHead>
-                  <TableHead>Scanned</TableHead>
+                  <TableHead className="text-center hidden lg:table-cell">Routes</TableHead>
+                  <TableHead className="hidden lg:table-cell">Scanned</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

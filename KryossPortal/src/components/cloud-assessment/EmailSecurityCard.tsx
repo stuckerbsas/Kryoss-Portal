@@ -68,7 +68,30 @@ export function EmailSecurityCard({ domains }: { domains: MailDomainData[] }) {
           Email Security (DNS Posture)
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 overflow-x-auto">
+      <CardContent className="p-0">
+        {/* Mobile cards */}
+        <div className="space-y-3 p-4 sm:hidden">
+          {domains.map((d) => (
+            <div key={d.domain} className="rounded-lg border p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">
+                  {d.domain}
+                  {d.isDefault && (
+                    <Badge variant="outline" className="ml-2 text-xs">default</Badge>
+                  )}
+                </span>
+                {scoreBadge(d.score)}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {spfBadge(d)}
+                {dkimBadge(d)}
+                {dmarcBadge(d)}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -76,8 +99,8 @@ export function EmailSecurityCard({ domains }: { domains: MailDomainData[] }) {
               <TableHead>SPF</TableHead>
               <TableHead>DKIM</TableHead>
               <TableHead>DMARC</TableHead>
-              <TableHead>MTA-STS</TableHead>
-              <TableHead>BIMI</TableHead>
+              <TableHead className="hidden lg:table-cell">MTA-STS</TableHead>
+              <TableHead className="hidden lg:table-cell">BIMI</TableHead>
               <TableHead className="text-right">Score</TableHead>
             </TableRow>
           </TableHeader>
@@ -93,8 +116,8 @@ export function EmailSecurityCard({ domains }: { domains: MailDomainData[] }) {
                 <TableCell>{spfBadge(d)}</TableCell>
                 <TableCell>{dkimBadge(d)}</TableCell>
                 <TableCell>{dmarcBadge(d)}</TableCell>
-                <TableCell>{mtaBadge(d)}</TableCell>
-                <TableCell>
+                <TableCell className="hidden lg:table-cell">{mtaBadge(d)}</TableCell>
+                <TableCell className="hidden lg:table-cell">
                   {d.bimiPresent ? (
                     <Badge variant="secondary" className="bg-blue-100 text-blue-800">Yes</Badge>
                   ) : (
@@ -106,6 +129,7 @@ export function EmailSecurityCard({ domains }: { domains: MailDomainData[] }) {
             ))}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );

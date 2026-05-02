@@ -76,24 +76,24 @@ export function ActivityTab({ machineId }: Props) {
           const Icon = TYPE_ICONS[item.type] ?? Settings;
           const sevClass = SEVERITY_COLORS[item.severity] ?? SEVERITY_COLORS.INFO;
           return (
-            <div key={`${item.timestamp}-${i}`} className="flex items-start gap-3 py-2 px-3 rounded-md hover:bg-muted/50 border-b last:border-0">
-              <div className="mt-0.5">
-                <Icon className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className={`text-xs ${sevClass}`}>{item.severity}</Badge>
-                  <span className="text-sm font-medium truncate">{item.action}</span>
+            <div key={`${item.timestamp}-${i}`} className="rounded-lg border p-3 sm:border-0 sm:rounded-none sm:border-b sm:last:border-0 sm:px-3 sm:py-2 hover:bg-muted/50">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5">
+                  <Icon className="h-4 w-4 text-muted-foreground" />
                 </div>
-                {item.errorMessage && (
-                  <div className="text-xs text-red-600 mt-0.5 truncate">{item.errorMessage}</div>
-                )}
-                {item.actorEmail && (
-                  <div className="text-xs text-muted-foreground mt-0.5">{item.actorEmail}</div>
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground whitespace-nowrap">
-                {formatTimestamp(item.timestamp)}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className={`text-xs ${sevClass}`}>{item.severity}</Badge>
+                    <span className="text-sm font-medium truncate">{item.action}</span>
+                  </div>
+                  {item.errorMessage && (
+                    <div className="text-xs text-red-600 mt-0.5 line-clamp-2 sm:truncate">{item.errorMessage}</div>
+                  )}
+                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                    {item.actorEmail && <span>{item.actorEmail}</span>}
+                    <span className="sm:ml-auto">{formatTimestamp(item.timestamp)}</span>
+                  </div>
+                </div>
               </div>
             </div>
           );

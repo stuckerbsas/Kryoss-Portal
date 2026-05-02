@@ -226,7 +226,23 @@ export function ExternalScanTab() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
+                {/* Mobile cards */}
+                <div className="space-y-3 sm:hidden">
+                  {scan.results.map((r: ExternalScanResultItem, i: number) => (
+                    <div key={i} className="rounded-lg border p-4 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-medium text-sm">{r.ipAddress}:{r.port}</span>
+                        {riskBadge(r.risk)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        <span>Service: {r.service ?? '--'}</span>
+                        {r.banner && <p className="truncate mt-0.5">{r.banner}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden sm:block overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -234,7 +250,7 @@ export function ExternalScanTab() {
                         <TableHead>Port</TableHead>
                         <TableHead>Service</TableHead>
                         <TableHead>Risk</TableHead>
-                        <TableHead>Banner</TableHead>
+                        <TableHead className="hidden lg:table-cell">Banner</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -251,7 +267,7 @@ export function ExternalScanTab() {
                               {r.service ?? '--'}
                             </TableCell>
                             <TableCell>{riskBadge(r.risk)}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground max-w-xs truncate">
+                            <TableCell className="text-xs text-muted-foreground max-w-xs truncate hidden lg:table-cell">
                               {r.banner ?? '--'}
                             </TableCell>
                           </TableRow>

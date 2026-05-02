@@ -249,7 +249,7 @@ export function RunDetail() {
             <ShieldCheck className="size-4 text-muted-foreground" />
             <h3 className="text-sm font-semibold">Framework Compliance</h3>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {run.frameworkScores.map((fs) => {
               const total = fs.passCount + fs.warnCount + fs.failCount;
               return (
@@ -394,12 +394,32 @@ export function RunDetail() {
         />
       ) : (
         <>
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {pageItems.map((r) => (
+              <div key={r.controlId} className="rounded-lg border p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-mono text-xs text-muted-foreground">{r.controlId}</span>
+                    <p className="font-medium text-sm line-clamp-2 mt-0.5">{r.name}</p>
+                  </div>
+                  <Badge variant="secondary" className={statusColor(r.status)}>{r.status}</Badge>
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <span>{r.categoryName}</span>
+                  <Badge variant="secondary" className={severityColor(r.severity)}>{r.severity}</Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Control ID</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
+                <TableHead className="hidden lg:table-cell">Category</TableHead>
                 <TableHead>Severity</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -413,7 +433,7 @@ export function RunDetail() {
                   <TableCell className="max-w-lg" title={r.name}>
                     <span className="line-clamp-2">{r.name}</span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground hidden lg:table-cell">
                     {r.categoryName}
                   </TableCell>
                   <TableCell>
@@ -436,6 +456,7 @@ export function RunDetail() {
               ))}
             </TableBody>
           </Table>
+          </div>
 
           {/* Pagination */}
           <div className="flex items-center justify-between pt-2">

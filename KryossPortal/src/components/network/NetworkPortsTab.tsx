@@ -74,13 +74,13 @@ function PortRow({ port }: { port: NetworkPort }) {
 
 export function NetworkPortsTab() {
   const { orgId } = useOrgParam();
-  const [stateFilter, setStateFilter] = useState<string>('');
-  const { data, isLoading } = useNetworkPorts(orgId, stateFilter || undefined);
+  const [stateFilter, setStateFilter] = useState<string>('all');
+  const { data, isLoading } = useNetworkPorts(orgId, stateFilter === 'all' ? undefined : stateFilter);
 
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
               <CardHeader className="pb-2"><Skeleton className="h-4 w-24" /></CardHeader>
@@ -114,7 +114,7 @@ export function NetworkPortsTab() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Open Ports</CardTitle>
@@ -156,7 +156,7 @@ export function NetworkPortsTab() {
             <SelectValue placeholder="All" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All</SelectItem>
+            <SelectItem value="all">All</SelectItem>
             <SelectItem value="open">Open</SelectItem>
             <SelectItem value="filtered">Filtered</SelectItem>
             <SelectItem value="closed">Closed</SelectItem>
@@ -172,7 +172,31 @@ export function NetworkPortsTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {data.ports.map((p) => (
+              <div key={`${p.port}-${p.protocol}`} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-medium text-sm">{p.port}/{p.protocol}</span>
+                  <div className="flex items-center gap-2">
+                    {p.isRisky && (
+                      <Badge variant="destructive" className="text-xs">
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        Risky
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+                  <span>Service: {p.service ?? '--'}</span>
+                  <span>Machines: <span className="font-bold tabular-nums">{p.machineCount}</span></span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

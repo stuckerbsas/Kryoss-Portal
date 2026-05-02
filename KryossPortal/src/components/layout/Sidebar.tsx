@@ -23,21 +23,21 @@ export function Sidebar() {
   const location = useLocation();
 
   return (
-    <aside className="hidden lg:flex w-56 bg-sidebar-bg flex-col h-full shrink-0">
-      {/* Brand mark in sidebar */}
-      <div className="px-5 py-5 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <Shield className="h-5 w-5 text-primary" />
-          <span className="text-sm font-semibold text-white/70 uppercase tracking-widest">
+    <aside className="hidden lg:flex w-56 bg-sidebar-bg flex-col h-full shrink-0 border-r border-sidebar-border">
+      <div className="px-5 py-5 border-b border-sidebar-border">
+        <div className="flex items-center gap-2.5">
+          <div className="h-7 w-7 rounded-md bg-primary/15 flex items-center justify-center">
+            <Shield className="h-4 w-4 text-primary" />
+          </div>
+          <span className="text-[11px] font-bold text-white/60 uppercase tracking-[0.25em]">
             Security
           </span>
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV_ITEMS.map((item, i) => {
-          if ('type' in item) return <hr key={i} className="my-3 border-white/5" />;
+          if ('type' in item) return <hr key={i} className="my-3 border-sidebar-border" />;
           if (!has(item.perm)) return null;
           const Icon = item.icon;
           const active = location.pathname.startsWith(item.path);
@@ -46,22 +46,23 @@ export function Sidebar() {
               key={item.path}
               to={item.path}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-150',
                 active
-                  ? 'bg-sidebar-active text-white shadow-md shadow-primary/20'
+                  ? 'bg-primary text-white shadow-lg shadow-primary/25'
                   : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
               )}
             >
-              <Icon className="h-4.5 w-4.5" />
+              <Icon className="h-4 w-4" />
               {item.label}
             </Link>
           );
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-white/5">
-        <p className="text-[10px] text-white/20 uppercase tracking-wider">Powered by Kryoss v{__APP_VERSION__}</p>
+      <div className="px-5 py-4 border-t border-sidebar-border">
+        <p className="text-[10px] text-white/15 uppercase tracking-wider font-mono">
+          Kryoss v{__APP_VERSION__}
+        </p>
       </div>
     </aside>
   );

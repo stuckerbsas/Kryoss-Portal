@@ -137,7 +137,7 @@ export function AzureSubscriptionsList({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3">
         <div>
           <CardTitle className="text-base">
             {subscriptions.length} subscription{subscriptions.length === 1 ? '' : 's'} connected
@@ -163,15 +163,45 @@ export function AzureSubscriptionsList({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="p-0 overflow-x-auto">
+      <CardContent className="p-0">
+        {/* Mobile cards */}
+        <div className="space-y-3 p-4 sm:hidden">
+          {subscriptions.map((sub) => (
+            <div key={sub.id} className="rounded-lg border p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{sub.displayName ?? '—'}</span>
+                <StateBadge value={sub.state} />
+              </div>
+              <p className="text-xs text-muted-foreground font-mono truncate">{sub.subscriptionId}</p>
+              <div className="flex items-center justify-between gap-2">
+                <ConsentBadge value={sub.consentState} errorMessage={sub.errorMessage} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => handleRemove(sub)}
+                  disabled={disconnect.isPending}
+                >
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Remove
+                </Button>
+              </div>
+            </div>
+          ))}
+          {subscriptions.length === 0 && (
+            <p className="text-center text-muted-foreground py-8 text-sm">No subscriptions connected.</p>
+          )}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Display Name</TableHead>
               <TableHead>Subscription ID</TableHead>
               <TableHead className="w-28">State</TableHead>
-              <TableHead className="w-32">Consent State</TableHead>
-              <TableHead className="w-48">Last Verified</TableHead>
+              <TableHead className="w-32 hidden lg:table-cell">Consent State</TableHead>
+              <TableHead className="w-48 hidden lg:table-cell">Last Verified</TableHead>
               <TableHead className="w-24 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -185,10 +215,10 @@ export function AzureSubscriptionsList({
                 <TableCell>
                   <StateBadge value={sub.state} />
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden lg:table-cell">
                   <ConsentBadge value={sub.consentState} errorMessage={sub.errorMessage} />
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">
                   {formatDate(sub.lastVerifiedAt)}
                 </TableCell>
                 <TableCell className="text-right">
@@ -214,6 +244,7 @@ export function AzureSubscriptionsList({
             )}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );

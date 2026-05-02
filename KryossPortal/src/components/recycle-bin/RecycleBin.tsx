@@ -132,59 +132,97 @@ export function RecycleBin() {
           description="Deleted items will appear here."
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Type</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead className="hidden md:table-cell">Details</TableHead>
-              <TableHead>Deleted</TableHead>
-              <TableHead className="hidden sm:table-cell">Deleted By</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => {
-              const Icon = ENTITY_ICONS[item.entityType] ?? Trash2;
-              return (
-                <TableRow key={`${item.entityType}-${item.id}`}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
-                      <span className="hidden sm:inline">{item.entityType}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                    {item.description}
-                  </TableCell>
-                  <TableCell>{formatRelativeTime(item.deletedAt)}</TableCell>
-                  <TableCell className="hidden sm:table-cell text-muted-foreground">
-                    {item.deletedByEmail ?? '-'}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Can permission="recycle_bin:restore">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!item.canRestore}
-                        title={
-                          item.canRestore
-                            ? 'Restore this item'
-                            : 'Restore parent organization first'
-                        }
-                        onClick={() => setRestoreTarget(item)}
-                      >
-                        <RotateCcw className="h-4 w-4 mr-1" />
-                        Restore
-                      </Button>
-                    </Can>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <>
+        {/* Mobile cards */}
+        <div className="space-y-3 sm:hidden">
+          {items.map((item) => {
+            const Icon = ENTITY_ICONS[item.entityType] ?? Trash2;
+            return (
+              <div key={`${item.entityType}-${item.id}`} className="rounded-lg border p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="font-medium text-sm truncate">{item.name}</span>
+                  </div>
+                  <Can permission="recycle_bin:restore">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!item.canRestore}
+                      onClick={() => setRestoreTarget(item)}
+                    >
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      Restore
+                    </Button>
+                  </Can>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>{item.entityType}</span>
+                  <span>{formatRelativeTime(item.deletedAt)}</span>
+                  {item.deletedByEmail && <span>{item.deletedByEmail}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Type</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead className="hidden md:table-cell">Details</TableHead>
+                <TableHead>Deleted</TableHead>
+                <TableHead className="hidden lg:table-cell">Deleted By</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item) => {
+                const Icon = ENTITY_ICONS[item.entityType] ?? Trash2;
+                return (
+                  <TableRow key={`${item.entityType}-${item.id}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        <span>{item.entityType}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell className="hidden md:table-cell text-muted-foreground">
+                      {item.description}
+                    </TableCell>
+                    <TableCell>{formatRelativeTime(item.deletedAt)}</TableCell>
+                    <TableCell className="hidden lg:table-cell text-muted-foreground">
+                      {item.deletedByEmail ?? '-'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Can permission="recycle_bin:restore">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!item.canRestore}
+                          title={
+                            item.canRestore
+                              ? 'Restore this item'
+                              : 'Restore parent organization first'
+                          }
+                          onClick={() => setRestoreTarget(item)}
+                        >
+                          <RotateCcw className="h-4 w-4 mr-1" />
+                          Restore
+                        </Button>
+                      </Can>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+        </>
       )}
 
       {/* Restore confirmation dialog */}

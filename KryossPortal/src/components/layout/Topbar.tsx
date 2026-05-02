@@ -12,33 +12,33 @@ export function Topbar() {
   const navigate = useNavigate();
 
   return (
-    <header className="h-14 border-b bg-white flex items-center justify-between px-6 shadow-sm">
+    <header className="h-14 border-b border-border bg-white flex items-center justify-between px-6">
       <div className="flex items-center gap-3">
         <img src="/tlit-logo.svg" alt="TeamLogic IT" className="h-8" />
-        <div className="h-6 w-px bg-gray-200" />
-        <span className="text-sm font-medium text-muted-foreground">
+        <div className="h-5 w-px bg-border" />
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.2em]">
           Security Portal
         </span>
       </div>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="gap-2 text-gray-600 hover:text-gray-900">
-            <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-xs font-semibold text-primary">
+          <Button variant="ghost" size="sm" className="gap-2 hover:bg-muted/60">
+            <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center ring-1 ring-primary/20">
+              <span className="text-xs font-bold text-primary">
                 {me?.displayName?.charAt(0)?.toUpperCase() ?? '?'}
               </span>
             </div>
             <div className="hidden sm:flex flex-col items-start text-left">
-              <span className="text-sm font-medium leading-tight">{me?.displayName ?? '...'}</span>
-              <span className="text-[11px] text-muted-foreground leading-tight">{me?.role?.name ?? ''}</span>
+              <span className="text-sm font-semibold leading-tight text-foreground">{me?.displayName ?? '...'}</span>
+              <span className="text-[10px] text-muted-foreground leading-tight font-medium">{me?.role?.name ?? ''}</span>
             </div>
             <ChevronDown className="h-3 w-3 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <div className="px-2 py-2">
-            <p className="text-sm font-medium">{me?.displayName}</p>
+          <div className="px-3 py-2.5">
+            <p className="text-sm font-semibold">{me?.displayName}</p>
             <p className="text-xs text-muted-foreground">{me?.email}</p>
           </div>
           <DropdownMenuSeparator />
@@ -58,7 +58,7 @@ export function Topbar() {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => { msalInstance.logoutRedirect({ postLogoutRedirectUri: '/' }); }}
-            className="text-red-600 focus:text-red-600"
+            className="text-destructive focus:text-destructive"
           >
             <LogOut className="h-4 w-4 mr-2" />
             Sign out

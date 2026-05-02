@@ -138,70 +138,119 @@ export function OrganizationsList() {
           }
         />
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Machines</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Last Scan</TableHead>
-                <TableHead className="w-[80px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {organizations.map((org) => (
-                <TableRow
-                  key={org.id}
-                  className="cursor-pointer"
-                  onClick={() => navigate(`/organizations/${slugify(org.name)}`)}
-                >
-                  <TableCell className="font-medium">{org.name}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={org.status} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {org.machineCount}
-                  </TableCell>
-                  <TableCell>
-                    <GradeBadge
-                      grade={scoreToGrade(org.avgScore)}
-                      score={org.avgScore != null ? Math.round(org.avgScore * 10) / 10 : null}
-                    />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {timeAgo(org.lastAssessmentAt)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Can permission="organizations:edit">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={(e) => handleEdit(e, org)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </Can>
-                      <Can permission="organizations:delete">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={(e) => handleDelete(e, org)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </Can>
-                    </div>
-                  </TableCell>
+        <>
+          {/* Mobile card view */}
+          <div className="space-y-3 sm:hidden">
+            {organizations.map((org) => (
+              <div
+                key={org.id}
+                className="rounded-lg border p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => navigate(`/organizations/${slugify(org.name)}`)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{org.name}</span>
+                  <StatusBadge status={org.status} />
+                </div>
+                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                  <span>{org.machineCount} machines</span>
+                  <GradeBadge
+                    grade={scoreToGrade(org.avgScore)}
+                    score={org.avgScore != null ? Math.round(org.avgScore * 10) / 10 : null}
+                  />
+                  <span>{timeAgo(org.lastAssessmentAt)}</span>
+                </div>
+                <div className="flex items-center gap-1 mt-3">
+                  <Can permission="organizations:edit">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={(e) => handleEdit(e, org)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </Can>
+                  <Can permission="organizations:delete">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={(e) => handleDelete(e, org)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </Can>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table view */}
+          <div className="hidden sm:block rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Machines</TableHead>
+                  <TableHead>Score</TableHead>
+                  <TableHead className="hidden lg:table-cell">Last Scan</TableHead>
+                  <TableHead className="w-[80px]" />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {organizations.map((org) => (
+                  <TableRow
+                    key={org.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/organizations/${slugify(org.name)}`)}
+                  >
+                    <TableCell className="font-medium">{org.name}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={org.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {org.machineCount}
+                    </TableCell>
+                    <TableCell>
+                      <GradeBadge
+                        grade={scoreToGrade(org.avgScore)}
+                        score={org.avgScore != null ? Math.round(org.avgScore * 10) / 10 : null}
+                      />
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
+                      {timeAgo(org.lastAssessmentAt)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Can permission="organizations:edit">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => handleEdit(e, org)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Can>
+                        <Can permission="organizations:delete">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={(e) => handleDelete(e, org)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </Can>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {/* Form drawer */}

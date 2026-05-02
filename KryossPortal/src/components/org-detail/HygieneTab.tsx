@@ -63,26 +63,44 @@ function FindingsTable({ findings, title, icon, tooltip }: { findings: HygieneFi
       </CardHeader>
       <CardContent>
         <div className="max-h-80 overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Detail</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {findings.map((f, i) => (
-                <TableRow key={i}>
-                  <TableCell className="font-medium font-mono text-sm">{f.name}</TableCell>
-                  <TableCell>{statusBadge(f.status)}</TableCell>
-                  <TableCell className="tabular-nums">{f.daysInactive > 0 ? `${f.daysInactive}d` : '—'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{f.detail ?? '—'}</TableCell>
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {findings.map((f, i) => (
+              <div key={i} className="rounded-lg border p-4 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium font-mono text-sm truncate">{f.name}</span>
+                  {statusBadge(f.status)}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {f.daysInactive > 0 && <span>{f.daysInactive}d inactive</span>}
+                  <span className="truncate">{f.detail ?? '—'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Days</TableHead>
+                  <TableHead className="hidden lg:table-cell">Detail</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {findings.map((f, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium font-mono text-sm">{f.name}</TableCell>
+                    <TableCell>{statusBadge(f.status)}</TableCell>
+                    <TableCell className="tabular-nums">{f.daysInactive > 0 ? `${f.daysInactive}d` : '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate hidden lg:table-cell">{f.detail ?? '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -165,7 +183,7 @@ export function HygieneTab() {
       )}
 
       {/* KPI cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Dormant Machines</CardTitle>

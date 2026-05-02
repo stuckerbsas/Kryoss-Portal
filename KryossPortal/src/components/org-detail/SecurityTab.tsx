@@ -1,5 +1,12 @@
 import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useHygiene } from '@/api/hygiene';
 import { useDcHealth } from '@/api/dcHealth';
 import { useOrgParam } from '@/hooks/useOrgParam';
@@ -18,26 +25,42 @@ export function SecurityTab() {
   const hasAdData = !!(hygiene?.id || dcHealth?.latest);
   const active = params.get('section') ?? (hasAdData ? 'active-directory' : 'local-admins');
 
+  const handleChange = (v: string) => setParams({ section: v }, { replace: true });
+
   const sections = [
-    { value: 'active-directory', label: hasAdData ? 'Active Directory' : 'Active Directory (N/A)' },
-    { value: 'local-admins', label: 'Local Admins' },
-    { value: 'threats', label: 'Threats' },
-    { value: 'cve', label: 'CVE' },
-    { value: 'patches', label: 'Patches' },
+    { value: 'active-directory', label: hasAdData ? 'Active Directory' : 'Active Directory (N/A)', disabled: !hasAdData },
+    { value: 'local-admins', label: 'Local Admins', disabled: false },
+    { value: 'threats', label: 'Threats', disabled: false },
+    { value: 'cve', label: 'CVE', disabled: false },
+    { value: 'patches', label: 'Patches', disabled: false },
   ];
 
   return (
-    <Tabs
-      value={active}
-      onValueChange={(v) => setParams({ section: v }, { replace: true })}
-    >
-      <TabsList>
+    <Tabs value={active} onValueChange={handleChange}>
+      {/* Mobile: select */}
+      <div className="sm:hidden">
+        <Select value={active} onValueChange={handleChange}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {sections.map((s) => (
+              <SelectItem key={s.value} value={s.value} disabled={s.disabled}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Desktop: tabs */}
+      <TabsList className="hidden sm:inline-flex">
         {sections.map((s) => (
           <TabsTrigger
             key={s.value}
             value={s.value}
-            className={s.value === 'active-directory' && !hasAdData ? 'opacity-50 pointer-events-none' : undefined}
-            disabled={s.value === 'active-directory' && !hasAdData}
+            className={s.disabled ? 'opacity-50 pointer-events-none' : undefined}
+            disabled={s.disabled}
           >
             {s.label}
           </TabsTrigger>

@@ -69,6 +69,24 @@ function AreaGroup({ area, entries }: { area: string; entries: FeatureInventoryE
         </div>
       </CardHeader>
       <CardContent className="pt-0">
+        {/* Mobile cards */}
+        <div className="space-y-3 sm:hidden">
+          {entries.map((e) => (
+            <div key={e.feature} className={`rounded-lg border p-4 space-y-2 ${!e.licensed ? 'opacity-50' : ''}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{e.feature}</span>
+                <TierBadge tier={e.licenseTier} />
+              </div>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1"><StatusIcon value={e.licensed} /> Licensed</span>
+                <span className="flex items-center gap-1"><StatusIcon value={e.implemented} /> Active</span>
+              </div>
+              <AdoptionCell pct={e.adoptionPct} />
+            </div>
+          ))}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -77,8 +95,8 @@ function AreaGroup({ area, entries }: { area: string; entries: FeatureInventoryE
               <TableHead className="w-[80px] text-center">Licensed</TableHead>
               <TableHead className="w-[80px] text-center">Active</TableHead>
               <TableHead className="w-[180px]">Adoption</TableHead>
-              <TableHead>Detail</TableHead>
-              <TableHead className="w-[140px]">Requires</TableHead>
+              <TableHead className="hidden lg:table-cell">Detail</TableHead>
+              <TableHead className="w-[140px] hidden lg:table-cell">Requires</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -89,8 +107,8 @@ function AreaGroup({ area, entries }: { area: string; entries: FeatureInventoryE
                 <TableCell className="text-center"><StatusIcon value={e.licensed} /></TableCell>
                 <TableCell className="text-center"><StatusIcon value={e.implemented} /></TableCell>
                 <TableCell><AdoptionCell pct={e.adoptionPct} /></TableCell>
-                <TableCell className="text-xs text-muted-foreground max-w-[300px] truncate">{e.detail}</TableCell>
-                <TableCell>
+                <TableCell className="text-xs text-muted-foreground max-w-[300px] truncate hidden lg:table-cell">{e.detail}</TableCell>
+                <TableCell className="hidden lg:table-cell">
                   {e.licenseRequired && !e.licensed && (
                     <Badge variant="secondary" className="text-xs bg-amber-50 text-amber-700">{e.licenseRequired}</Badge>
                   )}
@@ -99,6 +117,7 @@ function AreaGroup({ area, entries }: { area: string; entries: FeatureInventoryE
             ))}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -139,7 +158,7 @@ export function CapabilitiesTab({ scanId }: { scanId: string | undefined }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
             <div className="text-2xl font-bold">{totalFeatures}</div>

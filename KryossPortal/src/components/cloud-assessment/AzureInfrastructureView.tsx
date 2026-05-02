@@ -139,7 +139,7 @@ function HeaderKpiCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Subscriptions scanned
@@ -432,7 +432,30 @@ function FindingsTable({ findings }: FindingsTableProps) {
           <Database className="h-4 w-4" /> Azure findings ({findings.length})
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 overflow-x-auto">
+      <CardContent className="p-0">
+        {/* Mobile cards */}
+        <div className="space-y-3 p-4 sm:hidden">
+          {findings.map((f, i) => (
+            <div key={`${f.service}-${f.feature}-${i}`} className="rounded-lg border p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{serviceLabel(f.service)}</span>
+                {statusBadge(f.status)}
+              </div>
+              <p className="text-sm text-muted-foreground truncate">{f.feature}</p>
+              <div className="flex items-center gap-2">
+                {priorityBadge(f.priority)}
+                {f.linkUrl && (
+                  <a href={f.linkUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs flex items-center gap-1">
+                    <ExternalLink className="h-3 w-3" />
+                    {f.linkText ?? 'Docs'}
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -440,8 +463,8 @@ function FindingsTable({ findings }: FindingsTableProps) {
               <TableHead>Feature</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
-              <TableHead>Observation</TableHead>
-              <TableHead>Recommendation</TableHead>
+              <TableHead className="hidden lg:table-cell">Observation</TableHead>
+              <TableHead className="hidden lg:table-cell">Recommendation</TableHead>
               <TableHead className="w-20">Link</TableHead>
             </TableRow>
           </TableHeader>
@@ -454,12 +477,12 @@ function FindingsTable({ findings }: FindingsTableProps) {
                 <TableCell className="text-sm">{f.feature}</TableCell>
                 <TableCell>{statusBadge(f.status)}</TableCell>
                 <TableCell>{priorityBadge(f.priority)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-sm">
+                <TableCell className="text-sm text-muted-foreground max-w-sm hidden lg:table-cell">
                   <div className="truncate" title={f.observation ?? undefined}>
                     {f.observation ?? '—'}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-sm">
+                <TableCell className="text-sm text-muted-foreground max-w-sm hidden lg:table-cell">
                   <div className="truncate" title={f.recommendation ?? undefined}>
                     {f.recommendation ?? '—'}
                   </div>
@@ -483,6 +506,7 @@ function FindingsTable({ findings }: FindingsTableProps) {
             ))}
           </TableBody>
         </Table>
+        </div>
       </CardContent>
     </Card>
   );

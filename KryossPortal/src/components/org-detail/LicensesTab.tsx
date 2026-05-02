@@ -87,7 +87,7 @@ export function LicensesTab() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-24" />)}
         </div>
         <Skeleton className="h-64 w-full" />
@@ -111,7 +111,7 @@ export function LicensesTab() {
   return (
     <div className="space-y-6">
       {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Commercial</CardTitle>
@@ -187,19 +187,42 @@ export function LicensesTab() {
         </Button>
       </div>
 
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
+        {data.items.length === 0 ? (
+          <p className="text-center text-muted-foreground py-8">No results for this filter</p>
+        ) : (
+          data.items.map((item, i) => (
+            <div key={`${item.machineId}-${item.softwareName}-${i}`} className="rounded-lg border p-4 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium text-sm truncate">{item.softwareName}</span>
+                {typeBadge(item.licenseType)}
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>{item.publisher ?? '--'}</span>
+                <span>{item.machineName}</span>
+                <span>{item.estimatedCostUsd != null ? `$${item.estimatedCostUsd}/${item.costPeriod ?? 'mo'}` : '--'}</span>
+                {confidenceDot(item.confidence)}
+              </div>
+              <OverrideCell item={item} orgId={orgId} />
+            </div>
+          ))
+        )}
+      </div>
+
       {/* Table */}
-      <Card>
-        <CardContent className="p-0">
+      <Card className="hidden sm:block">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Software</TableHead>
                 <TableHead>Publisher</TableHead>
-                <TableHead>Version</TableHead>
+                <TableHead className="hidden lg:table-cell">Version</TableHead>
                 <TableHead>Machine</TableHead>
                 <TableHead>License Type</TableHead>
-                <TableHead className="text-right">Est. Cost</TableHead>
-                <TableHead>Confidence</TableHead>
+                <TableHead className="text-right hidden lg:table-cell">Est. Cost</TableHead>
+                <TableHead className="hidden lg:table-cell">Confidence</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -215,13 +238,13 @@ export function LicensesTab() {
                   <TableRow key={`${item.machineId}-${item.softwareName}-${i}`}>
                     <TableCell className="font-medium max-w-[200px] truncate">{item.softwareName}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{item.publisher ?? '--'}</TableCell>
-                    <TableCell className="text-sm font-mono">{item.version ?? '--'}</TableCell>
+                    <TableCell className="text-sm font-mono hidden lg:table-cell">{item.version ?? '--'}</TableCell>
                     <TableCell className="text-sm">{item.machineName}</TableCell>
                     <TableCell>{typeBadge(item.licenseType)}</TableCell>
-                    <TableCell className="text-right text-sm">
+                    <TableCell className="text-right text-sm hidden lg:table-cell">
                       {item.estimatedCostUsd != null ? `$${item.estimatedCostUsd}/${item.costPeriod ?? 'mo'}` : '--'}
                     </TableCell>
-                    <TableCell>{confidenceDot(item.confidence)}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{confidenceDot(item.confidence)}</TableCell>
                     <TableCell>
                       <OverrideCell item={item} orgId={orgId} />
                     </TableCell>

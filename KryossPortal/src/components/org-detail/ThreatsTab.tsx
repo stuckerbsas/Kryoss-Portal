@@ -96,7 +96,7 @@ export function ThreatsTab() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -158,7 +158,23 @@ export function ThreatsTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          {/* Mobile card view */}
+          <div className="space-y-3 sm:hidden">
+            {data.topThreats.map((t, i) => (
+              <div key={i} className="rounded-lg border p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{t.threatName}</span>
+                  {severityBadge(t.severity)}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  {categoryBadge(t.category)}
+                  <span>{t.machineCount} / {data.totalMachines} machines</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -166,7 +182,7 @@ export function ThreatsTab() {
                   <TableHead>Category</TableHead>
                   <TableHead>Severity</TableHead>
                   <TableHead>Machines</TableHead>
-                  <TableHead>Affected Hosts</TableHead>
+                  <TableHead className="hidden lg:table-cell">Affected Hosts</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -179,7 +195,7 @@ export function ThreatsTab() {
                       <span className="font-bold tabular-nums">{t.machineCount}</span>
                       <span className="text-muted-foreground text-sm"> / {data.totalMachines}</span>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-md">
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground max-w-md">
                       <div className="flex flex-wrap gap-1">
                         {t.machines.slice(0, 8).map((h) => (
                           <Badge key={h} variant="outline" className="text-xs font-mono">

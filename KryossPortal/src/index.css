@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @theme {
   /* Brand */
@@ -7,49 +8,92 @@
   --color-primary-light: #A2C564;
   --color-dark-bg: #3D4043;
 
-  /* Status colors */
+  /* Status */
   --color-pass: #008852;
   --color-warn: #D97706;
   --color-fail: #C0392B;
 
-  /* Sidebar */
-  --color-sidebar-bg: #1a1f2e;
+  /* Sidebar — deep charcoal */
+  --color-sidebar-bg: #111318;
   --color-sidebar-text: #94a3b8;
   --color-sidebar-active: #008852;
-  --color-sidebar-hover: #232938;
+  --color-sidebar-hover: #1a1e27;
+  --color-sidebar-border: #1e2330;
 
-  /* shadcn design tokens */
-  --color-background: #ffffff;
-  --color-foreground: #0a0a0a;
-  --color-muted: #f5f5f5;
-  --color-muted-foreground: #737373;
+  /* shadcn tokens — warm light */
+  --color-background: #f8f9fa;
+  --color-foreground: #0f172a;
+  --color-muted: #f1f3f5;
+  --color-muted-foreground: #64748b;
   --color-popover: #ffffff;
-  --color-popover-foreground: #0a0a0a;
+  --color-popover-foreground: #0f172a;
   --color-card: #ffffff;
-  --color-card-foreground: #0a0a0a;
-  --color-border: #e5e5e5;
-  --color-input: #e5e5e5;
+  --color-card-foreground: #0f172a;
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
   --color-ring: #008852;
-  --color-secondary: #f5f5f5;
-  --color-secondary-foreground: #171717;
-  --color-accent: #f5f5f5;
-  --color-accent-foreground: #171717;
+  --color-secondary: #f1f5f9;
+  --color-secondary-foreground: #1e293b;
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #1e293b;
   --color-destructive: #dc2626;
   --color-destructive-foreground: #ffffff;
 
   /* Radius */
   --radius: 0.5rem;
 
-  /* Font */
+  /* Fonts */
   --font-sans: 'Montserrat', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* ─── Base ─── */
 @layer base {
   body {
-    @apply font-sans antialiased bg-gray-50 text-foreground;
+    @apply font-sans antialiased bg-background text-foreground;
   }
-
   * {
     @apply border-border;
+  }
+  h1, h2, h3 {
+    @apply font-sans font-bold tracking-tight;
+    color: #0f172a;
+  }
+}
+
+/* ─── Animations ─── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes growWidth {
+  from { width: 0; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@layer utilities {
+  .animate-fade-in-up {
+    animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-slide-in-right {
+    animation: slideInRight 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-grow-width {
+    animation: growWidth 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.4s ease-out both;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
   }
 }

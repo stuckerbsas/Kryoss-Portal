@@ -193,7 +193,7 @@ export function ReportGenerator({ targetId }: ReportGeneratorProps) {
                 size="sm"
                 onClick={handleDiagnose}
                 disabled={loading}
-                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                className="hidden sm:inline-flex border-blue-300 text-blue-700 hover:bg-blue-50"
               >
                 <Stethoscope className="size-3.5 mr-1.5" />
                 Diagnose

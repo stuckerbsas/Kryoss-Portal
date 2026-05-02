@@ -77,7 +77,7 @@ export function PatchComplianceTab() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-24" />
           ))}
@@ -115,7 +115,7 @@ export function PatchComplianceTab() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -240,42 +240,61 @@ export function PatchComplianceTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Machine</TableHead>
-                <TableHead>OS</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Last Check</TableHead>
-                <TableHead>Last Install</TableHead>
-                <TableHead>30d Patches</TableHead>
-                <TableHead>Reboot</TableHead>
-                <TableHead>Score</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.machines.map((m: PatchMachineSummary) => (
-                <TableRow key={m.id}>
-                  <TableCell className="font-medium">{m.hostname}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-40 truncate">
-                    {m.osName ?? '--'}
-                  </TableCell>
-                  <TableCell>{sourceBadge(m.updateSource)}</TableCell>
-                  <TableCell className="text-sm">{daysAgo(m.lastCheckUtc)}</TableCell>
-                  <TableCell className="text-sm">{daysAgo(m.lastInstallUtc)}</TableCell>
-                  <TableCell className="text-sm">{m.installedCount30d}</TableCell>
-                  <TableCell>
-                    {m.rebootPending ? (
-                      <Badge className="bg-amber-100 text-amber-800">Yes</Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">No</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{scoreBadge(m.complianceScore)}</TableCell>
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {data.machines.map((m: PatchMachineSummary) => (
+              <div key={m.id} className="rounded-lg border p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{m.hostname}</span>
+                  {scoreBadge(m.complianceScore)}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>{sourceBadge(m.updateSource)}</span>
+                  <span>Check: {daysAgo(m.lastCheckUtc)}</span>
+                  {m.rebootPending && <Badge className="bg-amber-100 text-amber-800">Reboot</Badge>}
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Machine</TableHead>
+                  <TableHead className="hidden lg:table-cell">OS</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Last Check</TableHead>
+                  <TableHead className="hidden lg:table-cell">Last Install</TableHead>
+                  <TableHead className="hidden lg:table-cell">30d Patches</TableHead>
+                  <TableHead>Reboot</TableHead>
+                  <TableHead>Score</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {data.machines.map((m: PatchMachineSummary) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="font-medium">{m.hostname}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-40 truncate hidden lg:table-cell">
+                      {m.osName ?? '--'}
+                    </TableCell>
+                    <TableCell>{sourceBadge(m.updateSource)}</TableCell>
+                    <TableCell className="text-sm">{daysAgo(m.lastCheckUtc)}</TableCell>
+                    <TableCell className="text-sm hidden lg:table-cell">{daysAgo(m.lastInstallUtc)}</TableCell>
+                    <TableCell className="text-sm hidden lg:table-cell">{m.installedCount30d}</TableCell>
+                    <TableCell>
+                      {m.rebootPending ? (
+                        <Badge className="bg-amber-100 text-amber-800">Yes</Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">No</span>
+                      )}
+                    </TableCell>
+                    <TableCell>{scoreBadge(m.complianceScore)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

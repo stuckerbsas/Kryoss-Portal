@@ -34,13 +34,31 @@ export function ForwardingRisksTable({ risks }: { risks: MailboxRiskData[] }) {
             No forwarding rules detected in sampled mailboxes.
           </p>
         ) : (
+          <>
+          {/* Mobile cards */}
+          <div className="space-y-3 p-4 sm:hidden">
+            {risks.map((r, i) => (
+              <div key={`${r.userPrincipalName}-${r.riskType}-${r.forwardTarget}-${i}`} className="rounded-lg border p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{r.displayName ?? r.userPrincipalName}</span>
+                  {severityBadge(r.severity)}
+                </div>
+                <p className="text-xs text-muted-foreground">{RISK_LABELS[r.riskType] ?? r.riskType}</p>
+                {r.forwardTarget && (
+                  <p className="text-xs text-muted-foreground truncate font-mono">{r.forwardTarget}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
                 <TableHead>Risk</TableHead>
                 <TableHead>Forward target</TableHead>
-                <TableHead>Rule</TableHead>
+                <TableHead className="hidden lg:table-cell">Rule</TableHead>
                 <TableHead>Severity</TableHead>
               </TableRow>
             </TableHeader>
@@ -55,12 +73,14 @@ export function ForwardingRisksTable({ risks }: { risks: MailboxRiskData[] }) {
                   </TableCell>
                   <TableCell className="text-sm">{RISK_LABELS[r.riskType] ?? r.riskType}</TableCell>
                   <TableCell className="text-sm font-mono">{r.forwardTarget ?? '—'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{r.riskDetail ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{r.riskDetail ?? '—'}</TableCell>
                   <TableCell>{severityBadge(r.severity)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+          </div>
+          </>
         )}
       </CardContent>
     </Card>

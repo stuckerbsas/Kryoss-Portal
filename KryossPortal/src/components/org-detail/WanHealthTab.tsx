@@ -128,7 +128,7 @@ function SiteCard({ site }: { site: WanSiteSummary }) {
       </CardHeader>
       {expanded && (
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
             <div>
               <p className="text-muted-foreground">Latency</p>
               <p className="font-medium">{metricCell(site.avgLatencyMs, 'ms', 80, 150)}</p>
@@ -193,7 +193,7 @@ export function WanHealthTab() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
         </div>
       </div>
@@ -218,7 +218,7 @@ export function WanHealthTab() {
     <div className="space-y-6">
       <h2 className="text-lg font-semibold">WAN Health</h2>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <ScoreGauge score={data.orgScore} />
         <Card>
           <CardHeader className="pb-2">
@@ -282,28 +282,46 @@ export function WanHealthTab() {
             <CardTitle className="text-sm font-medium">All Findings</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Site</TableHead>
-                  <TableHead>Finding</TableHead>
-                  <TableHead>Detail</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.sites.flatMap((s) =>
-                  s.findings.map((f, i) => (
-                    <TableRow key={`${s.id}-${i}`}>
-                      <TableCell>{severityBadge(f.severity)}</TableCell>
-                      <TableCell className="font-medium">{s.siteName}</TableCell>
-                      <TableCell>{f.title}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{f.detail ?? '--'}</TableCell>
-                    </TableRow>
-                  )),
-                )}
-              </TableBody>
-            </Table>
+            {/* Mobile cards */}
+            <div className="space-y-3 sm:hidden">
+              {data.sites.flatMap((s) =>
+                s.findings.map((f, i) => (
+                  <div key={`${s.id}-${i}`} className="rounded-lg border p-4 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-sm truncate">{s.siteName}</span>
+                      {severityBadge(f.severity)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{f.title}</p>
+                    {f.detail && <p className="text-xs text-muted-foreground truncate">{f.detail}</p>}
+                  </div>
+                )),
+              )}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Site</TableHead>
+                    <TableHead>Finding</TableHead>
+                    <TableHead className="hidden lg:table-cell">Detail</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.sites.flatMap((s) =>
+                    s.findings.map((f, i) => (
+                      <TableRow key={`${s.id}-${i}`}>
+                        <TableCell>{severityBadge(f.severity)}</TableCell>
+                        <TableCell className="font-medium">{s.siteName}</TableCell>
+                        <TableCell>{f.title}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{f.detail ?? '--'}</TableCell>
+                      </TableRow>
+                    )),
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}

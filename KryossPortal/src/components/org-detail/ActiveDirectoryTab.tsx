@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   UserX,
 } from 'lucide-react';
+import { useState } from 'react';
 import { useHygiene, type HygieneFinding } from '@/api/hygiene';
 import { useDcHealth } from '@/api/dcHealth';
 import type { DcReplPartner } from '@/api/dcHealth';
@@ -23,6 +24,13 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -93,26 +101,45 @@ function FindingsTable({ findings, title, icon, description }: { findings: Hygie
       </CardHeader>
       <CardContent>
         <div className="max-h-80 overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Detail</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {findings.map((f, i) => (
-                <TableRow key={i}>
-                  <TableCell className="font-medium font-mono text-sm">{f.name}</TableCell>
-                  <TableCell>{statusBadge(f.status)}</TableCell>
-                  <TableCell className="tabular-nums">{f.daysInactive > 0 ? `${f.daysInactive}d` : '—'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{f.detail ?? '—'}</TableCell>
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {findings.map((f, i) => (
+              <div key={i} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm font-mono truncate">{f.name}</span>
+                  {statusBadge(f.status)}
+                </div>
+                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                  {f.daysInactive > 0 && <span className="tabular-nums">{f.daysInactive}d inactive</span>}
+                  {f.detail && <span className="truncate">{f.detail}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Days</TableHead>
+                  <TableHead className="hidden lg:table-cell">Detail</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {findings.map((f, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium font-mono text-sm">{f.name}</TableCell>
+                    <TableCell>{statusBadge(f.status)}</TableCell>
+                    <TableCell className="tabular-nums">{f.daysInactive > 0 ? `${f.daysInactive}d` : '—'}</TableCell>
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground max-w-xs truncate">{f.detail ?? '—'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -229,7 +256,7 @@ function SecuritySection({ scan }: { scan: NonNullable<ReturnType<typeof useHygi
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between pb-1 pt-0 h-12">
             <CardTitle className="text-sm font-medium text-muted-foreground">Domain Admins</CardTitle>
@@ -326,7 +353,7 @@ function HealthSection({ orgId }: { orgId: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Schema</CardTitle>
@@ -396,7 +423,7 @@ function HealthSection({ orgId }: { orgId: string }) {
       <Card>
         <CardHeader><CardTitle>Domain Information</CardTitle></CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-3">
             <div><span className="text-sm text-muted-foreground">Domain</span><p className="font-medium">{s.domainName ?? '—'}</p></div>
             <div><span className="text-sm text-muted-foreground">Forest</span><p className="font-medium">{s.forestName ?? '—'}</p></div>
             <div><span className="text-sm text-muted-foreground">Scanned By</span><p className="font-medium">{s.scannedBy ?? '—'}</p></div>
@@ -409,25 +436,44 @@ function HealthSection({ orgId }: { orgId: string }) {
       <Card>
         <CardHeader><CardTitle>FSMO Role Holders</CardTitle></CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow><TableHead>Role</TableHead><TableHead>Holder</TableHead></TableRow>
-            </TableHeader>
-            <TableBody>
-              {([
-                ['Schema Master', s.schemaMaster],
-                ['Domain Naming Master', s.domainNamingMaster],
-                ['PDC Emulator', s.pdcEmulator],
-                ['RID Master', s.ridMaster],
-                ['Infrastructure Master', s.infrastructureMaster],
-              ] as const).map(([role, holder]) => (
-                <TableRow key={role}>
-                  <TableCell className="font-medium">{role}</TableCell>
-                  <TableCell>{holder ?? <span className="text-muted-foreground">Unknown</span>}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {([
+              ['Schema Master', s.schemaMaster],
+              ['Domain Naming Master', s.domainNamingMaster],
+              ['PDC Emulator', s.pdcEmulator],
+              ['RID Master', s.ridMaster],
+              ['Infrastructure Master', s.infrastructureMaster],
+            ] as const).map(([role, holder]) => (
+              <div key={role} className="rounded-lg border p-4">
+                <div className="font-medium text-sm">{role}</div>
+                <div className="text-xs text-muted-foreground mt-1 truncate">{holder ?? 'Unknown'}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow><TableHead>Role</TableHead><TableHead>Holder</TableHead></TableRow>
+              </TableHeader>
+              <TableBody>
+                {([
+                  ['Schema Master', s.schemaMaster],
+                  ['Domain Naming Master', s.domainNamingMaster],
+                  ['PDC Emulator', s.pdcEmulator],
+                  ['RID Master', s.ridMaster],
+                  ['Infrastructure Master', s.infrastructureMaster],
+                ] as const).map(([role, holder]) => (
+                  <TableRow key={role}>
+                    <TableCell className="font-medium">{role}</TableCell>
+                    <TableCell>{holder ?? <span className="text-muted-foreground">Unknown</span>}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           {s.fsmoSinglePoint && (
             <div className="mt-3 flex items-center gap-2 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
               <AlertTriangle className="h-4 w-4" />
@@ -441,34 +487,103 @@ function HealthSection({ orgId }: { orgId: string }) {
         <Card>
           <CardHeader><CardTitle>Replication Partners ({s.replicationPartners.length})</CardTitle></CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Partner</TableHead>
-                  <TableHead>Direction</TableHead>
-                  <TableHead>Naming Context</TableHead>
-                  <TableHead>Last Success</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Transport</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {s.replicationPartners.map((rp, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-medium">{rp.partnerHostname ?? '—'}</TableCell>
-                    <TableCell>{rp.direction ?? '—'}</TableCell>
-                    <TableCell className="max-w-[200px] truncate text-xs">{rp.namingContext ?? '—'}</TableCell>
-                    <TableCell>{timeAgo(rp.lastSuccess)}</TableCell>
-                    <TableCell>{replStatusBadge(rp)}</TableCell>
-                    <TableCell><Badge variant="outline">{rp.transport ?? 'IP'}</Badge></TableCell>
+            {/* Mobile cards */}
+            <div className="space-y-3 sm:hidden">
+              {s.replicationPartners.map((rp, i) => (
+                <div key={i} className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-sm truncate">{rp.partnerHostname ?? '—'}</span>
+                    {replStatusBadge(rp)}
+                  </div>
+                  <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                    <span>{rp.direction ?? '—'}</span>
+                    <span>{timeAgo(rp.lastSuccess)}</span>
+                    <Badge variant="outline">{rp.transport ?? 'IP'}</Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Partner</TableHead>
+                    <TableHead>Direction</TableHead>
+                    <TableHead className="hidden lg:table-cell">Naming Context</TableHead>
+                    <TableHead>Last Success</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden lg:table-cell">Transport</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {s.replicationPartners.map((rp, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-medium">{rp.partnerHostname ?? '—'}</TableCell>
+                      <TableCell>{rp.direction ?? '—'}</TableCell>
+                      <TableCell className="hidden lg:table-cell max-w-[200px] truncate text-xs">{rp.namingContext ?? '—'}</TableCell>
+                      <TableCell>{timeAgo(rp.lastSuccess)}</TableCell>
+                      <TableCell>{replStatusBadge(rp)}</TableCell>
+                      <TableCell className="hidden lg:table-cell"><Badge variant="outline">{rp.transport ?? 'IP'}</Badge></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
     </div>
+  );
+}
+
+const adSubSections = [
+  { value: 'hygiene', label: 'Hygiene' },
+  { value: 'security', label: 'Security' },
+  { value: 'health', label: 'Health' },
+  { value: 'directory', label: 'Directory' },
+];
+
+function AdSubTabs({ scan, orgId }: { scan: NonNullable<ReturnType<typeof useHygiene>['data']>; orgId: string | undefined }) {
+  const [active, setActive] = useState('hygiene');
+
+  return (
+    <Tabs value={active} onValueChange={setActive}>
+      {/* Mobile: select */}
+      <div className="sm:hidden">
+        <Select value={active} onValueChange={setActive}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {adSubSections.map((s) => (
+              <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Desktop: tabs */}
+      <TabsList className="hidden sm:inline-flex">
+        {adSubSections.map((s) => (
+          <TabsTrigger key={s.value} value={s.value}>{s.label}</TabsTrigger>
+        ))}
+      </TabsList>
+
+      <TabsContent value="hygiene" className="mt-4">
+        <HygieneSection scan={scan} />
+      </TabsContent>
+      <TabsContent value="security" className="mt-4">
+        <SecuritySection scan={scan} />
+      </TabsContent>
+      <TabsContent value="health" className="mt-4">
+        {orgId ? <HealthSection orgId={orgId} /> : null}
+      </TabsContent>
+      <TabsContent value="directory" className="mt-4">
+        <AdObjectsTab />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -509,30 +624,7 @@ export function ActiveDirectoryTab() {
         </div>
       </div>
 
-      <Tabs defaultValue="hygiene">
-        <TabsList>
-          <TabsTrigger value="hygiene">Hygiene</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="health">Health</TabsTrigger>
-          <TabsTrigger value="directory">Directory</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="hygiene" className="mt-4">
-          <HygieneSection scan={scan!} />
-        </TabsContent>
-
-        <TabsContent value="security" className="mt-4">
-          <SecuritySection scan={scan!} />
-        </TabsContent>
-
-        <TabsContent value="health" className="mt-4">
-          {orgId ? <HealthSection orgId={orgId} /> : null}
-        </TabsContent>
-
-        <TabsContent value="directory" className="mt-4">
-          <AdObjectsTab />
-        </TabsContent>
-      </Tabs>
+      <AdSubTabs scan={scan!} orgId={orgId} />
     </div>
   );
 }

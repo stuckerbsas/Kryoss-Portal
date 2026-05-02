@@ -7,6 +7,13 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useSoftwareInventory } from '@/api/inventory';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -70,7 +77,7 @@ export function SoftwareInventoryTab() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
               <CardHeader className="pb-2"><Skeleton className="h-4 w-24" /></CardHeader>
@@ -99,7 +106,7 @@ export function SoftwareInventoryTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Unique Software</CardTitle>
@@ -138,8 +145,8 @@ export function SoftwareInventoryTab() {
         </Card>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+        <div className="relative sm:max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by name or publisher..."
@@ -148,7 +155,23 @@ export function SoftwareInventoryTab() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-1">
+        {/* Mobile: select */}
+        <div className="sm:hidden w-full">
+          <Select value={licenseFilter} onValueChange={(v) => setLicenseFilter(v as LicenseFilter)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {filterOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Desktop: pill buttons */}
+        <div className="hidden sm:flex gap-1">
           {filterOptions.map((opt) => (
             <button
               key={opt.value}
@@ -166,13 +189,48 @@ export function SoftwareInventoryTab() {
         </div>
       </div>
 
+      {/* Mobile card view */}
+      <div className="space-y-3 sm:hidden">
+        {filtered.map((s) => {
+          const key = `${s.name}|||${s.publisher}|||${s.version}`;
+          const isExpanded = expandedRow === key;
+          const badge = TYPE_STYLES[s.licenseType] ?? TYPE_STYLES.Unknown;
+
+          return (
+            <div
+              key={key}
+              className="rounded-lg border p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => setExpandedRow(isExpanded ? null : key)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{s.name}</span>
+                <Badge variant="secondary" className={`shrink-0 ${badge.className}`}>{badge.label}</Badge>
+              </div>
+              <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                <span>{s.publisher ?? 'Unknown'}</span>
+                <span className="font-mono">{s.version ?? '-'}</span>
+                <span>{s.machineCount} machine{s.machineCount !== 1 ? 's' : ''}</span>
+              </div>
+              {isExpanded && (
+                <div className="mt-2 pt-2 border-t text-xs text-muted-foreground max-h-32 overflow-y-auto">
+                  <span className="font-medium text-foreground">Installed on: </span>
+                  {s.machines.join(', ')}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden sm:block">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead className="w-8" />
             <TableHead>Software Name</TableHead>
             <TableHead>Publisher</TableHead>
-            <TableHead>Version</TableHead>
+            <TableHead className="hidden lg:table-cell">Version</TableHead>
             <TableHead>Machines</TableHead>
             <TableHead>License Type</TableHead>
           </TableRow>
@@ -198,7 +256,7 @@ export function SoftwareInventoryTab() {
                   </TableCell>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell className="text-muted-foreground">{s.publisher ?? 'Unknown'}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm font-mono">{s.version ?? '-'}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm font-mono hidden lg:table-cell">{s.version ?? '-'}</TableCell>
                   <TableCell>
                     <span className="font-medium">{s.machineCount}</span>
                   </TableCell>
@@ -222,6 +280,7 @@ export function SoftwareInventoryTab() {
           })}
         </TableBody>
       </Table>
+      </div>
       <p className="text-sm text-muted-foreground">
         Showing {filtered.length} of {data.total} software items
       </p>

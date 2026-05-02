@@ -59,7 +59,7 @@ export function HardwareInventoryTab() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
               <CardHeader className="pb-2">
@@ -93,10 +93,13 @@ export function HardwareInventoryTab() {
   const wsCount = data.workstations ?? data.total;
   const readyPct = wsCount > 0 ? Math.round((data.win11Ready / wsCount) * 100) : 0;
 
+  const goToMachine = (hostname: string) =>
+    navigate(`/organizations/${orgSlug}/machines/${hostname}`);
+
   return (
     <div className="space-y-4">
       {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -158,20 +161,68 @@ export function HardwareInventoryTab() {
         />
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
+      {/* Mobile: cards */}
+      <div className="space-y-3 sm:hidden">
+        {filtered.map((m) => {
+          const lowDisk = m.disks && m.disks.length > 0
+            ? m.disks.some((d) => d.totalGb && d.freeGb != null && (d.freeGb / d.totalGb) * 100 < 20)
+            : m.diskFreeGb !== null && m.diskFreeGb < 20;
+          const noTpm = m.tpmPresent !== true;
+          let borderClass = '';
+          if (lowDisk) borderClass = 'border-red-200 bg-red-50/50';
+          else if (noTpm) borderClass = 'border-yellow-200 bg-yellow-50/50';
+
+          return (
+            <div
+              key={m.id}
+              className={`rounded-lg border p-4 cursor-pointer hover:bg-muted/50 transition-colors ${borderClass}`}
+              onClick={() => goToMachine(m.hostname)}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-sm truncate">{m.hostname}</span>
+                {m.win11Ready === null ? (
+                  <span className="text-xs text-muted-foreground">N/A</span>
+                ) : m.win11Ready ? (
+                  <span className="inline-flex items-center gap-1 text-green-600 text-xs">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Ready
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-red-500 text-xs">
+                    <XCircle className="h-3.5 w-3.5" /> Not Ready
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                <span>{m.osName ?? 'Unknown'}</span>
+                <span className="text-right">{m.ramGb != null ? `${m.ramGb} GB RAM` : ''}</span>
+                <span className="truncate">{m.cpuName ?? ''}</span>
+                <span className="text-right">
+                  {m.tpmPresent ? (
+                    <span className="text-green-600">TPM {m.tpmVersion ?? 'Yes'}</span>
+                  ) : (
+                    <span className="text-red-600">No TPM</span>
+                  )}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden sm:block overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Hostname</TableHead>
               <TableHead>OS</TableHead>
-              <TableHead>CPU</TableHead>
+              <TableHead className="hidden lg:table-cell">CPU</TableHead>
               <TableHead>RAM</TableHead>
-              <TableHead>Disk</TableHead>
-              <TableHead>Manufacturer / Model</TableHead>
+              <TableHead className="hidden lg:table-cell">Disk</TableHead>
+              <TableHead className="hidden lg:table-cell">Manufacturer / Model</TableHead>
               <TableHead>TPM</TableHead>
               <TableHead>Win11</TableHead>
-              <TableHead>Last Seen</TableHead>
+              <TableHead className="hidden lg:table-cell">Last Seen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -189,7 +240,7 @@ export function HardwareInventoryTab() {
                   <TableCell>
                     <button
                       className="font-medium text-left hover:underline hover:text-primary cursor-pointer"
-                      onClick={() => navigate(`/organizations/${orgSlug}/machines/${m.hostname}`)}
+                      onClick={() => goToMachine(m.hostname)}
                     >
                       {m.hostname}
                     </button>
@@ -198,14 +249,14 @@ export function HardwareInventoryTab() {
                     {m.osName ?? 'Unknown'}
                     {m.osVersion ? ` (${m.osVersion})` : ''}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
+                  <TableCell className="text-muted-foreground text-sm hidden lg:table-cell">
                     {m.cpuName ?? 'N/A'}
                     {m.cpuCores != null ? ` (${m.cpuCores}c)` : ''}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {m.ramGb != null ? `${m.ramGb} GB` : 'N/A'}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
+                  <TableCell className="text-muted-foreground text-sm hidden lg:table-cell">
                     {m.disks && m.disks.length > 0 ? (
                       <div className="space-y-0.5">
                         {m.disks.map((d) => {
@@ -236,7 +287,7 @@ export function HardwareInventoryTab() {
                       </>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
+                  <TableCell className="text-muted-foreground text-sm hidden lg:table-cell">
                     {[m.manufacturer, m.model].filter(Boolean).join(' / ') ||
                       'N/A'}
                   </TableCell>
@@ -269,7 +320,7 @@ export function HardwareInventoryTab() {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
+                  <TableCell className="text-muted-foreground text-sm hidden lg:table-cell">
                     {formatRelativeTime(m.lastSeenAt)}
                   </TableCell>
                 </TableRow>

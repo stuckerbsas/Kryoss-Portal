@@ -228,38 +228,35 @@ function OverviewTabContent({ machine, chartData, machineId }: { machine: any; c
 
         <SectionCard icon={<HardDrive className="size-4" />} title="Storage">
           {machine.disks && machine.disks.length > 0 ? (
-            <div className="overflow-x-auto -mx-1">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/50 text-muted-foreground">
-                    <th className="text-left py-1 px-1 font-medium">Drive</th>
-                    <th className="text-left py-1 px-1 font-medium">Label</th>
-                    <th className="text-left py-1 px-1 font-medium">Type</th>
-                    <th className="text-right py-1 px-1 font-medium">Total</th>
-                    <th className="text-right py-1 px-1 font-medium">Free</th>
-                    <th className="text-left py-1 px-1 font-medium">FS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {machine.disks.map((d: any) => {
-                    const pctFree = d.totalGb && d.freeGb != null ? (d.freeGb / d.totalGb) * 100 : null;
-                    const freeColor = pctFree != null && pctFree < 20 ? 'text-red-600 font-semibold' : pctFree != null && pctFree < 40 ? 'text-amber-600' : '';
-                    return (
-                      <tr key={d.driveLetter} className="border-b border-border/30 last:border-0">
-                        <td className="py-1 px-1 font-mono font-medium">{d.driveLetter}:</td>
-                        <td className="py-1 px-1 text-muted-foreground">{d.label ?? '--'}</td>
-                        <td className="py-1 px-1 text-muted-foreground">{d.diskType ?? '--'}</td>
-                        <td className="py-1 px-1 text-right">{d.totalGb != null ? `${d.totalGb} GB` : '--'}</td>
-                        <td className={`py-1 px-1 text-right ${freeColor}`}>
-                          {d.freeGb != null ? `${d.freeGb} GB` : '--'}
-                          {pctFree != null ? ` (${Math.round(pctFree)}%)` : ''}
-                        </td>
-                        <td className="py-1 px-1 text-muted-foreground">{d.fileSystem ?? '--'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {machine.disks.map((d: any) => {
+                const pctFree = d.totalGb && d.freeGb != null ? (d.freeGb / d.totalGb) * 100 : null;
+                const pctUsed = pctFree != null ? 100 - pctFree : 0;
+                const barColor = pctFree != null && pctFree < 20 ? '#C0392B' : pctFree != null && pctFree < 40 ? '#D97706' : '#008852';
+                return (
+                  <div key={d.driveLetter} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold">{d.driveLetter}:</span>
+                        {d.label && <span className="text-muted-foreground text-xs">{d.label}</span>}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {d.diskType ?? ''} {d.fileSystem ? `· ${d.fileSystem}` : ''}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${pctUsed}%`, backgroundColor: barColor }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>{d.freeGb != null ? `${d.freeGb} GB free` : '--'}</span>
+                      <span>{d.totalGb != null ? `${d.totalGb} GB total` : '--'}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <>
@@ -400,14 +397,43 @@ function SoftwareTabContent({ machineId }: { machineId: string | undefined }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">{softwareData.total} packages</span>
-        <div className="relative w-64">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-muted-foreground whitespace-nowrap">{softwareData.total} packages</span>
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input placeholder="Search software..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-8 text-sm" />
         </div>
       </div>
-      <div className="max-h-[600px] overflow-y-auto rounded-md border">
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
+        {filtered.map((s, i) => {
+          const badge = licenseTypeBadge[s.licenseType] ?? licenseTypeBadge.Unknown;
+          return (
+            <div key={i} className="rounded-lg border p-4">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium text-sm truncate">{s.name}</span>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${badge.className}`}>{badge.label}</span>
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                {s.version && <span className="font-mono">{s.version}</span>}
+                {s.publisher && <span>{s.publisher}</span>}
+              </div>
+              {s.uninstallString && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-destructive hover:text-destructive mt-2"
+                  onClick={() => setUninstallTarget({ name: s.name, uninstallString: s.uninstallString! })}
+                >
+                  <Trash2 className="size-3.5 mr-1" /> Uninstall
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {/* Desktop table */}
+      <div className="hidden sm:block max-h-[600px] overflow-y-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -509,15 +535,17 @@ function SecurityTabContent({ machineId, latestRunId }: { machineId: string | un
   return (
     <div className="space-y-4">
       {/* Summary */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
           <span className="text-2xl font-bold tabular-nums">{score}%</span>
           <span className="text-sm text-muted-foreground">security compliance</span>
         </div>
-        <Badge variant="secondary" className="bg-green-100 text-green-800">{passCount} Pass</Badge>
-        <Badge variant="secondary" className="bg-amber-100 text-amber-800">{warnCount} Warn</Badge>
-        <Badge variant="secondary" className="bg-red-100 text-red-800">{failCount} Fail</Badge>
-        <span className="text-sm text-muted-foreground ml-auto">{total} controls</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="bg-green-100 text-green-800">{passCount} Pass</Badge>
+          <Badge variant="secondary" className="bg-amber-100 text-amber-800">{warnCount} Warn</Badge>
+          <Badge variant="secondary" className="bg-red-100 text-red-800">{failCount} Fail</Badge>
+          <span className="text-sm text-muted-foreground sm:ml-auto">{total} controls</span>
+        </div>
       </div>
 
       {/* By category */}
@@ -529,7 +557,7 @@ function SecurityTabContent({ machineId, latestRunId }: { machineId: string | un
           const catScore = items.length > 0 ? Math.round((catPass / items.length) * 100) : 0;
           return (
             <Card key={category} className="p-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
                 <h4 className="text-sm font-semibold">{category}</h4>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold tabular-nums" style={{
@@ -547,11 +575,22 @@ function SecurityTabContent({ machineId, latestRunId }: { machineId: string | un
               {catFail > 0 && (
                 <div className="space-y-1">
                   {items.filter((r) => r.status === 'fail').map((r) => (
-                    <div key={r.controlId} className="flex items-center gap-2 text-sm py-1">
-                      <X className="size-3.5 text-red-500 shrink-0" />
-                      <span className="font-mono text-xs text-muted-foreground">{r.controlId}</span>
-                      <span className="truncate">{r.name}</span>
-                      <Badge variant="secondary" className={`ml-auto text-xs ${severityColor(r.severity)}`}>{r.severity}</Badge>
+                    <div key={r.controlId} className="py-1">
+                      {/* Mobile */}
+                      <div className="sm:hidden rounded-lg border p-3 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">{r.controlId}</span>
+                          <Badge variant="secondary" className={`text-xs ${severityColor(r.severity)}`}>{r.severity}</Badge>
+                        </div>
+                        <p className="text-sm">{r.name}</p>
+                      </div>
+                      {/* Desktop */}
+                      <div className="hidden sm:flex items-center gap-2 text-sm">
+                        <X className="size-3.5 text-red-500 shrink-0" />
+                        <span className="font-mono text-xs text-muted-foreground">{r.controlId}</span>
+                        <span className="truncate">{r.name}</span>
+                        <Badge variant="secondary" className={`ml-auto text-xs ${severityColor(r.severity)}`}>{r.severity}</Badge>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -572,34 +611,54 @@ function HistoryTabContent({ machine, orgSlug, machineSlug }: { machine: any; or
     return <EmptyState icon={<History className="size-10" />} title="No assessments yet" description="Run the agent on this machine to generate assessment data." />;
 
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Score</TableHead>
-            <TableHead>Grade</TableHead>
-            <TableHead>Pass</TableHead>
-            <TableHead>Warn</TableHead>
-            <TableHead>Fail</TableHead>
-            <TableHead>Duration</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {machine.assessmentHistory.map((run: any) => (
-            <TableRow key={run.id} className="cursor-pointer" onClick={() => navigate(`/organizations/${orgSlug}/machines/${machineSlug}/runs/${run.id}`)}>
-              <TableCell>{formatDate(run.startedAt)}</TableCell>
-              <TableCell>{run.globalScore != null ? run.globalScore : 'N/A'}</TableCell>
-              <TableCell><GradeBadge grade={run.grade} /></TableCell>
-              <TableCell className="text-green-700">{run.passCount ?? 0}</TableCell>
-              <TableCell className="text-amber-600">{run.warnCount ?? 0}</TableCell>
-              <TableCell className="text-red-600">{run.failCount ?? 0}</TableCell>
-              <TableCell className="text-muted-foreground">{formatDuration(run.durationMs)}</TableCell>
+    <>
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
+        {machine.assessmentHistory.map((run: any) => (
+          <div key={run.id} className="rounded-lg border p-4 cursor-pointer" onClick={() => navigate(`/organizations/${orgSlug}/machines/${machineSlug}/runs/${run.id}`)}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-sm">{formatDate(run.startedAt)}</span>
+              <GradeBadge grade={run.grade} />
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+              <span>Score: {run.globalScore ?? 'N/A'}</span>
+              <span className="text-green-700">{run.passCount ?? 0}P</span>
+              <span className="text-amber-600">{run.warnCount ?? 0}W</span>
+              <span className="text-red-600">{run.failCount ?? 0}F</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Desktop table */}
+      <div className="hidden sm:block rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Score</TableHead>
+              <TableHead>Grade</TableHead>
+              <TableHead>Pass</TableHead>
+              <TableHead>Warn</TableHead>
+              <TableHead>Fail</TableHead>
+              <TableHead>Duration</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHeader>
+          <TableBody>
+            {machine.assessmentHistory.map((run: any) => (
+              <TableRow key={run.id} className="cursor-pointer" onClick={() => navigate(`/organizations/${orgSlug}/machines/${machineSlug}/runs/${run.id}`)}>
+                <TableCell>{formatDate(run.startedAt)}</TableCell>
+                <TableCell>{run.globalScore != null ? run.globalScore : 'N/A'}</TableCell>
+                <TableCell><GradeBadge grade={run.grade} /></TableCell>
+                <TableCell className="text-green-700">{run.passCount ?? 0}</TableCell>
+                <TableCell className="text-amber-600">{run.warnCount ?? 0}</TableCell>
+                <TableCell className="text-red-600">{run.failCount ?? 0}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDuration(run.durationMs)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
   );
 }
 
@@ -626,7 +685,7 @@ function PortsTabContent({ machineId }: { machineId: string | undefined }) {
   return (
     <div className="space-y-4">
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="p-3">
           <div className="text-sm text-muted-foreground">Total Open</div>
           <div className="text-2xl font-bold tabular-nums">{data.totalOpen}</div>
@@ -645,8 +704,28 @@ function PortsTabContent({ machineId }: { machineId: string | undefined }) {
         </Card>
       </div>
 
-      {/* Ports table */}
-      <div className="max-h-[600px] overflow-y-auto rounded-md border">
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
+        {data.ports.map((p, i) => (
+          <div key={i} className="rounded-lg border p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono font-medium text-sm">:{p.port}</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className={p.status === 'open' ? 'bg-green-100 text-green-800 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-100'}>
+                  {p.status}
+                </Badge>
+                {p.risk && <Badge variant="secondary" className={riskColor(p.risk)}>{p.risk}</Badge>}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+              <span>{p.protocol}</span>
+              {p.service && <span>{p.service}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Desktop table */}
+      <div className="hidden sm:block max-h-[600px] overflow-y-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -729,7 +808,7 @@ function ThreatsTabContent({ machineId }: { machineId: string | undefined }) {
   return (
     <div className="space-y-4">
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card className="p-3">
           <div className="text-sm text-muted-foreground">Total</div>
           <div className="text-2xl font-bold tabular-nums">{data.total}</div>
@@ -752,8 +831,24 @@ function ThreatsTabContent({ machineId }: { machineId: string | undefined }) {
         </Card>
       </div>
 
-      {/* Threats table */}
-      <div className="max-h-[600px] overflow-y-auto rounded-md border">
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
+        {data.threats.map((t, i) => (
+          <div key={i} className="rounded-lg border p-4">
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-medium text-sm truncate">{t.threatName}</span>
+              <Badge variant="secondary" className={threatSeverityColor(t.severity)}>{t.severity}</Badge>
+            </div>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {categoryBadge(t.category)}
+              <Badge variant="outline" className="text-xs">{t.vector}</Badge>
+            </div>
+            {t.detail && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.detail}</p>}
+          </div>
+        ))}
+      </div>
+      {/* Desktop table */}
+      <div className="hidden sm:block max-h-[600px] overflow-y-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -839,7 +934,44 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
       {pendingCount > 0 && (
         <>
           <h4 className="text-sm font-semibold">Pending ({pendingCount})</h4>
-          <div className="rounded-md border">
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {scanPending && (
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm">Compliance scan requested</span>
+                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">waiting</Badge>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  <span className="font-mono mr-2">SCAN</span>
+                  {scanRequestedAt && <span>{formatDate(scanRequestedAt)}</span>}
+                </div>
+              </div>
+            )}
+            {pending.map(t => (
+              <div key={t.id} className="rounded-lg border p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{t.controlName}</span>
+                  {taskStatusBadge(t.status)}
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <span className="font-mono">{t.controlId}</span>
+                  <span>{t.actionType}</span>
+                  {t.scheduledFor ? <span>{formatDate(t.scheduledFor)}</span> : <span>Immediate</span>}
+                </div>
+                <div className="flex items-center gap-1 mt-2">
+                  <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" onClick={() => openEditDialog(t.id, t.scheduledFor)}>
+                    <Pencil className="size-3.5 mr-1" /> Edit
+                  </Button>
+                  <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" disabled={cancel.isPending} onClick={() => cancel.mutate(t.id)}>
+                    <XCircle className="size-3.5 mr-1" /> Cancel
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -847,7 +979,7 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
                   <TableHead>Action</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Scheduled</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead className="hidden lg:table-cell">Created</TableHead>
                   <TableHead className="w-32"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -861,7 +993,7 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
                     <TableCell className="text-sm">scan</TableCell>
                     <TableCell><Badge variant="secondary" className="bg-blue-100 text-blue-800">waiting</Badge></TableCell>
                     <TableCell className="text-muted-foreground text-xs">--</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{scanRequestedAt ? formatDate(scanRequestedAt) : '--'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{scanRequestedAt ? formatDate(scanRequestedAt) : '--'}</TableCell>
                     <TableCell></TableCell>
                   </TableRow>
                 )}
@@ -885,7 +1017,7 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{formatDate(t.createdAt)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{formatDate(t.createdAt)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Button
@@ -920,7 +1052,25 @@ function TasksTabContent({ machineId, scanPending, scanRequestedAt }: { machineI
       {completed.length > 0 && (
         <>
           <h4 className="text-sm font-semibold text-muted-foreground">History ({completed.length})</h4>
-          <div className="rounded-md border">
+          {/* Mobile cards */}
+          <div className="space-y-3 sm:hidden">
+            {completed.map(t => (
+              <div key={t.id} className="rounded-lg border p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{t.controlName}</span>
+                  {taskStatusBadge(t.status)}
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <span className="font-mono">{t.controlId}</span>
+                  <span>{t.actionType}</span>
+                  {t.completedAt && <span>{formatDate(t.completedAt)}</span>}
+                </div>
+                {t.errorMessage && <p className="text-xs text-red-600 mt-1 line-clamp-2">{t.errorMessage}</p>}
+              </div>
+            ))}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden sm:block rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -993,7 +1143,7 @@ function ControlResultsView({ run, severity, setSeverity, status, setStatus, sea
     <div className="space-y-4">
       {/* Framework scores */}
       {run.frameworkScores && run.frameworkScores.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {run.frameworkScores.map((fs: any) => (
             <Card key={fs.code} className="p-3">
               <div className="flex items-center justify-between mb-2">
@@ -1017,28 +1167,30 @@ function ControlResultsView({ run, severity, setSeverity, status, setStatus, sea
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Select value={severity} onValueChange={(v) => setSeverity(v)}>
-          <SelectTrigger className="w-[130px]"><SelectValue placeholder="Severity" /></SelectTrigger>
-          <SelectContent>
-            {['All', 'critical', 'high', 'medium', 'low'].map((s) => (
-              <SelectItem key={s} value={s}>{s === 'All' ? 'All Severities' : s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={status} onValueChange={(v) => setStatus(v)}>
-          <SelectTrigger className="w-[120px]"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            {['All', 'pass', 'warn', 'fail'].map((s) => (
-              <SelectItem key={s} value={s}>{s === 'All' ? 'All Statuses' : s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="relative max-w-xs flex-1">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+        <div className="relative flex-1 sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input placeholder="Search controls..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
-        <span className="text-sm text-muted-foreground ml-auto">{filtered.length} results</span>
+        <div className="flex gap-2">
+          <Select value={severity} onValueChange={(v) => setSeverity(v)}>
+            <SelectTrigger className="flex-1 sm:w-[130px]"><SelectValue placeholder="Severity" /></SelectTrigger>
+            <SelectContent>
+              {['All', 'critical', 'high', 'medium', 'low'].map((s) => (
+                <SelectItem key={s} value={s}>{s === 'All' ? 'All Severities' : s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={(v) => setStatus(v)}>
+            <SelectTrigger className="flex-1 sm:w-[120px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              {['All', 'pass', 'warn', 'fail'].map((s) => (
+                <SelectItem key={s} value={s}>{s === 'All' ? 'All Statuses' : s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <span className="text-sm text-muted-foreground sm:ml-auto">{filtered.length} results</span>
       </div>
 
       {/* Results grouped by category */}
@@ -1073,6 +1225,23 @@ function ControlResultsView({ run, severity, setSeverity, status, setStatus, sea
                     backgroundColor: catScore >= 90 ? '#008852' : catScore >= 70 ? '#A2C564' : catScore >= 50 ? '#D97706' : '#C0392B',
                   }} />
                 </div>
+                {/* Mobile cards */}
+                <div className="space-y-2 sm:hidden">
+                  {items.map((r: any) => (
+                    <div key={r.controlId} className="rounded-lg border p-3 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-medium text-muted-foreground">{r.controlId}</span>
+                        <div className="flex gap-1.5">
+                          <Badge variant="secondary" className={severityColor(r.severity)}>{r.severity}</Badge>
+                          <Badge variant="secondary" className={statusColor(r.status)}>{r.status}</Badge>
+                        </div>
+                      </div>
+                      <p className="text-sm">{r.name}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden sm:block">
                 <Table>
                   <TableBody>
                     {items.map((r: any) => (
@@ -1085,6 +1254,7 @@ function ControlResultsView({ run, severity, setSeverity, status, setStatus, sea
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </Card>
             );
           });
@@ -1096,10 +1266,24 @@ function ControlResultsView({ run, severity, setSeverity, status, setStatus, sea
 
 // ── Main Component ──
 
+const machineTabSections = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'software', label: 'Software' },
+  { value: 'controls', label: 'Controls' },
+  { value: 'security', label: 'Security' },
+  { value: 'threats', label: 'Threats' },
+  { value: 'ports', label: 'Ports' },
+  { value: 'tasks', label: 'Tasks' },
+  { value: 'history', label: 'History' },
+  { value: 'services', label: 'Services' },
+  { value: 'activity', label: 'Activity' },
+];
+
 export function MachineDetail() {
   const { orgSlug, machineId, machineSlug } = useMachineParam();
   const navigate = useNavigate();
 
+  const [activeTab, setActiveTab] = useState('overview');
   const { data: machine, isLoading } = useMachine(machineSlug);
   const { data: trendData } = useTrend({ machineId, months: 6 });
   const triggerScan = useTriggerScan(machineId);
@@ -1148,19 +1332,17 @@ export function MachineDetail() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => navigate(`/organizations/${orgSlug}/devices`)}>
             <ArrowLeft className="size-4 mr-1" />
             Fleet
           </Button>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold">{machine.hostname}</h2>
-            <Badge variant="secondary" className={machine.isActive ? 'bg-green-100 text-green-800 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-100'}>
-              {machine.isActive ? 'Active' : 'Inactive'}
-            </Badge>
-            {machine.osName && <span className="text-sm text-muted-foreground">{machine.osName}</span>}
-          </div>
+          <h2 className="text-xl font-semibold">{machine.hostname}</h2>
+          <Badge variant="secondary" className={machine.isActive ? 'bg-green-100 text-green-800 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-100'}>
+            {machine.isActive ? 'Active' : 'Inactive'}
+          </Badge>
+          {machine.osName && <span className="text-sm text-muted-foreground hidden sm:inline">{machine.osName}</span>}
         </div>
         <div className="flex items-center gap-3">
           <Button
@@ -1174,7 +1356,7 @@ export function MachineDetail() {
           </Button>
           {latestRun && (
             <>
-              <span className="text-sm text-muted-foreground">Latest:</span>
+              <span className="text-sm text-muted-foreground hidden sm:inline">Latest:</span>
               <GradeBadge grade={latestRun.grade} score={latestRun.globalScore} />
             </>
           )}
@@ -1182,8 +1364,24 @@ export function MachineDetail() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        {/* Mobile: select */}
+        <div className="sm:hidden">
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {machineTabSections.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Desktop: tabs */}
+        <TabsList className="hidden sm:inline-flex">
           <TabsTrigger value="overview" className="gap-1.5">
             <Monitor className="size-3.5" /> Overview
           </TabsTrigger>
