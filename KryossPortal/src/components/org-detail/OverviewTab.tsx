@@ -218,7 +218,7 @@ export function OverviewTab() {
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
                     <Tooltip
-                      formatter={(v: number) => [`${v}%`, 'Score']}
+                      formatter={(v) => [`${v}%`, 'Score']}
                       contentStyle={{ fontSize: 12 }}
                     />
                     <Area
