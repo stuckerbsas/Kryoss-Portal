@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
+  Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -139,7 +140,10 @@ function SitesTable({
             onClick={() => onSiteClick(s)}
           >
             <div className="flex items-center justify-between">
-              <span className="font-medium text-sm truncate">{s.siteName}</span>
+              <span className="font-medium text-sm truncate flex items-center gap-1">
+                {s.isPrimary && <Star className="size-3 text-amber-500 fill-amber-500" />}
+                {s.siteName}
+              </span>
               <div className="flex items-center gap-1.5">
                 {connBadge(s.connType)}
                 {slaBadge(s)}
@@ -180,7 +184,12 @@ function SitesTable({
                 className="cursor-pointer hover:bg-muted/50"
                 onClick={() => onSiteClick(s)}
               >
-                <TableCell className="font-medium">{s.siteName}</TableCell>
+                <TableCell className="font-medium">
+                  <span className="flex items-center gap-1.5">
+                    {s.isPrimary && <Star className="size-3.5 text-amber-500 fill-amber-500" />}
+                    {s.siteName}
+                  </span>
+                </TableCell>
                 <TableCell className="font-mono text-sm">{s.publicIp ?? '—'}</TableCell>
                 <TableCell className="hidden lg:table-cell">
                   {s.geoCity && s.geoCountry

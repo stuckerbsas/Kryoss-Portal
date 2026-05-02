@@ -1,8 +1,17 @@
-import { X, Monitor, AlertTriangle } from 'lucide-react';
-import { useSpeedHistory, useSiteMachines, type NetworkSite } from '@/api/networkSites';
+import { X, Monitor, AlertTriangle, Star, Gauge } from 'lucide-react';
+import { toast } from 'sonner';
+import { useSpeedHistory, useSiteMachines, useUpdateSite, type NetworkSite } from '@/api/networkSites';
+import { useOrgParam } from '@/hooks/useOrgParam';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -35,17 +44,46 @@ function SlaStatus({ site }: { site: NetworkSite }) {
 }
 
 export function SiteDetailDrawer({ site, onClose }: SiteDetailDrawerProps) {
+  const { orgId } = useOrgParam();
   const { data: speedData, isLoading: speedLoading } = useSpeedHistory(site.id);
   const { data: machines, isLoading: machinesLoading } = useSiteMachines(site.id);
+  const updateSite = useUpdateSite(orgId);
+
+  const handleTogglePrimary = () => {
+    updateSite.mutate(
+      { siteId: site.id, isPrimary: !site.isPrimary },
+      {
+        onSuccess: () => toast.success(site.isPrimary ? 'Primary cleared' : 'Set as primary site'),
+        onError: (err: Error) => toast.error(err.message),
+      },
+    );
+  };
+
+  const handleSpeedTestMachine = (machineId: string) => {
+    updateSite.mutate(
+      { siteId: site.id, speedTestMachineId: machineId === '__none__' ? '00000000-0000-0000-0000-000000000000' : machineId },
+      {
+        onSuccess: () => toast.success(machineId === '__none__' ? 'Speed test device cleared' : 'Speed test device set'),
+        onError: (err: Error) => toast.error(err.message),
+      },
+    );
+  };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full max-w-lg bg-background border-l shadow-xl z-50 overflow-y-auto">
-      <div className="sticky top-0 bg-background border-b px-4 py-3 flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold">{site.siteName}</h3>
-          <p className="text-xs text-muted-foreground">
-            {site.publicIp} {site.geoCity && `— ${site.geoCity}, ${site.geoCountry}`}
-          </p>
+    <div className="fixed inset-y-0 right-0 w-full max-w-2xl bg-background border-l shadow-xl z-[1000] overflow-y-auto">
+      <div className="sticky top-0 bg-background border-b px-4 py-3 flex items-center justify-between z-10">
+        <div className="flex items-center gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold">{site.siteName}</h3>
+              {site.isPrimary && (
+                <Badge className="bg-amber-100 text-amber-800 text-xs">Primary</Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {site.publicIp} {site.geoCity && `— ${site.geoCity}, ${site.geoCountry}`}
+            </p>
+          </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="size-4" />
@@ -54,6 +92,37 @@ export function SiteDetailDrawer({ site, onClose }: SiteDetailDrawerProps) {
 
       <div className="p-4 space-y-6">
         <SlaStatus site={site} />
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant={site.isPrimary ? 'default' : 'outline'}
+            size="sm"
+            onClick={handleTogglePrimary}
+            disabled={updateSite.isPending}
+          >
+            <Star className={`size-4 mr-1 ${site.isPrimary ? 'fill-current' : ''}`} />
+            {site.isPrimary ? 'Primary Site' : 'Set as Primary'}
+          </Button>
+
+          <div className="flex items-center gap-2">
+            <Gauge className="size-4 text-muted-foreground" />
+            <Select
+              value={site.speedTestMachineId ?? '__none__'}
+              onValueChange={handleSpeedTestMachine}
+              disabled={updateSite.isPending || machinesLoading}
+            >
+              <SelectTrigger className="w-[200px] h-8 text-xs">
+                <SelectValue placeholder="Speed test device" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Auto (any machine)</SelectItem>
+                {machines?.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.hostname}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div className="bg-muted/50 rounded-lg p-3">
