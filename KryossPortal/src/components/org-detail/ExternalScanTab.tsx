@@ -399,8 +399,8 @@ export function ExternalScanTab() {
             {latestByTarget.map((s) => (
               <TabsTrigger key={s.id} value={s.id} className="text-xs font-mono gap-1.5">
                 {s.target}
-                {s.criticalPorts > 0 ? (
-                  <Badge variant="secondary" className="bg-red-100 text-red-800 text-[10px] px-1 py-0">{s.criticalPorts} crit</Badge>
+                {s.criticalFindings > 0 ? (
+                  <Badge variant="secondary" className="bg-red-100 text-red-800 text-[10px] px-1 py-0">{s.criticalFindings} crit</Badge>
                 ) : (
                   <Badge variant="secondary" className="text-[10px] px-1 py-0">{s.openPorts} open</Badge>
                 )}

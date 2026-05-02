@@ -78,9 +78,9 @@ export interface ScanHistoryItem {
   status: string;
   startedAt: string | null;
   completedAt: string | null;
-  createdAt: string;
   openPorts: number;
-  criticalPorts: number;
+  criticalFindings: number;
+  highFindings: number;
 }
 
 // ── Hooks ──
@@ -107,10 +107,12 @@ export function useExternalScanDetail(scanId: string | undefined) {
 export function useExternalScanHistory(organizationId: string | undefined) {
   return useQuery({
     queryKey: ['external-scan-history', organizationId],
-    queryFn: () =>
-      apiFetch<ScanHistoryItem[]>(
+    queryFn: async () => {
+      const data = await apiFetch<{ scans: ScanHistoryItem[] }>(
         `/v2/external-scan/history?organizationId=${organizationId}`,
-      ),
+      );
+      return data.scans;
+    },
     enabled: !!organizationId,
   });
 }
