@@ -1,6 +1,6 @@
-import { X, Monitor, AlertTriangle, Star, Gauge } from 'lucide-react';
+import { X, Monitor, AlertTriangle, Star, Gauge, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { useSpeedHistory, useSiteMachines, useUpdateSite, type NetworkSite } from '@/api/networkSites';
+import { useSpeedHistory, useSiteMachines, useUpdateSite, useSiteLocationHistory, type NetworkSite } from '@/api/networkSites';
 import { useOrgParam } from '@/hooks/useOrgParam';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,7 @@ export function SiteDetailDrawer({ site, onClose }: SiteDetailDrawerProps) {
   const { orgId } = useOrgParam();
   const { data: speedData, isLoading: speedLoading } = useSpeedHistory(site.id);
   const { data: machines, isLoading: machinesLoading } = useSiteMachines(site.id);
+  const { data: locationHistory } = useSiteLocationHistory(site.id);
   const updateSite = useUpdateSite(orgId);
 
   const handleTogglePrimary = () => {
@@ -191,6 +192,29 @@ export function SiteDetailDrawer({ site, onClose }: SiteDetailDrawerProps) {
             <p className="text-sm text-muted-foreground">No machines found</p>
           )}
         </div>
+
+        {locationHistory && locationHistory.length > 1 && (
+          <div>
+            <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+              <MapPin className="size-4" />
+              Location History (last {locationHistory.length} IPs)
+            </h4>
+            <div className="space-y-2">
+              {locationHistory.map((loc, i) => (
+                <div key={loc.publicIp} className={`flex items-center justify-between text-xs p-2 rounded-lg ${i === 0 ? 'bg-green-50 border border-green-200' : 'bg-muted/50'}`}>
+                  <div>
+                    <span className="font-mono font-medium">{loc.publicIp}</span>
+                    {loc.geoCity && <span className="text-muted-foreground ml-2">— {loc.geoCity}, {loc.geoCountry}</span>}
+                  </div>
+                  <div className="text-muted-foreground text-right">
+                    <div>{loc.isp ?? '—'}</div>
+                    <div>{new Date(loc.lastSeen).toLocaleDateString()}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="text-xs text-muted-foreground space-y-1">
           <p>ISP: {site.isp ?? '—'} | ASN: {site.asn ?? '—'}</p>

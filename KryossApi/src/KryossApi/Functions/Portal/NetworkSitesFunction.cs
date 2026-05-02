@@ -48,6 +48,8 @@ public class NetworkSitesFunction
                 s.WanScore, s.AvgJitterMs, s.AvgPacketLossPct,
                 s.HopCount, s.UniqueIspCount,
                 s.MonthlyCost, s.LinkType, s.IsRedundant,
+                s.IsPrimary, s.SpeedTestMachineId,
+                SpeedTestMachineName = s.SpeedTestMachine != null ? s.SpeedTestMachine.Hostname : null,
                 FindingCount = s.WanFindings.Count,
                 CriticalCount = s.WanFindings.Count(f => f.Severity == "critical"),
             })
@@ -108,13 +110,26 @@ public class NetworkSitesFunction
             if (body.MonthlyCost.HasValue) site.MonthlyCost = body.MonthlyCost;
             if (body.LinkType is not null) site.LinkType = body.LinkType;
             if (body.IsRedundant.HasValue) site.IsRedundant = body.IsRedundant.Value;
+            if (body.IsPrimary == true)
+            {
+                await _db.NetworkSites
+                    .Where(s => s.OrganizationId == site.OrganizationId && s.IsPrimary)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.IsPrimary, false));
+                site.IsPrimary = true;
+            }
+            else if (body.IsPrimary == false)
+            {
+                site.IsPrimary = false;
+            }
+            if (body.SpeedTestMachineId.HasValue)
+                site.SpeedTestMachineId = body.SpeedTestMachineId.Value == Guid.Empty ? null : body.SpeedTestMachineId.Value;
             site.IsAutoDerived = false;
             site.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
         var res = req.CreateResponse(HttpStatusCode.OK);
-        await res.WriteAsJsonAsync(new { site.Id, site.SiteName, site.ContractedDownMbps, site.ContractedUpMbps });
+        await res.WriteAsJsonAsync(new { site.Id, site.SiteName, site.IsPrimary, site.SpeedTestMachineId });
         return res;
     }
 
@@ -167,10 +182,18 @@ public class NetworkSitesFunction
         if (site is null)
             return req.CreateResponse(HttpStatusCode.NotFound);
 
-        var machineIds = await _db.Machines
-            .Where(m => m.OrganizationId == site.OrganizationId && m.LastPublicIp == site.PublicIp)
-            .Select(m => m.Id)
-            .ToListAsync();
+        List<Guid> machineIds;
+        if (site.SpeedTestMachineId.HasValue)
+        {
+            machineIds = [site.SpeedTestMachineId.Value];
+        }
+        else
+        {
+            machineIds = await _db.Machines
+                .Where(m => m.OrganizationId == site.OrganizationId && m.LastPublicIp == site.PublicIp)
+                .Select(m => m.Id)
+                .ToListAsync();
+        }
 
         var history = await _db.MachineNetworkDiags
             .Where(d => machineIds.Contains(d.MachineId) && d.ScannedAt >= DateTime.UtcNow.AddDays(-90))
@@ -191,6 +214,10 @@ public class NetworkSitesFunction
             .Take(500)
             .ToListAsync();
 
+        var stMachineName = site.SpeedTestMachineId.HasValue
+            ? await _db.Machines.Where(m => m.Id == site.SpeedTestMachineId.Value).Select(m => m.Hostname).FirstOrDefaultAsync()
+            : null;
+
         var res = req.CreateResponse(HttpStatusCode.OK);
         await res.WriteAsJsonAsync(new
         {
@@ -198,6 +225,8 @@ public class NetworkSitesFunction
             siteName = site.SiteName,
             contractedDownMbps = site.ContractedDownMbps,
             contractedUpMbps = site.ContractedUpMbps,
+            speedTestMachineId = site.SpeedTestMachineId,
+            speedTestMachineName = stMachineName,
             history,
         });
         return res;
@@ -333,6 +362,54 @@ public class NetworkSitesFunction
         return res;
     }
 
+    [Function("NetworkSites_LocationHistory")]
+    [RequirePermission("machines:read")]
+    public async Task<HttpResponseData> LocationHistory(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/network-sites/{siteId}/location-history")] HttpRequestData req,
+        string siteId)
+    {
+        if (!Guid.TryParse(siteId, out var id))
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+
+        var site = await _db.NetworkSites.FindAsync(id);
+        if (site is null)
+            return req.CreateResponse(HttpStatusCode.NotFound);
+
+        var machineIds = await _db.Machines
+            .Where(m => m.OrganizationId == site.OrganizationId && m.LastPublicIp == site.PublicIp)
+            .Select(m => m.Id)
+            .ToListAsync();
+
+        var history = await _db.MachinePublicIpHistory
+            .Where(h => machineIds.Contains(h.MachineId))
+            .OrderByDescending(h => h.LastSeen)
+            .Take(20)
+            .Select(h => new
+            {
+                h.PublicIp,
+                h.GeoCity,
+                h.GeoCountry,
+                h.GeoRegion,
+                h.Isp,
+                h.Asn,
+                h.ConnType,
+                h.FirstSeen,
+                h.LastSeen,
+                MachineName = h.Machine.Hostname,
+            })
+            .ToListAsync();
+
+        var distinct = history
+            .GroupBy(h => h.PublicIp)
+            .Select(g => g.First())
+            .Take(5)
+            .ToList();
+
+        var res = req.CreateResponse(HttpStatusCode.OK);
+        await res.WriteAsJsonAsync(distinct);
+        return res;
+    }
+
     private class RebuildRequest { public Guid OrganizationId { get; set; } }
     private class SiteUpdateRequest
     {
@@ -342,5 +419,7 @@ public class NetworkSitesFunction
         public decimal? MonthlyCost { get; set; }
         public string? LinkType { get; set; }
         public bool? IsRedundant { get; set; }
+        public bool? IsPrimary { get; set; }
+        public Guid? SpeedTestMachineId { get; set; }
     }
 }

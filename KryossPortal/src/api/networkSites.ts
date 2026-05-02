@@ -32,6 +32,9 @@ export interface NetworkSite {
   monthlyCost: number | null;
   linkType: string | null;
   isRedundant: boolean;
+  isPrimary: boolean;
+  speedTestMachineId: string | null;
+  speedTestMachineName: string | null;
   findingCount: number;
   criticalCount: number;
 }
@@ -104,6 +107,8 @@ export interface SpeedHistoryResponse {
   siteName: string;
   contractedDownMbps: number | null;
   contractedUpMbps: number | null;
+  speedTestMachineId: string | null;
+  speedTestMachineName: string | null;
   history: SpeedHistoryPoint[];
 }
 
@@ -154,6 +159,8 @@ export function useUpdateSite(organizationId: string | undefined) {
       monthlyCost?: number;
       linkType?: string;
       isRedundant?: boolean;
+      isPrimary?: boolean;
+      speedTestMachineId?: string;
     }) =>
       apiFetch(`/v2/network-sites/${data.siteId}`, {
         method: 'PATCH',
@@ -226,6 +233,30 @@ export interface TracerouteEntry {
   jitterMs: number | null;
   packetLossPct: number | null;
   scannedAt: string;
+}
+
+export interface LocationHistoryEntry {
+  publicIp: string;
+  geoCity: string | null;
+  geoCountry: string | null;
+  geoRegion: string | null;
+  isp: string | null;
+  asn: number | null;
+  connType: string | null;
+  firstSeen: string;
+  lastSeen: string;
+  machineName: string;
+}
+
+export function useSiteLocationHistory(siteId: string | undefined) {
+  return useQuery({
+    queryKey: ['site-location-history', siteId],
+    queryFn: () =>
+      apiFetch<LocationHistoryEntry[]>(
+        `/v2/network-sites/${siteId}/location-history`,
+      ),
+    enabled: !!siteId,
+  });
 }
 
 export function useSiteTraceroute(siteId: string | undefined) {

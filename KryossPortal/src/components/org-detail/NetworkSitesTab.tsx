@@ -322,7 +322,9 @@ export function NetworkSitesTab() {
     );
   }
 
-  if (!sites || sites.length === 0) {
+  const activeSites = sites?.filter((s) => s.agentCount > 0 || s.deviceCount > 0) ?? [];
+
+  if (!sites || activeSites.length === 0) {
     const hasIpData = history && history.length > 0;
     return (
       <EmptyState
@@ -343,17 +345,17 @@ export function NetworkSitesTab() {
     );
   }
 
-  const totalAgents = sites.reduce((a, s) => a + s.agentCount, 0);
+  const totalAgents = activeSites.reduce((a, s) => a + s.agentCount, 0);
   const avgDown =
-    sites.filter((s) => s.avgDownMbps != null).length > 0
-      ? sites.reduce((a, s) => a + (s.avgDownMbps ?? 0), 0) /
-        sites.filter((s) => s.avgDownMbps != null).length
+    activeSites.filter((s) => s.avgDownMbps != null).length > 0
+      ? activeSites.reduce((a, s) => a + (s.avgDownMbps ?? 0), 0) /
+        activeSites.filter((s) => s.avgDownMbps != null).length
       : null;
-  const unstableSites = sites.filter((s) => s.ipChanges90d > 3).length;
-  const satelliteSites = sites.filter(
+  const unstableSites = activeSites.filter((s) => s.ipChanges90d > 3).length;
+  const satelliteSites = activeSites.filter(
     (s) => s.connType === 'satellite' || s.connType === 'cellular',
   ).length;
-  const slaBreaches = sites.filter(
+  const slaBreaches = activeSites.filter(
     (s) => s.contractedDownMbps != null && s.avgDownMbps != null && s.avgDownMbps / s.contractedDownMbps < 0.8,
   ).length;
 
@@ -377,7 +379,7 @@ export function NetworkSitesTab() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard icon={MapPin} label="Sites" value={sites.length} />
+        <KpiCard icon={MapPin} label="Sites" value={activeSites.length} />
         <KpiCard icon={Wifi} label="Agents" value={totalAgents} />
         <KpiCard
           icon={ArrowDown}
@@ -404,7 +406,7 @@ export function NetworkSitesTab() {
         </CardHeader>
         <CardContent>
           <Suspense fallback={<Skeleton className="h-[400px]" />}>
-            <SiteMap sites={sites} onSiteClick={handleSiteClick} />
+            <SiteMap sites={activeSites} onSiteClick={handleSiteClick} />
           </Suspense>
         </CardContent>
       </Card>
@@ -417,7 +419,7 @@ export function NetworkSitesTab() {
         <TabsContent value="sites">
           <Card>
             <CardContent className="pt-4">
-              <SitesTable sites={sites} onSiteClick={handleSiteClick} />
+              <SitesTable sites={activeSites} onSiteClick={handleSiteClick} />
             </CardContent>
           </Card>
         </TabsContent>
