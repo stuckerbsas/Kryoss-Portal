@@ -17,7 +17,15 @@ public interface IDnsLookup
     Task<List<string>> GetTxtRecordsAsync(string domain, CancellationToken ct);
     Task<List<string>> GetMxRecordsAsync(string domain, CancellationToken ct);
     Task<string?> GetCnameAsync(string name, CancellationToken ct);
+    Task<List<string>> GetNsRecordsAsync(string domain, CancellationToken ct);
+    Task<List<string>> GetARecordsAsync(string domain, CancellationToken ct);
+    Task<SoaResult?> GetSoaRecordAsync(string domain, CancellationToken ct);
+    Task<List<CaaResult>> GetCaaRecordsAsync(string domain, CancellationToken ct);
+    Task<bool> CheckDnssecAsync(string domain, CancellationToken ct);
 }
+
+public record SoaResult(string PrimaryNs, string AdminEmail, uint Serial, uint Refresh, uint Retry, uint Expire, uint MinTtl);
+public record CaaResult(int Flags, string Tag, string Value);
 
 public class DnsLookup : IDnsLookup
 {
@@ -93,6 +101,99 @@ public class DnsLookup : IDnsLookup
         {
             _log.LogDebug(ex, "DNS lookup failed for {Name} ({Type})", name, QueryType.CNAME);
             return null;
+        }
+    }
+
+    public async Task<List<string>> GetNsRecordsAsync(string domain, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _client.QueryAsync(domain, QueryType.NS, cancellationToken: ct);
+            return result.Answers
+                .NsRecords()
+                .Select(r => r.NSDName.Value.TrimEnd('.'))
+                .ToList();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (DnsResponseException ex)
+        {
+            _log.LogDebug(ex, "DNS lookup failed for {Name} ({Type})", domain, QueryType.NS);
+            return [];
+        }
+    }
+
+    public async Task<List<string>> GetARecordsAsync(string domain, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _client.QueryAsync(domain, QueryType.A, cancellationToken: ct);
+            return result.Answers
+                .ARecords()
+                .Select(r => r.Address.ToString())
+                .ToList();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (DnsResponseException ex)
+        {
+            _log.LogDebug(ex, "DNS lookup failed for {Name} ({Type})", domain, QueryType.A);
+            return [];
+        }
+    }
+
+    public async Task<SoaResult?> GetSoaRecordAsync(string domain, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _client.QueryAsync(domain, QueryType.SOA, cancellationToken: ct);
+            var soa = result.Answers.SoaRecords().FirstOrDefault();
+            if (soa == null) return null;
+            return new SoaResult(
+                soa.MName.Value.TrimEnd('.'),
+                soa.RName.Value.TrimEnd('.'),
+                soa.Serial,
+                soa.Refresh,
+                soa.Retry,
+                soa.Expire,
+                soa.Minimum);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (DnsResponseException ex)
+        {
+            _log.LogDebug(ex, "DNS lookup failed for {Name} ({Type})", domain, QueryType.SOA);
+            return null;
+        }
+    }
+
+    public async Task<List<CaaResult>> GetCaaRecordsAsync(string domain, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _client.QueryAsync(domain, QueryType.CAA, cancellationToken: ct);
+            return result.Answers
+                .CaaRecords()
+                .Select(r => new CaaResult(r.Flags, r.Tag, r.Value))
+                .ToList();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (DnsResponseException ex)
+        {
+            _log.LogDebug(ex, "DNS lookup failed for {Name} ({Type})", domain, QueryType.CAA);
+            return [];
+        }
+    }
+
+    public async Task<bool> CheckDnssecAsync(string domain, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _client.QueryAsync(domain, QueryType.DNSKEY, cancellationToken: ct);
+            return result.Answers.Any();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (DnsResponseException ex)
+        {
+            _log.LogDebug(ex, "DNSSEC check failed for {Name}", domain);
+            return false;
         }
     }
 }

@@ -45,6 +45,7 @@ public class ExternalScanFinding
     public string? Remediation { get; set; }
     public int? Port { get; set; }
     public string? PublicIp { get; set; }
+    public string? Category { get; set; }
 
     public ExternalScan Scan { get; set; } = null!;
     public ExternalScanResult? ScanResult { get; set; }

@@ -29,6 +29,23 @@ export interface ExternalScanFindingItem {
   description: string | null;
   remediation: string | null;
   port: number | null;
+  category: string | null;
+}
+
+export interface DiscoveredTarget {
+  value: string;
+  source: string;
+  label: string | null;
+}
+
+export interface AutoScanResult {
+  scanned: number;
+  scanIds: Array<{
+    scanId: string | null;
+    target: string;
+    source: string;
+    error?: string;
+  }>;
 }
 
 export interface ExternalScanDetail {
@@ -103,6 +120,36 @@ export function useStartExternalScan() {
   return useMutation({
     mutationFn: (params: { organizationId: string; target: string }) =>
       apiFetch<StartScanResponse>('/v2/external-scan', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({
+        queryKey: ['external-scan-latest', variables.organizationId],
+      });
+      qc.invalidateQueries({
+        queryKey: ['external-scan-history', variables.organizationId],
+      });
+    },
+  });
+}
+
+export function useExternalScanTargets(organizationId: string | undefined) {
+  return useQuery({
+    queryKey: ['external-scan-targets', organizationId],
+    queryFn: () =>
+      apiFetch<{ targets: DiscoveredTarget[] }>(
+        `/v2/external-scan/targets?organizationId=${organizationId}`,
+      ),
+    enabled: !!organizationId,
+  });
+}
+
+export function useAutoExternalScan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { organizationId: string }) =>
+      apiFetch<AutoScanResult>('/v2/external-scan/auto', {
         method: 'POST',
         body: JSON.stringify(params),
       }),

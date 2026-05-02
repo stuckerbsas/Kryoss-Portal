@@ -10,11 +10,16 @@ import {
   Lock,
   Mail,
   ShieldCheck,
+  Radar,
+  Network,
+  Cookie,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useLatestExternalScan,
   useStartExternalScan,
+  useExternalScanTargets,
+  useAutoExternalScan,
 } from '@/api/externalScan';
 import type { ExternalScanResultItem, ExternalScanFindingItem } from '@/api/externalScan';
 import { useOrgParam } from '@/hooks/useOrgParam';
@@ -39,6 +44,7 @@ function riskBadge(risk: string | null) {
     critical: 'bg-red-200 text-red-900',
     high: 'bg-red-100 text-red-800',
     medium: 'bg-amber-100 text-amber-800',
+    low: 'bg-blue-100 text-blue-800',
     info: 'bg-blue-100 text-blue-800',
   };
   return (
@@ -56,24 +62,47 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString();
 }
 
+const categoryConfig: Record<string, { title: string; icon: React.ReactNode }> = {
+  port: { title: 'Port Exposure', icon: <AlertTriangle className="h-4 w-4 text-muted-foreground" /> },
+  tls: { title: 'TLS / Certificate', icon: <Lock className="h-4 w-4 text-muted-foreground" /> },
+  header: { title: 'HTTP Security Headers', icon: <ShieldCheck className="h-4 w-4 text-muted-foreground" /> },
+  mail: { title: 'Email Authentication', icon: <Mail className="h-4 w-4 text-muted-foreground" /> },
+  dns: { title: 'DNS Health', icon: <Network className="h-4 w-4 text-muted-foreground" /> },
+  web: { title: 'Web Security', icon: <Cookie className="h-4 w-4 text-muted-foreground" /> },
+};
+
 export function ExternalScanTab() {
   const { orgId } = useOrgParam();
   const { data: scan, isLoading } = useLatestExternalScan(orgId);
+  const { data: targetsData } = useExternalScanTargets(orgId);
   const startScan = useStartExternalScan();
+  const autoScan = useAutoExternalScan();
   const [target, setTarget] = useState('');
+
+  const targets = targetsData?.targets ?? [];
 
   const handleScan = async () => {
     if (!orgId || !target.trim()) return;
     try {
-      const result = await startScan.mutateAsync({
+      await startScan.mutateAsync({
         organizationId: orgId,
         target: target.trim(),
       });
-      toast.success(
-        `Scan complete: ${result.ipsFound} IPs, ${result.openPorts} open ports`,
-      );
+      toast.success('Scan complete');
     } catch (err: any) {
       toast.error(`Scan failed: ${err.message}`);
+    }
+  };
+
+  const handleAutoScan = async () => {
+    if (!orgId) return;
+    try {
+      const result = await autoScan.mutateAsync({ organizationId: orgId });
+      const ok = result.scanIds.filter(s => s.scanId).length;
+      const fail = result.scanIds.filter(s => !s.scanId).length;
+      toast.success(`Auto-scan complete: ${ok} targets scanned${fail > 0 ? `, ${fail} failed` : ''}`);
+    } catch (err: any) {
+      toast.error(`Auto-scan failed: ${err.message}`);
     }
   };
 
@@ -100,50 +129,77 @@ export function ExternalScanTab() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h3 className="text-lg font-semibold">External Port Scan</h3>
+        <h3 className="text-lg font-semibold">External Exposure Scan</h3>
         <p className="text-sm text-muted-foreground">
-          Scan public-facing IPs of a domain or IP address to detect exposed
-          services from the cloud.
+          Scan public IPs and domains to detect exposed services, DNS issues, TLS misconfigurations, and email authentication gaps.
         </p>
       </div>
 
-      {/* Scan input */}
-      <div className="flex items-center gap-3 max-w-xl">
-        <Input
-          placeholder="Enter domain (e.g. example.com) or IP address"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleScan()}
-          disabled={startScan.isPending}
-        />
-        <Button
-          onClick={handleScan}
-          disabled={!target.trim() || startScan.isPending}
-        >
-          {startScan.isPending ? (
-            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-          ) : (
-            <Search className="mr-1.5 h-4 w-4" />
-          )}
-          Scan
-        </Button>
+      {/* Scan controls */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex items-center gap-3 flex-1 max-w-xl">
+          <Input
+            placeholder="Enter domain (e.g. example.com) or IP address"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleScan()}
+            disabled={startScan.isPending || autoScan.isPending}
+          />
+          <Button
+            onClick={handleScan}
+            disabled={!target.trim() || startScan.isPending || autoScan.isPending}
+          >
+            {startScan.isPending ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="mr-1.5 h-4 w-4" />
+            )}
+            Scan
+          </Button>
+        </div>
+        {targets.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={handleAutoScan}
+            disabled={autoScan.isPending || startScan.isPending}
+          >
+            {autoScan.isPending ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Radar className="mr-1.5 h-4 w-4" />
+            )}
+            Auto-Scan ({targets.length} targets)
+          </Button>
+        )}
       </div>
 
+      {/* Discovered targets preview */}
+      {targets.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {targets.map((t, i) => (
+            <Badge key={i} variant="outline" className="text-xs font-mono">
+              {t.source === 'network_site' ? '🌐' : '📧'} {t.value}
+              {t.label ? ` (${t.label})` : ''}
+            </Badge>
+          ))}
+        </div>
+      )}
+
       {/* No data yet */}
-      {!scan && !startScan.isPending && (
+      {!scan && !startScan.isPending && !autoScan.isPending && (
         <EmptyState
           icon={<Globe className="size-10" />}
           title="No external scans yet"
-          description="Enter a domain or IP address above to run your first external port scan."
+          description={targets.length > 0
+            ? `${targets.length} targets discovered. Click "Auto-Scan" to scan all known IPs and domains, or enter a target manually.`
+            : 'Enter a domain or IP address above to run your first external scan.'}
         />
       )}
 
       {/* Results */}
       {scan && (
         <>
-          {/* Scan metadata */}
           <div className="text-sm text-muted-foreground flex flex-wrap gap-4">
             <span>
               Target: <strong>{scan.target}</strong>
@@ -163,7 +219,7 @@ export function ExternalScanTab() {
                 <Wifi className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">{scan.summary.totalIps}</p>
+                <p className="text-2xl font-bold">{scan.summary?.totalIps ?? 0}</p>
               </CardContent>
             </Card>
             <Card>
@@ -174,7 +230,7 @@ export function ExternalScanTab() {
                 <Globe className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">{scan.summary.totalOpen}</p>
+                <p className="text-2xl font-bold">{scan.summary?.totalOpen ?? 0}</p>
               </CardContent>
             </Card>
             <Card>
@@ -188,36 +244,30 @@ export function ExternalScanTab() {
                 <p
                   className="text-2xl font-bold"
                   style={{
-                    color:
-                      scan.summary.criticalPorts > 0 ? '#C0392B' : '#006536',
+                    color: (scan.summary?.criticalPorts ?? 0) > 0 ? '#C0392B' : '#006536',
                   }}
                 >
-                  {scan.summary.criticalPorts}
+                  {scan.summary?.criticalPorts ?? 0}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  High Risk
+                  Findings
                 </CardTitle>
-                <AlertTriangle className="h-4 w-4 text-red-500" />
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
               </CardHeader>
               <CardContent>
-                <p
-                  className="text-2xl font-bold"
-                  style={{
-                    color: scan.summary.highPorts > 0 ? '#D97706' : '#006536',
-                  }}
-                >
-                  {scan.summary.highPorts}
+                <p className="text-2xl font-bold">
+                  {scan.findings?.length ?? 0}
                 </p>
               </CardContent>
             </Card>
           </div>
 
           {/* Results table */}
-          {scan.results.length > 0 ? (
+          {scan.results && scan.results.length > 0 ? (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -226,7 +276,6 @@ export function ExternalScanTab() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {/* Mobile cards */}
                 <div className="space-y-3 sm:hidden">
                   {scan.results.map((r: ExternalScanResultItem, i: number) => (
                     <div key={i} className="rounded-lg border p-4 space-y-1">
@@ -241,7 +290,6 @@ export function ExternalScanTab() {
                     </div>
                   ))}
                 </div>
-                {/* Desktop table */}
                 <div className="hidden sm:block overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -279,15 +327,14 @@ export function ExternalScanTab() {
               </CardContent>
             </Card>
           ) : (
-            scan.status === 'completed' && (
+            scan.status === 'completed' && scan.results && (
               <Card>
                 <CardContent className="py-8">
                   <div className="flex flex-col items-center text-center">
                     <Info className="h-8 w-8 text-muted-foreground mb-2" />
                     <p className="text-sm font-medium">No open ports found</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      All 25 scanned ports are closed or filtered on the
-                      resolved IPs.
+                      All scanned ports are closed or filtered.
                     </p>
                   </div>
                 </CardContent>
@@ -295,45 +342,47 @@ export function ExternalScanTab() {
             )
           )}
 
-          {/* Domain findings (TLS, headers, mail) */}
+          {/* Findings grouped by category */}
           {scan.findings && scan.findings.length > 0 && (() => {
-            const tlsFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('TLS') || f.title.includes('Certificate'));
-            const headerFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('Missing') && (f.title.includes('HSTS') || f.title.includes('CSP') || f.title.includes('Frame') || f.title.includes('Content-Type') || f.title.includes('Referrer')));
-            const mailFindings = scan.findings!.filter((f: ExternalScanFindingItem) => f.title.includes('SPF') || f.title.includes('DMARC'));
-            const otherFindings = scan.findings!.filter((f: ExternalScanFindingItem) => !tlsFindings.includes(f) && !headerFindings.includes(f) && !mailFindings.includes(f));
+            const grouped = new Map<string, ExternalScanFindingItem[]>();
+            const order = ['port', 'tls', 'dns', 'header', 'web', 'mail'];
 
-            const renderFindingGroup = (title: string, icon: React.ReactNode, items: ExternalScanFindingItem[]) => {
-              if (items.length === 0) return null;
-              return (
-                <Card key={title}>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      {icon}
-                      {title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {items.map((f: ExternalScanFindingItem, i: number) => (
-                      <div key={i} className="border rounded-md p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          {riskBadge(f.severity)}
-                          <span className="font-medium text-sm">{f.title}</span>
-                        </div>
-                        {f.description && <p className="text-xs text-muted-foreground">{f.description}</p>}
-                        {f.remediation && <p className="text-xs text-blue-600 mt-1">{f.remediation}</p>}
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              );
-            };
+            for (const f of scan.findings!) {
+              const cat = f.category ?? 'port';
+              if (!grouped.has(cat)) grouped.set(cat, []);
+              grouped.get(cat)!.push(f);
+            }
 
             return (
               <>
-                {renderFindingGroup('TLS / Certificate', <Lock className="h-4 w-4 text-muted-foreground" />, tlsFindings)}
-                {renderFindingGroup('HTTP Security Headers', <ShieldCheck className="h-4 w-4 text-muted-foreground" />, headerFindings)}
-                {renderFindingGroup('Email Authentication', <Mail className="h-4 w-4 text-muted-foreground" />, mailFindings)}
-                {renderFindingGroup('Port Findings', <AlertTriangle className="h-4 w-4 text-muted-foreground" />, otherFindings)}
+                {order.map(cat => {
+                  const items = grouped.get(cat);
+                  if (!items || items.length === 0) return null;
+                  const cfg = categoryConfig[cat] ?? { title: cat, icon: <Info className="h-4 w-4" /> };
+                  return (
+                    <Card key={cat}>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          {cfg.icon}
+                          {cfg.title}
+                          <Badge variant="secondary" className="ml-auto text-xs">{items.length}</Badge>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {items.map((f: ExternalScanFindingItem, i: number) => (
+                          <div key={i} className="border rounded-md p-3">
+                            <div className="flex items-center gap-2 mb-1">
+                              {riskBadge(f.severity)}
+                              <span className="font-medium text-sm">{f.title}</span>
+                            </div>
+                            {f.description && <p className="text-xs text-muted-foreground">{f.description}</p>}
+                            {f.remediation && <p className="text-xs text-blue-600 mt-1">{f.remediation}</p>}
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </>
             );
           })()}

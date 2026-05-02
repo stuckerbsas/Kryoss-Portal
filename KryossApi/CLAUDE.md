@@ -90,6 +90,8 @@
 | POST | `/v2/external-scan` | `ExternalExposureFunction.StartScan` | Start external port scan (requires consent) |
 | GET | `/v2/external-scan` | `ExternalExposureFunction.GetLatest` | Latest completed scan with results + findings |
 | GET | `/v2/external-scan/history` | `ExternalExposureFunction.History` | Last 20 external scans |
+| POST | `/v2/external-scan/auto` | `ExternalExposureFunction.AutoScan` | Auto-discover + scan all org IPs (sites) + domains (cloud) |
+| GET | `/v2/external-scan/targets` | `ExternalExposureFunction.Targets` | List auto-discovered targets (IPs + domains) |
 | PATCH | `/v2/organizations/{id}/external-scan` | `OrganizationsFunction` | Toggle external scan consent |
 
 ### Portal API (v2) — Remediation
@@ -104,6 +106,18 @@
 | PATCH | `/v2/remediation/tasks/{id}/reschedule` | `RemediationFunction.Reschedule` | Reschedule pending/approved task |
 | GET | `/v2/remediation/history` | `RemediationFunction.History` | Remediation audit trail by org |
 | GET | `/v2/remediation/catalog` | `RemediationFunction.GetCatalog` | List available remediation actions |
+
+### Agent API (v1) — AD Objects (SEC-04)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| POST | `/v1/ad-objects` | `AdObjectsFunction.Submit` | Agent submits full AD user/computer listing |
+
+### Portal API (v2) — AD Objects (SEC-04)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/ad-objects?organizationId=X&type=&search=&page=&pageSize=` | `AdObjectsFunction.List` | Paginated AD objects listing |
 
 ### Agent API (v1) — Service Inventory
 
@@ -201,7 +215,13 @@
 
 | Method | Path | Function | Purpose |
 |---|---|---|---|
-| GET | `/v2/topology?organizationId=X` | `TopologyFunction.Get` | Network topology graph (nodes + edges from LLDP/CDP) |
+| GET | `/v2/topology?organizationId=X` | `TopologyFunction.Get` | Network topology graph (nodes + edges from LLDP/CDP + inferred) |
+
+### Portal API (v2) — Network Ports Consolidated (NET-02)
+
+| Method | Path | Function | Purpose |
+|---|---|---|---|
+| GET | `/v2/network-ports?organizationId=X&state=` | `NetworkPortsFunction.Get` | Org-level ports grouped by port number (risky first) |
 
 ---
 
@@ -217,7 +237,8 @@ src/KryossApi/
 │   │   ├── ResultsFunction.cs
 │   │   ├── HeartbeatFunction.cs      <- POST /v1/heartbeat (returns pendingTasks[])
 │   │   ├── TaskResultFunction.cs     <- POST /v1/task-result (agent reports remediation results)
-│   │   └── AgentVersionFunction.cs   <- GET /v1/agent/latest-version + /v1/agent/download
+│   │   ├── AgentVersionFunction.cs   <- GET /v1/agent/latest-version + /v1/agent/download
+│   │   └── AdObjectsFunction.cs     <- POST /v1/ad-objects + GET /v2/ad-objects (SEC-04)
 │   └── Portal/                      <- v2 endpoints
 │       ├── MachinesFunction.cs
 │       ├── EnrollmentCodesFunction.cs
@@ -232,7 +253,8 @@ src/KryossApi/
 │       ├── M365Function.cs            <- M365/Entra ID: connect, scan, get, disconnect
 │       ├── NetworkSitesFunction.cs    <- IA-11: list, rebuild, update, IP history
 │       ├── InfraAssessmentFunction.cs <- IA: start scan, latest, detail, history
-│       ├── TopologyFunction.cs         <- /v2/topology (IA-2: network graph from LLDP/CDP)
+│       ├── TopologyFunction.cs         <- /v2/topology (IA-2: network graph from LLDP/CDP + inferred)
+│       ├── NetworkPortsFunction.cs    <- /v2/network-ports (NET-02: org-level port consolidation)
 │       ├── OrganizationsFunction.cs
 │       ├── ExternalExposureFunction.cs <- POST/GET /v2/external-scan (consent-gated port scan)
 │       ├── RemediationFunction.cs     <- /v2/remediation/* (create task, list, rollback, history, catalog)
@@ -291,6 +313,7 @@ src/KryossApi/
 │       ├── MachinePort.cs           <- open ports per host (port, protocol, state, service)
 │       ├── MachineNetworkDiag.cs    <- network diagnostics (speed, latency, routes, VPN, adapters)
 │       ├── AdHygiene.cs             <- AD hygiene findings (stale objects, security issues)
+│       ├── AdObject.cs              <- SEC-04: Full AD user/computer listing
 │       ├── Brand.cs                 <- Brand/MSP customization
 │       ├── M365Tenant.cs            <- M365Tenant + M365Finding entities
 │       ├── InfraAssessment.cs       <- 6 entities: Scan, Site, Device, Connectivity, Capacity, Finding
@@ -342,6 +365,7 @@ src/KryossApi/
 | Org | `franchises`, `organizations`, `auth_api_keys`, `org_crypto_keys` |
 | CMDB | `machines`, `machine_snapshots` (with `raw_*` JSON cols), `machine_software`, `machine_users`, `machine_disks` (per-drive), `machine_ports` (open ports), `machine_network_diag` + `machine_network_latency` + `machine_network_routes` (network diagnostics) |
 | AD Hygiene | `ad_hygiene` (stale machines/users, privileged accounts, kerberoastable, delegation, LAPS, domain info) |
+| AD Objects | `ad_objects` (SEC-04: full user/computer listing from DCs with DN, OU, group membership, last logon) |
 | Catalog | `control_categories`, `control_defs`, `frameworks`, `platforms`, `control_frameworks`, `control_platforms` |
 | Assessment | `assessments`, `assessment_controls`, `assessment_runs`, `control_results`, `run_framework_scores` |
 | Enrollment | `enrollment_codes` |
@@ -439,6 +463,22 @@ requests. All actual auth is handled by custom middleware:
 ---
 
 ## Changelog
+
+### [1.40.0] - 2026-05-02
+- **Added:** EXT-02 Domain Intelligence & Auto-Scan — Comprehensive external reconnaissance. New DNS health checks: NS record redundancy, SOA validation, CAA records, DNSSEC, dangling CNAME detection (8 common subdomains). Extended TLS: protocol version detection (TLS 1.0/1.1 deprecated), cert name mismatch, self-signed detection, not-yet-valid. Extended HTTP: Permissions-Policy header, Server version disclosure, X-Powered-By info leak. New web security: HTTP→HTTPS redirect validation, cookie security flags (Secure, HttpOnly, SameSite). Extended email auth: DKIM selector check (selector1/selector2), MTA-STS record validation. All findings now tagged with `category` (port/tls/dns/header/web/mail) for clean grouping.
+- **Added:** Auto-scan endpoint `POST /v2/external-scan/auto` — auto-discovers targets from `network_sites` (public IPs) and `cloud_assessment_mail_domains` (verified domains), scans all. `GET /v2/external-scan/targets` previews discoverable targets.
+- **Added:** `DnsLookup` extended with `GetNsRecordsAsync`, `GetARecordsAsync`, `GetSoaRecordAsync`, `GetCaaRecordsAsync`, `CheckDnssecAsync`.
+- **Files:** `ExternalScanner.cs`, `ExternalExposureFunction.cs`, `DnsLookup.cs`, `ExternalScan.cs` (entity), `sql/100_external_scan_category.sql`, `externalScan.ts`, `ExternalScanTab.tsx`
+
+### [1.39.0] - 2026-05-01
+- **Added:** SEC-04 — AD Objects full listing. Agent collects all AD users/computers from DCs (samAccountName, DN, displayName, enabled, lastLogon, whenCreated, memberOf, OU). New `ad_objects` table (migration 098) with upsert + stale removal. Agent endpoint: `POST /v1/ad-objects`. Portal endpoint: `GET /v2/ad-objects` (paginated, filterable by type/search). Portal: new "Directory" sub-tab under Active Directory with user/computer toggle, search, and pagination.
+- **Files:** `AdObject.cs` (new), `AdObjectsFunction.cs` (new), `KryossDbContext.cs`, `sql/098_ad_objects.sql` (new), `AdObjectCollector.cs` (new agent), `ApiClient.cs`, `ScanCycle.cs`, `JsonContext.cs`, `AssessmentPayload.cs`, `adObjects.ts` (new portal), `AdObjectsTab.tsx` (new portal), `ActiveDirectoryTab.tsx`
+- **Added:** NET-01 Topology auto-relationships — inferred edges (gateway, same-subnet grouping, SNMP neighbor IP fallback) with `type` field on all edges (`lldp`/`cdp`/`inferred`). Portal renders inferred edges as dashed purple lines.
+- **Files:** `TopologyFunction.cs`, `topology.ts`, `TopologyTab.tsx`
+- **Added:** NET-02 Network Ports consolidated view — `GET /v2/network-ports` org-level port aggregation grouped by port number. Risky port flagging (10 ports). Portal tab with expandable rows, state filter, KPI cards.
+- **Files:** `NetworkPortsFunction.cs` (new), `networkPorts.ts` (new), `NetworkPortsTab.tsx` (new), `NetworkTab.tsx`
+- **Added:** NET-03 External scan domain coverage — domain scanning with DNS resolution, TLS certificate check (expiry + key size), HTTP security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy), email auth (SPF, DMARC). StartScan accepts both IP and domain. Portal displays domain findings grouped by category.
+- **Files:** `ExternalScanner.cs`, `ExternalExposureFunction.cs`, `externalScan.ts`, `ExternalScanTab.tsx`
 
 ### [1.38.6] - 2026-04-30
 - **Added:** Azure AD tenant ID enrichment (DAT-01) — `aad_tenant_id` column on `machines` (migration 097). Agent extracts TenantId from `CloudDomainJoin\JoinInfo` registry. API persists + returns in machine detail. Portal shows friendly domain status labels + Tenant ID row.
