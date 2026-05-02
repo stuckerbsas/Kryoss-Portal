@@ -89,7 +89,7 @@ async function apiFetchWithToken<T>(path: string, token: string, options?: Reque
     const errorField = (body as Record<string, unknown>)?.error as string | undefined;
     if (res.status === 403 && errorField === 'fresh_auth_required')
       throw new ApiError('Re-authentication required', 403);
-    const msg = genericMessages[res.status] || 'Request failed';
+    const msg = errorField || genericMessages[res.status] || 'Request failed';
     throw new ApiError(
       traceId ? `${msg} — ref: ${traceId}` : msg,
       res.status,
