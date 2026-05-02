@@ -126,3 +126,15 @@ export function useAutoExternalScan() {
     },
   });
 }
+
+// ── Consent ──
+
+export function useEnableExternalScanConsent() {
+  return useMutation({
+    mutationFn: (params: { organizationId: string }) =>
+      apiFetch(`/v2/organizations/${params.organizationId}/external-scan`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: true }),
+      }),
+  });
+}

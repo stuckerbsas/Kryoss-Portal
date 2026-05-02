@@ -23,6 +23,7 @@ import {
   useStartExternalScan,
   useExternalScanTargets,
   useAutoExternalScan,
+  useEnableExternalScanConsent,
 } from '@/api/externalScan';
 import type {
   ExternalScanDetail,
@@ -247,12 +248,14 @@ function ScanDetail({ scan }: { scan: ExternalScanDetail }) {
 
 export function ExternalScanTab() {
   const { orgId } = useOrgParam();
+  const enableConsent = useEnableExternalScanConsent();
   const { data: historyData, isLoading } = useExternalScanHistory(orgId);
   const { data: targetsData } = useExternalScanTargets(orgId);
   const startScan = useStartExternalScan();
   const autoScan = useAutoExternalScan();
   const [target, setTarget] = useState('');
   const [selectedScanId, setSelectedScanId] = useState<string>();
+  const [needsConsent, setNeedsConsent] = useState(false);
 
   const targets = targetsData?.targets ?? [];
   const history = historyData ?? [];
@@ -268,6 +271,19 @@ export function ExternalScanTab() {
   const activeScanId = selectedScanId ?? latestByTarget[0]?.id;
   const { data: selectedScan, isLoading: detailLoading } = useExternalScanDetail(activeScanId);
 
+  const handleEnableConsent = async () => {
+    if (!orgId) return;
+    try {
+      await enableConsent.mutateAsync({ organizationId: orgId });
+      setNeedsConsent(false);
+      toast.success('External scanning enabled — you can now run scans.');
+    } catch (err: any) {
+      toast.error(`Failed to enable: ${err.message}`);
+    }
+  };
+
+  const isConsentError = (msg: string) => msg?.toLowerCase().includes('consent');
+
   const handleScan = async () => {
     if (!orgId || !target.trim()) return;
     try {
@@ -275,6 +291,7 @@ export function ExternalScanTab() {
       setSelectedScanId(result.scanId);
       toast.success('Scan complete');
     } catch (err: any) {
+      if (isConsentError(err.message)) { setNeedsConsent(true); return; }
       toast.error(`Scan failed: ${err.message}`);
     }
   };
@@ -289,6 +306,7 @@ export function ExternalScanTab() {
       if (first?.scanId) setSelectedScanId(first.scanId);
       toast.success(`Auto-scan: ${ok} scanned${fail > 0 ? `, ${fail} failed` : ''}`);
     } catch (err: any) {
+      if (isConsentError(err.message)) { setNeedsConsent(true); return; }
       toast.error(`Auto-scan failed: ${err.message}`);
     }
   };
@@ -313,6 +331,26 @@ export function ExternalScanTab() {
           Security assessment of public-facing infrastructure: ports, TLS, email auth, DNS, and web hardening.
         </p>
       </div>
+
+      {needsConsent && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="py-5">
+            <div className="flex items-center gap-4">
+              <ShieldAlert className="h-8 w-8 text-amber-500 shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm">External Scanning Requires Consent</h4>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  External scans probe public IPs and domains to detect exposed services. Enable to continue.
+                </p>
+              </div>
+              <Button size="sm" onClick={handleEnableConsent} disabled={enableConsent.isPending}>
+                {enableConsent.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-1.5 h-4 w-4" />}
+                Enable
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex items-center gap-3 flex-1 max-w-xl">
